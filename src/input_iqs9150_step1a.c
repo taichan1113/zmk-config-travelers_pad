@@ -285,9 +285,15 @@ static void report_contact_frame(const struct device *dev)
 
 	if (cfg->two_finger_diagnostics && fingers >= 2 &&
 	    k_uptime_get() - data->last_two_finger_log_ms >= 100) {
+		int32_t geometry_x = (int32_t)contacts[1].x - contacts[0].x;
+		int32_t geometry_y = (int32_t)contacts[1].y - contacts[0].y;
+		uint32_t distance_squared = geometry_x * geometry_x + geometry_y * geometry_y;
+
 		LOG_INF("2F frame: flags=0x%04x f1=(%u,%u,%d) f2=(%u,%u,%d)",
 			trackpad_flags, contacts[0].x, contacts[0].y, contacts[0].valid,
 			contacts[1].x, contacts[1].y, contacts[1].valid);
+		LOG_INF("2F geometry: vector=(%ld,%ld) distance-squared=%lu", (long)geometry_x,
+			(long)geometry_y, (unsigned long)distance_squared);
 		data->last_two_finger_log_ms = k_uptime_get();
 	}
 	if (cfg->multitouch_diagnostics && fingers >= 3 &&

@@ -65,12 +65,15 @@ exclusively, so pinch/rotation candidates do not become scroll output.
 実機検証時はoverlayの `two-finger-diagnostics` を有効にします。2本指で静止・平行移動・
 指間を広げる／狭める操作を行い、100 msごとの `2F frame` ログで `f1=(x,y,1)` と
 `f2=(x,y,1)` が別々に変化することを確認してください。`f2` の末尾が `0` の場合は、
-そのフレームでは第2接触点を信頼しません。
+そのフレームでは第2接触点を信頼しません。続く `2F geometry` のベクトルと距離二乗は、
+平行移動ではほぼ一定、ピンチでは距離が変化、回転ではベクトル方向が変化します。
 
 For hardware validation, enable `two-finger-diagnostics` in the overlay. Hold,
 move, spread, and pinch two fingers while checking the throttled `2F frame`
 logs. `f1=(x,y,1)` and `f2=(x,y,1)` must change independently. A trailing
-`0` on `f2` means that frame's second contact is not trusted.
+`0` on `f2` means that frame's second contact is not trusted. The following
+`2F geometry` vector and squared distance stay nearly constant for parallel
+motion, change distance for pinch, and change vector direction for rotation.
 
 3〜5本指の実機検証では `multitouch-diagnostics` を有効にし、`MT frame: count=3`、
 `count=4`、`count=5` の各ログで、使用中の `f1`〜`fN` がすべて末尾 `1`、かつ別座標で
