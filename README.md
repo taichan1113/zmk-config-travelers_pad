@@ -4,13 +4,16 @@
 
 STEP1Aでは実機でI²C、RDY割込み、タッチ座標の生データ取得を確認済みです。STEP1Bは
 `IQS9150_init.h` のEV02設定を書き込み、ATI（自動調整）完了後にEvent Modeへ移行します。
-STEP1Cは検証済みの相対移動を ZMK のマウスHIDへ送ります。スクロール、タップクリック、
-速度調整はまだ実装しません。
+STEP1Cは検証済みの相対移動を ZMK のマウスHIDへ送ります。STEP1Dは2本指の縦横スクロールと
+タップクリック（1本指=左、2本指=右）を追加します。速度調整、3本指中クリック、スワイプ、
+ピンチはまだ実装しません。
 
 Step 1A has verified I²C, RDY interrupts, and raw touch reports on hardware.
 Step 1B writes the EV02 settings from `IQS9150_init.h`, runs ATI, and enters
-Event Mode. Step 1C forwards verified relative motion to ZMK mouse HID. It
-does not yet implement scrolling, tap clicks, or speed tuning.
+Event Mode. Step 1C forwards verified relative motion to ZMK mouse HID.
+Step 1D adds two-finger vertical/horizontal scroll plus one-/two-finger tap
+for left/right click. It does not yet implement speed tuning, middle click,
+swipes, or pinch.
 
 This is a ZMK/Zephyr module for IQS9150EV02 bring-up and basic pointer output.
 
@@ -96,6 +99,26 @@ Firmware verification: a clean build succeeds with `ZMK_POINTING` and
 host cursor follows one-finger movement. The initial build uses the EV02
 relative values without scaling. Report speed and axis-direction preferences;
 the next tuning pass can add scaling or inversion.
+
+## STEP1D スクロール・タップ動作確認 / STEP1D scroll and tap verification
+
+ファーム担当の確認済み事項：2本指ジェスチャーのスクロール値を ZMK の縦・横ホイールHIDへ、
+タップフラグの立上りをクリックへ変換するクリーンビルドが成功しています。書込み後、次を確認
+してください。
+
+1. 2本指で上下移動すると縦スクロールする。
+2. 2本指で左右移動すると横スクロールする（対応アプリのみ）。
+3. 1本指タップで左クリックする。
+4. 2本指タップで右クリックする。
+
+クリックが連続発生する場合、またはスクロールの向き・速度が合わない場合は、操作内容と結果を
+報告してください。中クリック、3本指、スワイプ、ピンチはこの版の対象外です。
+
+Firmware verification: a clean build succeeds with two-finger gesture values
+mapped to ZMK vertical/horizontal wheel HID and rising tap flags mapped to
+clicks. After flashing, verify the four items above. Report unintended repeated
+clicks or scroll direction/speed issues. Middle click, three-finger gestures,
+swipes, and pinch are outside this build's scope.
 
 ## EV02 H-file analysis / H-file解析
 

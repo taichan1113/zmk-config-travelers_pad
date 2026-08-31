@@ -43,6 +43,16 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_INFO_SHOW_RESET             BIT(7)
 #define IQS9150_ACK_RETRY_MAX               3
 
+#define IQS9150_REPORT_GESTURE_X_OFFSET      4
+#define IQS9150_REPORT_GESTURE_Y_OFFSET      6
+#define IQS9150_REPORT_1F_GESTURE_OFFSET     8
+#define IQS9150_REPORT_2F_GESTURE_OFFSET    10
+
+#define IQS9150_1F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
+#define IQS9150_2F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
+#define IQS9150_2F_VERTICAL_SCROLL          BIT(6)
+#define IQS9150_2F_HORIZONTAL_SCROLL        BIT(7)
+
 struct iqs9150_block {
 	uint16_t reg;
 	const uint8_t *data;
@@ -71,6 +81,8 @@ struct iqs9150_data {
 	struct k_work_delayable work;
 	enum iqs9150_state state;
 	uint8_t ack_attempts;
+	uint8_t last_1f_taps;
+	uint8_t last_2f_taps;
 	size_t block_index;
 	size_t block_offset;
 };
@@ -166,10 +178,28 @@ static uint16_t le16(const uint8_t *data)
 	return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
+static void report_tap_click(const struct device *dev, uint16_t button)
+{
+	int rc = input_report_key(dev, button, 1, false, K_NO_WAIT);
+
+	if (rc == 0) {
+		rc = input_report_key(dev, button, 0, true, K_NO_WAIT);
+	}
+	if (rc != 0) {
+		LOG_ERR("tap click report failed: %d", rc);
+	}
+}
+
 static void log_report(const struct device *dev)
 {
+	struct iqs9150_data *data = dev->data;
 	uint8_t report[IQS9150_REPORT_LEN];
 	int rc = read_reg(dev, IQS9150_RELATIVE_X_REG, report, sizeof(report));
+	uint8_t gestures_1f;
+	uint8_t gestures_2f;
+	uint8_t new_1f_taps;
+	uint8_t new_2f_taps;
+	bool scrolling;
 
 	if (rc != 0) {
 		LOG_ERR("report read failed: %d", rc);
@@ -181,21 +211,56 @@ static void log_report(const struct device *dev)
 		(int16_t)le16(&report[0]), (int16_t)le16(&report[2]), le16(&report[16]),
 		le16(&report[18]), le16(&report[20]), le16(&report[22]));
 
-	/* input-listener turns these relative events into ZMK mouse HID reports. */
-	if (report[0] != 0 || report[1] != 0) {
-		rc = input_report_rel(dev, INPUT_REL_X, (int16_t)le16(&report[0]),
-				      report[2] == 0 && report[3] == 0, K_NO_WAIT);
-		if (rc != 0) {
-			LOG_ERR("pointer X report failed: %d", rc);
+	gestures_1f = report[IQS9150_REPORT_1F_GESTURE_OFFSET];
+	gestures_2f = report[IQS9150_REPORT_2F_GESTURE_OFFSET];
+	scrolling = gestures_2f & (IQS9150_2F_VERTICAL_SCROLL |
+					 IQS9150_2F_HORIZONTAL_SCROLL);
+
+	/* input-listener turns relative and wheel events into ZMK mouse HID. */
+	if (scrolling) {
+		int16_t gesture_x = le16(&report[IQS9150_REPORT_GESTURE_X_OFFSET]);
+		int16_t gesture_y = le16(&report[IQS9150_REPORT_GESTURE_Y_OFFSET]);
+
+		if (gesture_x != 0) {
+			rc = input_report_rel(dev, INPUT_REL_HWHEEL, gesture_x,
+					      gesture_y == 0, K_NO_WAIT);
+			if (rc != 0) {
+				LOG_ERR("horizontal scroll report failed: %d", rc);
+			}
+		}
+		if (gesture_y != 0) {
+			rc = input_report_rel(dev, INPUT_REL_WHEEL, -gesture_y, true,
+					      K_NO_WAIT);
+			if (rc != 0) {
+				LOG_ERR("vertical scroll report failed: %d", rc);
+			}
+		}
+	} else {
+		if (report[0] != 0 || report[1] != 0) {
+			rc = input_report_rel(dev, INPUT_REL_X, (int16_t)le16(&report[0]),
+					      report[2] == 0 && report[3] == 0, K_NO_WAIT);
+			if (rc != 0) {
+				LOG_ERR("pointer X report failed: %d", rc);
+			}
+		}
+		if (report[2] != 0 || report[3] != 0) {
+			rc = input_report_rel(dev, INPUT_REL_Y, (int16_t)le16(&report[2]), true,
+					      K_NO_WAIT);
+			if (rc != 0) {
+				LOG_ERR("pointer Y report failed: %d", rc);
+			}
 		}
 	}
-	if (report[2] != 0 || report[3] != 0) {
-		rc = input_report_rel(dev, INPUT_REL_Y, (int16_t)le16(&report[2]), true,
-				      K_NO_WAIT);
-		if (rc != 0) {
-			LOG_ERR("pointer Y report failed: %d", rc);
-		}
+
+	new_1f_taps = (gestures_1f & IQS9150_1F_TAP_MASK) & ~data->last_1f_taps;
+	new_2f_taps = (gestures_2f & IQS9150_2F_TAP_MASK) & ~data->last_2f_taps;
+	if (new_1f_taps != 0) {
+		report_tap_click(dev, INPUT_BTN_0);
+	} else if (new_2f_taps != 0) {
+		report_tap_click(dev, INPUT_BTN_1);
 	}
+	data->last_1f_taps = gestures_1f & IQS9150_1F_TAP_MASK;
+	data->last_2f_taps = gestures_2f & IQS9150_2F_TAP_MASK;
 }
 
 static void iqs9150_fail(struct iqs9150_data *data, const char *operation, int rc)
