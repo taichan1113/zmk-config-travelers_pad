@@ -60,4 +60,11 @@
         columns = <1>;
         events = <0>;
     };
+
+    /* Forward IQS9150 relative input events to ZMK's mouse HID endpoint.
+     * IQS9150 の相対移動イベントを ZMK のマウス HID へ転送する。 */
+    iqs9150_pointer_listener: iqs9150_pointer_listener {
+        compatible = "zmk,input-listener";
+        device = <&iqs9150>;
+    };
 };

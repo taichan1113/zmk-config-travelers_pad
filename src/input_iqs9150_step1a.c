@@ -13,6 +13,8 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
@@ -174,10 +176,26 @@ static void log_report(const struct device *dev)
 		return;
 	}
 
-	LOG_INF("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) abs1=(%u,%u) strength=%u area=%u",
+	LOG_DBG("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) abs1=(%u,%u) strength=%u area=%u",
 		le16(&report[12]), le16(&report[14]), le16(&report[14]) & 0x0f,
 		(int16_t)le16(&report[0]), (int16_t)le16(&report[2]), le16(&report[16]),
 		le16(&report[18]), le16(&report[20]), le16(&report[22]));
+
+	/* input-listener turns these relative events into ZMK mouse HID reports. */
+	if (report[0] != 0 || report[1] != 0) {
+		rc = input_report_rel(dev, INPUT_REL_X, (int16_t)le16(&report[0]),
+				      report[2] == 0 && report[3] == 0, K_NO_WAIT);
+		if (rc != 0) {
+			LOG_ERR("pointer X report failed: %d", rc);
+		}
+	}
+	if (report[2] != 0 || report[3] != 0) {
+		rc = input_report_rel(dev, INPUT_REL_Y, (int16_t)le16(&report[2]), true,
+				      K_NO_WAIT);
+		if (rc != 0) {
+			LOG_ERR("pointer Y report failed: %d", rc);
+		}
+	}
 }
 
 static void iqs9150_fail(struct iqs9150_data *data, const char *operation, int rc)

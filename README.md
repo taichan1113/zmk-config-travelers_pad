@@ -1,18 +1,18 @@
-# IQS9150EV02 / XIAO nRF52840 — Step 1A / Step 1B
+# IQS9150EV02 / XIAO nRF52840 — Step 1A / Step 1B / Step 1C
 
 ## 現在の状態 / Current status
 
 STEP1Aでは実機でI²C、RDY割込み、タッチ座標の生データ取得を確認済みです。STEP1Bは
 `IQS9150_init.h` のEV02設定を書き込み、ATI（自動調整）完了後にEvent Modeへ移行します。
-この段階でもマウス/HIDイベントは出力しません。
+STEP1Cは検証済みの相対移動を ZMK のマウスHIDへ送ります。スクロール、タップクリック、
+速度調整はまだ実装しません。
 
 Step 1A has verified I²C, RDY interrupts, and raw touch reports on hardware.
 Step 1B writes the EV02 settings from `IQS9150_init.h`, runs ATI, and enters
-Event Mode. It still does not emit mouse/HID events.
+Event Mode. Step 1C forwards verified relative motion to ZMK mouse HID. It
+does not yet implement scrolling, tap clicks, or speed tuning.
 
-This is a ZMK/Zephyr module for safe, read-only bring-up of an IQS9150EV02.
-It deliberately does **not** reset the IC, acknowledge a reset, write the GUI
-exported configuration, run ATI, or emit mouse/HID events.
+This is a ZMK/Zephyr module for IQS9150EV02 bring-up and basic pointer output.
 
 ## 配線とDTS / Wiring and DTS
 
@@ -32,6 +32,7 @@ Add this repository as a ZMK module (or put it under `config/`), then enable:
 
 ```
 CONFIG_IQS9150_STEP1A=y
+CONFIG_ZMK_POINTING=y
 CONFIG_LOG=y
 CONFIG_IQS9150_STEP1A_LOG_LEVEL_INF=y
 ```
@@ -40,7 +41,7 @@ For this repository, `build.yaml` already selects `seeeduino_xiao_ble` plus
 the `iqs9150_xiao` shield. Build it from the ZMK workspace with:
 
 ```
-west build -s zmk/app -d build/iqs9150-ev02-step1a -b seeeduino_xiao_ble \
+west build -s zmk/app -d build/iqs9150-ev02-step1c -b seeeduino_xiao_ble \
   -S zmk-usb-logging -- \
   -DSHIELD=iqs9150_xiao \
   -DZMK_CONFIG=$PWD/config \
@@ -53,10 +54,13 @@ ZMK USB functions. Open that port at 115200 baud to read the logs.
 USB CDCシリアルポートを115200 baudで開きます。STEP1Bでは、初期化の進捗・ATI完了・
 Event Modeへの移行がログに出力されます。
 
-Expected startup output includes `product=0x076a` followed by `waiting for
-RDY`. Each falling RDY edge queues work outside the ISR and logs relative XY,
-gesture XY, info flags, trackpad flags, finger count, and finger 1 absolute
-coordinates. No pointer events are emitted.
+Each active RDY edge queues work outside the ISR. In Step 1C, each non-zero
+relative X/Y report is sent through `zmk,input-listener` as a mouse HID report.
+At INFO log level, normal movement reports are intentionally silent.
+
+各RDYアクティブエッジは割込み外のワークを起動します。STEP1Cでは、ゼロでない相対X/Yを
+`zmk,input-listener` 経由でマウスHIDレポートに変換します。通常の移動ログはINFOレベルでは
+出力しません。
 
 ## STEP1B 動作確認 / STEP1B verification
 
@@ -78,6 +82,20 @@ the `iqs9150_xiao` shield and USB logging. After flashing, check the six log
 messages above in order. Do not touch the pad while ATI is running; keep it on
 a flat, non-conductive surface. Send the serial log if a `STEP1B ... failed`
 message appears or progress stops.
+
+## STEP1C ポインタ動作確認 / STEP1C pointer verification
+
+ファーム担当の確認済み事項：`ZMK_POINTING` と `zmk,input-listener` を有効化した
+クリーンビルドが成功しています。書込み後、USB接続時は画面上のカーソルが指の移動に追従する
+ことを確認してください。初期速度はEV02の相対値をそのまま使用します。速すぎる・遅すぎる、
+またはX/Y方向が逆の場合は、方向と体感を報告してください。次の調整で係数または軸反転を
+加えます。
+
+Firmware verification: a clean build succeeds with `ZMK_POINTING` and
+`zmk,input-listener` enabled. After flashing, verify that the USB-connected
+host cursor follows one-finger movement. The initial build uses the EV02
+relative values without scaling. Report speed and axis-direction preferences;
+the next tuning pass can add scaling or inversion.
 
 ## EV02 H-file analysis / H-file解析
 
@@ -105,12 +123,11 @@ are listed below; values are little-endian where a field has `_0`/`_1` bytes.
 | `0x14F0–0x15EB` | 252 | Virtual button/slider/wheel configuration |
 | `0x2000–0x2005` | 6 | Engineering configuration: `01 00 03 03 14 00` |
 
-System Control (`0x11BC`) is not blindly written: the driver uses
-read-modify-write to acknowledge reset and request ATI, as required by the
-datasheet. All other listed H-file blocks are written by STEP1B in chunks of
-at most 30 data bytes per RDY window. Event Mode is set only after ATI reports
-completion.
+System Control (`0x11BC`) is handled as control actions, not copied from the
+H-file: reset ACK is written as `0x0082`, and only Trackpad re-ATI is requested.
+All other listed H-file blocks are written by STEP1B in chunks of at most 30
+data bytes per RDY window. Event Mode is set only after ATI reports completion.
 
-System Control (`0x11BC`) はH-file値をそのまま書き込まず、データシートの指定どおり
-read-modify-writeでリセットACKとATI要求を行います。その他のH-fileブロックはRDYウィンドウ
-ごとに最大30データバイトずつ書き込み、ATI完了を確認してからEvent Modeを有効化します。
+System Control (`0x11BC`) はH-file値をそのまま書き込まず、制御操作として扱います。
+リセットACKは `0x0082`、ATIはTrackpadのみを要求します。その他のH-fileブロックはRDY
+ウィンドウごとに最大30データバイトずつ書き込み、ATI完了を確認してからEvent Modeを有効化します。
