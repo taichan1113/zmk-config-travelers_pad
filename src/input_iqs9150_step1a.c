@@ -255,22 +255,33 @@ static void iqs9150_work_handler(struct k_work *work)
 		return;
 
 	case IQS9150_WAIT_ATI:
+		/* The result flags describe the last completed ATI. Wait until the
+		 * command bit clears before evaluating them. */
+		rc = read_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "ATI command status read", rc);
+			return;
+		}
+		if (value[0] & IQS9150_SYSTEM_CONTROL_TP_REATI) {
+			k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
+			return;
+		}
+
 		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
 		if (rc != 0) {
-			iqs9150_fail(data, "ATI status read", rc);
+			iqs9150_fail(data, "ATI result read", rc);
 			return;
 		}
 		if (value[0] & IQS9150_INFO_TP_ATI_ERROR) {
+			LOG_ERR("STEP1B ATI completed with error; Info Flags=0x%02x%02x",
+				value[1], value[0]);
 			iqs9150_fail(data, "ATI (trackpad ATI error flag set)", -EIO);
 			return;
 		}
-		if (value[0] & IQS9150_INFO_TP_REATI_OCCURRED) {
-			data->state = IQS9150_ENABLE_EVENT_MODE;
-			LOG_INF("STEP1B ATI complete; enabling Event Mode");
-			k_work_schedule(&data->work, K_NO_WAIT);
-		} else {
-			k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
-		}
+
+		data->state = IQS9150_ENABLE_EVENT_MODE;
+		LOG_INF("STEP1B ATI complete; enabling Event Mode");
+		k_work_schedule(&data->work, K_NO_WAIT);
 		return;
 
 	case IQS9150_ENABLE_EVENT_MODE:
