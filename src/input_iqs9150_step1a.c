@@ -22,6 +22,7 @@
 #include <zephyr/sys/util.h>
 
 #include "iqs9150_ev02_init.h"
+#include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 
@@ -32,7 +33,7 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_CONFIG_SETTINGS_REG       0x11BE
 
 #define IQS9150_PRODUCT_NUMBER            0x076A
-#define IQS9150_REPORT_LEN                 28
+#define IQS9150_REPORT_LEN                 72
 #define IQS9150_WRITE_PAYLOAD_MAX          30
 #define IQS9150_ATI_POLL_INTERVAL_MS        20
 
@@ -49,14 +50,15 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
-#define IQS9150_REPORT_FINGER1_X_OFFSET     16
-#define IQS9150_REPORT_FINGER1_Y_OFFSET     18
-#define IQS9150_REPORT_FINGER2_X_OFFSET     24
-#define IQS9150_REPORT_FINGER2_Y_OFFSET     26
+#define IQS9150_REPORT_FINGER1_OFFSET       16
+#define IQS9150_REPORT_FINGER_STRIDE         8
+#define IQS9150_REPORT_FINGER_OFFSET(index) \
+	(IQS9150_REPORT_FINGER1_OFFSET + ((index) * IQS9150_REPORT_FINGER_STRIDE))
 
 #define IQS9150_TP_FINGER_COUNT_MASK       BIT_MASK(4)
 #define IQS9150_TP_FINGER1_CONFIDENCE      BIT(8)
 #define IQS9150_TP_FINGER2_CONFIDENCE      BIT(9)
+#define IQS9150_TP_FINGER_CONFIDENCE(index) BIT(8 + (index))
 
 #define IQS9150_1F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
 #define IQS9150_2F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
@@ -83,6 +85,7 @@ struct iqs9150_config {
 	struct i2c_dt_spec i2c;
 	struct gpio_dt_spec rdy_gpio;
 	bool two_finger_diagnostics;
+	bool multitouch_diagnostics;
 };
 
 struct iqs9150_data {
@@ -93,8 +96,15 @@ struct iqs9150_data {
 	uint8_t ack_attempts;
 	uint8_t report_error_count;
 	int64_t last_two_finger_log_ms;
+	int64_t last_multitouch_log_ms;
 	size_t block_index;
 	size_t block_offset;
+};
+
+struct iqs9150_contact {
+	uint16_t x;
+	uint16_t y;
+	bool valid;
 };
 
 static const uint8_t ev02_115c[] = {0};
@@ -193,7 +203,14 @@ static void report_reset_frame(const struct device *dev)
 	/* ABS_RZ is an internal Travelers Pad frame marker.  It lets function
 	 * modules drop an in-progress touch without turning a sensor reset into a
 	 * synthetic click. */
-	int rc = input_report_abs(dev, INPUT_ABS_RZ, 1, false, K_NO_WAIT);
+	int rc;
+
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		rc = input_report_abs(dev, INPUT_ABS_MT_SLOT, index, false, K_NO_WAIT);
+		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID, -1, false,
+				       K_NO_WAIT);
+	}
+	rc |= input_report_abs(dev, INPUT_ABS_RZ, 1, false, K_NO_WAIT);
 
 	rc |= input_report_abs(dev, INPUT_ABS_Z, 0, false, K_NO_WAIT);
 	rc |= input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_NO_WAIT);
@@ -222,12 +239,9 @@ static void report_contact_frame(const struct device *dev)
 	uint8_t gestures_1f;
 	uint8_t gestures_2f;
 	uint8_t fingers;
+	uint8_t reported_fingers;
 	uint16_t trackpad_flags;
-	uint16_t finger1_x;
-	uint16_t finger1_y;
-	uint16_t finger2_x;
-	uint16_t finger2_y;
-	bool finger2_valid;
+	struct iqs9150_contact contacts[TRAVELERS_PAD_MAX_CONTACTS];
 	const struct iqs9150_config *cfg = dev->config;
 
 	if (rc != 0) {
@@ -245,18 +259,22 @@ static void report_contact_frame(const struct device *dev)
 	}
 
 	trackpad_flags = le16(&report[14]);
-	fingers = trackpad_flags & IQS9150_TP_FINGER_COUNT_MASK;
-	finger1_x = le16(&report[IQS9150_REPORT_FINGER1_X_OFFSET]);
-	finger1_y = le16(&report[IQS9150_REPORT_FINGER1_Y_OFFSET]);
-	finger2_x = le16(&report[IQS9150_REPORT_FINGER2_X_OFFSET]);
-	finger2_y = le16(&report[IQS9150_REPORT_FINGER2_Y_OFFSET]);
-	finger2_valid = fingers >= 2 && (trackpad_flags & IQS9150_TP_FINGER2_CONFIDENCE) &&
-			finger2_x != UINT16_MAX && finger2_y != UINT16_MAX;
+	reported_fingers = trackpad_flags & IQS9150_TP_FINGER_COUNT_MASK;
+	fingers = MIN(reported_fingers, (uint8_t)TRAVELERS_PAD_MAX_CONTACTS);
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		uint16_t offset = IQS9150_REPORT_FINGER_OFFSET(index);
 
-	LOG_DBG("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) f1=(%u,%u) f2=(%u,%u) f2valid=%d",
+		contacts[index].x = le16(&report[offset]);
+		contacts[index].y = le16(&report[offset + 2]);
+		contacts[index].valid = index < fingers &&
+			(trackpad_flags & IQS9150_TP_FINGER_CONFIDENCE(index)) &&
+			contacts[index].x != UINT16_MAX && contacts[index].y != UINT16_MAX;
+	}
+
+	LOG_DBG("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) f1=(%u,%u,%d) f2=(%u,%u,%d)",
 		le16(&report[12]), trackpad_flags, fingers, (int16_t)le16(&report[0]),
-		(int16_t)le16(&report[2]), finger1_x, finger1_y, finger2_x, finger2_y,
-		finger2_valid);
+		(int16_t)le16(&report[2]), contacts[0].x, contacts[0].y, contacts[0].valid,
+		contacts[1].x, contacts[1].y, contacts[1].valid);
 
 	gestures_1f = report[IQS9150_REPORT_1F_GESTURE_OFFSET];
 	gestures_2f = report[IQS9150_REPORT_2F_GESTURE_OFFSET];
@@ -268,20 +286,46 @@ static void report_contact_frame(const struct device *dev)
 	if (cfg->two_finger_diagnostics && fingers >= 2 &&
 	    k_uptime_get() - data->last_two_finger_log_ms >= 100) {
 		LOG_INF("2F frame: flags=0x%04x f1=(%u,%u,%d) f2=(%u,%u,%d)",
-			trackpad_flags, finger1_x, finger1_y,
-			!!(trackpad_flags & IQS9150_TP_FINGER1_CONFIDENCE), finger2_x, finger2_y,
-			finger2_valid);
+			trackpad_flags, contacts[0].x, contacts[0].y, contacts[0].valid,
+			contacts[1].x, contacts[1].y, contacts[1].valid);
 		data->last_two_finger_log_ms = k_uptime_get();
 	}
+	if (cfg->multitouch_diagnostics && fingers >= 3 &&
+	    k_uptime_get() - data->last_multitouch_log_ms >= 100) {
+		LOG_INF("MT frame: count=%u flags=0x%04x f1=(%u,%u,%d) f2=(%u,%u,%d) f3=(%u,%u,%d) f4=(%u,%u,%d) f5=(%u,%u,%d)",
+			fingers, trackpad_flags, contacts[0].x, contacts[0].y, contacts[0].valid,
+			contacts[1].x, contacts[1].y, contacts[1].valid, contacts[2].x,
+			contacts[2].y, contacts[2].valid, contacts[3].x, contacts[3].y,
+			contacts[3].valid, contacts[4].x, contacts[4].y, contacts[4].valid);
+		if (fingers >= 6) {
+			LOG_INF("MT frame: f6=(%u,%u,%d) f7=(%u,%u,%d)", contacts[5].x,
+				contacts[5].y, contacts[5].valid, contacts[6].x, contacts[6].y,
+				contacts[6].valid);
+		}
+		data->last_multitouch_log_ms = k_uptime_get();
+	}
 
-	/* Publish a device-neutral two-contact frame. ABS_X/Y is Finger 1;
-	 * ABS_RX/RY is Finger 2; ABS_RUDDER is Finger 2 validity; and ABS_Z is
-	 * the contact count. Existing pointer functions consume only Finger 1. */
-	rc = input_report_abs(dev, INPUT_ABS_X, finger1_x, false, K_NO_WAIT);
-	rc |= input_report_abs(dev, INPUT_ABS_Y, finger1_y, false, K_NO_WAIT);
-	rc |= input_report_abs(dev, INPUT_ABS_RX, finger2_x, false, K_NO_WAIT);
-	rc |= input_report_abs(dev, INPUT_ABS_RY, finger2_y, false, K_NO_WAIT);
-	rc |= input_report_abs(dev, INPUT_ABS_RUDDER, finger2_valid, false, K_NO_WAIT);
+	/* Publish every contact in a slot frame for gesture modules. The legacy
+	 * fields immediately below remain unchanged for the existing pointer
+	 * function: two-finger scroll uses only the representative Finger 1 delta,
+	 * while pinch/rotation modules consume the slot geometry. */
+	rc = 0;
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		rc |= input_report_abs(dev, INPUT_ABS_MT_SLOT, index, false, K_NO_WAIT);
+		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID,
+				       contacts[index].valid ? index : -1, false, K_NO_WAIT);
+		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_X, contacts[index].x,
+				       false, K_NO_WAIT);
+		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_Y, contacts[index].y,
+				       false, K_NO_WAIT);
+	}
+	/* Legacy compatibility frame: ABS_X/Y is Finger 1; ABS_RX/RY is Finger 2;
+	 * ABS_RUDDER is Finger 2 validity; ABS_Z is the contact count. */
+	rc |= input_report_abs(dev, INPUT_ABS_X, contacts[0].x, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_Y, contacts[0].y, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RX, contacts[1].x, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RY, contacts[1].y, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RUDDER, contacts[1].valid, false, K_NO_WAIT);
 	rc |= input_report_abs(dev, INPUT_ABS_Z, fingers, false, K_NO_WAIT);
 	rc |= input_report_key(dev, INPUT_BTN_TOUCH, fingers != 0, true, K_NO_WAIT);
 	if (rc != 0) {
@@ -522,6 +566,7 @@ static int iqs9150_init(const struct device *dev)
 		.i2c = I2C_DT_SPEC_INST_GET(inst), \
 		.rdy_gpio = GPIO_DT_SPEC_INST_GET(inst, rdy_gpios), \
 		.two_finger_diagnostics = DT_INST_PROP_OR(inst, two_finger_diagnostics, false), \
+		.multitouch_diagnostics = DT_INST_PROP_OR(inst, multitouch_diagnostics, false), \
 	}; \
 	DEVICE_DT_INST_DEFINE(inst, iqs9150_init, NULL, \
 			      &iqs9150_data_##inst, &iqs9150_config_##inst, \

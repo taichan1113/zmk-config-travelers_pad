@@ -20,12 +20,12 @@ This is a ZMK/Zephyr module for IQS9150EV02 bring-up and basic pointer output.
 ## モジュール構成 / Module architecture
 
 センサ固有の処理と操作ポリシーを分離しています。`driver` はIQS9150の初期化、RDY、ATI、
-Event Mode、および正規化した接触フレーム（絶対X/Y、接触本数）だけを担当します。
+Event Mode、および正規化した接触フレーム（最大7点の絶対座標、接触本数）だけを担当します。
 クリック、スクロール、加速、ジェスチャーをここへ戻さないでください。
 
 Sensor-specific work and interaction policy are separate. The `driver` owns
 IQS9150 initialization, RDY, ATI, Event Mode, and normalized contact frames
-(absolute X/Y and finger count) only. Do not put click,
+(up to seven absolute contact coordinates and finger count) only. Do not put click,
 scroll, acceleration, or gesture policy back into the driver.
 
 | 内部モジュール / Internal module | 役割 / Responsibility | 状態 / Status |
@@ -35,18 +35,32 @@ scroll, acceleration, or gesture policy back into the driver.
 | `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
-## 2点独立座標 / Independent two-contact coordinates
+## マルチタッチ座標 / Multi-touch coordinates
 
 IQS9150ドライバは、Finger 1を `ABS_X/Y`、Finger 2を `ABS_RX/RY`、接触本数を
 `ABS_Z`、Finger 2座標の有効性を `ABS_RUDDER` として、同じ入力フレームで出力します。
 既存のポインタ機能はFinger 1だけを使用するため、この追加だけでポインタ動作は変わりません。
 将来のピンチ・正確な2本指スクロールなどの機能モジュールは、この2点座標を利用します。
 
-The IQS9150 driver emits Finger 1 as `ABS_X/Y`, Finger 2 as `ABS_RX/RY`,
-contact count as `ABS_Z`, and Finger 2 validity as `ABS_RUDDER` in one input
-frame. Existing pointer handling consumes only Finger 1, so this extension
-does not change pointer behavior. Future pinch and precise two-finger modules
-will consume both coordinates.
+IQS9150ドライバは最大7点を、スロット付きの内部マルチタッチフレームとして公開します。
+各スロットは追跡ID、X、Y、有効性を含み、同じ指はフレーム間で同じスロットに維持されます。
+既存互換のため、Finger 1は `ABS_X/Y`、Finger 2は `ABS_RX/RY`、接触本数は `ABS_Z`、
+Finger 2有効性は `ABS_RUDDER` としても同時出力します。
+
+The IQS9150 driver publishes up to seven contacts as an internal slot-based
+multi-touch frame. Every slot contains tracking ID, X, Y, and validity, and a
+finger remains in the same slot across frames. For existing compatibility it
+also emits Finger 1 as `ABS_X/Y`, Finger 2 as `ABS_RX/RY`, contact count as
+`ABS_Z`, and Finger 2 validity as `ABS_RUDDER`.
+
+二本指スクロールは既存互換フレームの代表座標（Finger 1）と接触数だけを使います。一方、
+ピンチ・回転・二本指の方向整合判定は両方のスロット座標を必要とします。将来のジェスチャー
+ルーターはこの二経路を排他的に振り分け、ピンチ／回転候補をスクロールへ流しません。
+
+Two-finger scrolling uses only the representative legacy coordinate (Finger 1)
+and contact count. Pinch, rotation, and two-finger direction-coherence checks
+require both slot coordinates. A future gesture router will route these paths
+exclusively, so pinch/rotation candidates do not become scroll output.
 
 実機検証時はoverlayの `two-finger-diagnostics` を有効にします。2本指で静止・平行移動・
 指間を広げる／狭める操作を行い、100 msごとの `2F frame` ログで `f1=(x,y,1)` と
@@ -57,6 +71,18 @@ For hardware validation, enable `two-finger-diagnostics` in the overlay. Hold,
 move, spread, and pinch two fingers while checking the throttled `2F frame`
 logs. `f1=(x,y,1)` and `f2=(x,y,1)` must change independently. A trailing
 `0` on `f2` means that frame's second contact is not trusted.
+
+3〜5本指の実機検証では `multitouch-diagnostics` を有効にし、`MT frame: count=3`、
+`count=4`、`count=5` の各ログで、使用中の `f1`〜`fN` がすべて末尾 `1`、かつ別座標で
+あることを確認します。2本指の平行移動では二点間距離がほぼ一定、ピンチでは距離が変化、
+回転では二点ベクトルの向きが変化することを記録します。これらは次段階のルーター検証条件です。
+
+For three- to five-finger hardware validation, enable `multitouch-diagnostics`.
+For each `MT frame: count=3`, `count=4`, and `count=5`, verify every active
+`f1` through `fN` ends in `1` and occupies a distinct position. Record that
+parallel two-finger motion preserves distance, pinch changes distance, and
+rotation changes the two-finger vector angle. These are the acceptance checks
+for the next router stage.
 
 格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
 設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の
@@ -243,7 +269,7 @@ are listed below; values are little-endian where a field has `_0`/`_1` bytes.
 | `0x11CC–0x11D3` | 8 | TP thresholds 26/20; ALP 8/8; debounce 2/2; snap 50/50 |
 | `0x11D4–0x11D7` | 4 | ALP count/LTA betas `46 04 b4 64` |
 | `0x11D8–0x11E1` | 10 | Hardware: `28 02 02 10 07 07 00 44 40 4b` |
-| `0x11E2–0x11F5` | 20 | 26 Rx, 18 Tx, 3 fingers; X/Y 2000/1213; filters, trims 20/20 |
+| `0x11E2–0x11F5` | 20 | 26 Rx, 18 Tx, max. 7 fingers; X/Y 2000/1213; filters, trims 20/20 |
 | `0x11F6–0x1217` | 34 | Gesture enable and tap/swipe/scroll/zoom/palm parameters |
 | `0x1218–0x1245` | 46 | Rx/Tx map: 44 assignments plus two open bytes |
 | `0x1246–0x129D` | 88 | All channel-disable bytes zero |

@@ -1,4 +1,5 @@
 zephyr_library()
+zephyr_include_directories(include)
 zephyr_library_sources_ifdef(CONFIG_IQS9150_STEP1A src/input_iqs9150_step1a.c)
 zephyr_library_sources_ifdef(CONFIG_TRAVELERS_PAD_IQS9150_POINTER src/function/iqs9150_pointer.c)
 zephyr_library_sources_ifdef(CONFIG_TRAVELERS_PAD_IQS9150_GRID_KSCAN src/function/iqs9150_grid_kscan.c)

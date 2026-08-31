@@ -36,6 +36,9 @@
         /* Temporary validation aid: report independent two-finger coordinates
          * at INFO level. 実機検証用に2点座標をINFOログへ出力する。 */
         two-finger-diagnostics;
+        /* Temporary validation aid: report every valid 3--7 finger contact.
+         * 実機検証用に3--7点の有効座標をINFOログへ出力する。 */
+        multitouch-diagnostics;
     };
 };
 

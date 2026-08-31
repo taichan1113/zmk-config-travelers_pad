@@ -17,3 +17,8 @@ properties:
     description: |
       Emit throttled INFO logs of independent Finger 1/Finger 2 coordinates
       while two or more contacts are present. Intended for hardware validation.
+  multitouch-diagnostics:
+    type: boolean
+    description: |
+      Emit throttled INFO logs of all valid contacts while three or more
+      contacts are present. Intended for multi-finger hardware validation.
