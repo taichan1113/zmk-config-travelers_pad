@@ -39,6 +39,7 @@ struct grid_data {
 	uint8_t max_fingers;
 	int64_t started_ms;
 	bool moved;
+	bool reset_frame;
 };
 
 static int absolute_int(int value) {
@@ -110,6 +111,14 @@ static void grid_process_frame(const struct device *dev) {
 	struct grid_data *data = dev->data;
 	int64_t now = k_uptime_get();
 
+	if (data->reset_frame) {
+		data->fingers = 0;
+		data->max_fingers = 0;
+		data->moved = false;
+		data->reset_frame = false;
+		return;
+	}
+
 	if (data->fingers != 0 && data->max_fingers == 0) {
 		data->started_ms = now;
 		data->start_x = data->x;
@@ -140,6 +149,8 @@ static void grid_handle_input(const struct device *dev, struct input_event *evt)
 			data->y = evt->value;
 		} else if (evt->code == INPUT_ABS_Z) {
 			data->fingers = evt->value;
+		} else if (evt->code == INPUT_ABS_RZ && evt->value) {
+			data->reset_frame = true;
 		}
 	}
 	if (evt->sync) {

@@ -38,6 +38,7 @@ struct pointer_data {
 	bool have_position;
 	bool touch_moved;
 	bool scroll_session;
+	bool reset_frame;
 };
 
 static int16_t scale_scroll_delta(int16_t delta, uint16_t divisor) {
@@ -105,6 +106,18 @@ static void process_frame(const struct device *dev) {
 	int16_t dy = 0;
 	int64_t now = k_uptime_get();
 
+	if (data->reset_frame) {
+		data->fingers = 0;
+		data->previous_fingers = 0;
+		data->max_fingers = 0;
+		data->have_position = false;
+		data->touch_moved = false;
+		data->scroll_session = false;
+		data->reset_frame = false;
+		LOG_WRN("input session cancelled after sensor reset");
+		return;
+	}
+
 	if (data->fingers != 0 && data->previous_fingers == 0) {
 		data->touch_started_ms = now;
 		data->touch_start_x = data->x;
@@ -165,6 +178,8 @@ static void pointer_handle_input(const struct device *dev, struct input_event *e
 			data->y = evt->value;
 		} else if (evt->code == INPUT_ABS_Z) {
 			data->fingers = evt->value;
+		} else if (evt->code == INPUT_ABS_RZ && evt->value) {
+			data->reset_frame = true;
 		}
 		break;
 	default:

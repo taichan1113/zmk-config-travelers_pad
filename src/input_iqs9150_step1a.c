@@ -38,11 +38,13 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_SYSTEM_CONTROL_ACK_RESET  BIT(7)
 #define IQS9150_SYSTEM_CONTROL_ALP_REATI  BIT(6)
 #define IQS9150_SYSTEM_CONTROL_TP_REATI   BIT(5)
+#define IQS9150_SYSTEM_CONTROL_SW_RESET    BIT(1)
 
 #define IQS9150_INFO_TP_ATI_ERROR          BIT(3)
 #define IQS9150_INFO_TP_REATI_OCCURRED     BIT(4)
 #define IQS9150_INFO_SHOW_RESET             BIT(7)
 #define IQS9150_ACK_RETRY_MAX               3
+#define IQS9150_REPORT_ERROR_RETRY_MAX      3
 
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
@@ -63,6 +65,8 @@ enum iqs9150_state {
 	IQS9150_WAIT_ATI,
 	IQS9150_ENABLE_EVENT_MODE,
 	IQS9150_RUNNING,
+	IQS9150_RECOVER_RESET,
+	IQS9150_RECOVER_WAIT_RESET,
 	IQS9150_ERROR,
 };
 
@@ -77,6 +81,7 @@ struct iqs9150_data {
 	struct k_work_delayable work;
 	enum iqs9150_state state;
 	uint8_t ack_attempts;
+	uint8_t report_error_count;
 	size_t block_index;
 	size_t block_offset;
 };
@@ -172,8 +177,35 @@ static uint16_t le16(const uint8_t *data)
 	return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
+static void report_reset_frame(const struct device *dev)
+{
+	/* ABS_RZ is an internal Travelers Pad frame marker.  It lets function
+	 * modules drop an in-progress touch without turning a sensor reset into a
+	 * synthetic click. */
+	int rc = input_report_abs(dev, INPUT_ABS_RZ, 1, false, K_NO_WAIT);
+
+	rc |= input_report_abs(dev, INPUT_ABS_Z, 0, false, K_NO_WAIT);
+	rc |= input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_NO_WAIT);
+	if (rc != 0) {
+		LOG_ERR("reset frame report failed: %d", rc);
+	}
+}
+
+static void iqs9150_start_runtime_recovery(struct iqs9150_data *data, const char *reason,
+					bool sensor_already_reset)
+{
+	LOG_WRN("runtime recovery requested: %s", reason);
+	report_reset_frame(data->dev);
+	data->ack_attempts = 0;
+	data->report_error_count = 0;
+	data->block_index = 0;
+	data->block_offset = 0;
+	data->state = sensor_already_reset ? IQS9150_ACK_RESET : IQS9150_RECOVER_RESET;
+}
+
 static void report_contact_frame(const struct device *dev)
 {
+	struct iqs9150_data *data = dev->data;
 	uint8_t report[IQS9150_REPORT_LEN];
 	int rc = read_reg(dev, IQS9150_RELATIVE_X_REG, report, sizeof(report));
 	uint8_t gestures_1f;
@@ -182,6 +214,15 @@ static void report_contact_frame(const struct device *dev)
 
 	if (rc != 0) {
 		LOG_ERR("report read failed: %d", rc);
+		data->report_error_count++;
+		if (data->report_error_count >= IQS9150_REPORT_ERROR_RETRY_MAX) {
+			iqs9150_start_runtime_recovery(data, "consecutive report read failures", false);
+		}
+		return;
+	}
+	data->report_error_count = 0;
+	if (le16(&report[12]) & IQS9150_INFO_SHOW_RESET) {
+		iqs9150_start_runtime_recovery(data, "sensor Show Reset flag", true);
 		return;
 	}
 
@@ -341,6 +382,35 @@ static void iqs9150_work_handler(struct k_work *work)
 
 	case IQS9150_RUNNING:
 		report_contact_frame(dev);
+		return;
+
+	case IQS9150_RECOVER_RESET:
+		/* Reset only after a failed report sequence. A sensor-originated reset
+		 * already has Show Reset asserted, so it can go straight to ACK on the
+		 * following RDY window. */
+		value[0] = 0;
+		value[1] = IQS9150_SYSTEM_CONTROL_SW_RESET;
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "runtime software reset", rc);
+			return;
+		}
+		data->state = IQS9150_RECOVER_WAIT_RESET;
+		LOG_INF("runtime recovery: software reset requested");
+		return;
+
+	case IQS9150_RECOVER_WAIT_RESET:
+		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "runtime reset verification", rc);
+			return;
+		}
+		if ((value[0] & IQS9150_INFO_SHOW_RESET) == 0) {
+			LOG_WRN("runtime recovery waiting for Show Reset");
+			return;
+		}
+		data->state = IQS9150_ACK_RESET;
+		LOG_INF("runtime recovery: Show Reset observed; acknowledging reset");
 		return;
 
 	case IQS9150_ERROR:

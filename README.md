@@ -164,6 +164,30 @@ three-finger gestures, swipes, and pinch are outside this build's scope.
 Tap press and release are sent in separate synchronized HID reports so the host
 observes the press before the release.
 
+## 実行中の復帰性 / Runtime recovery
+
+実行中のIQS9150 `Show Reset` フラグを検出した場合、ドライバは進行中の接触セッションを
+明示的に取消し、リセットACK、EV02設定書込み、ATI、Event Modeの順で復帰します。取消し用の
+内部フレームを機能モジュールへ渡すため、リセット直前の短い接触が左クリックや格子タップへ
+誤変換されません。連続3回のレポートI²C読出し失敗も、ソフトウェアリセットを起点に同じ復帰
+経路へ入ります。
+
+When the running IQS9150 reports `Show Reset`, the driver explicitly cancels
+the active contact session, then recovers through reset acknowledgement, EV02
+configuration, ATI, and Event Mode. The internal cancel frame prevents a
+short pre-reset contact from becoming an unintended click or grid tap. Three
+consecutive I²C report-read failures enter the same recovery path after a
+software reset request.
+
+確認時は通常のポインタ・スクロール・タップに加え、ログに `runtime recovery requested` が
+出た場合に続いて `STEP1B complete: Event Mode active` まで到達することを確認してください。
+復帰中は接触を解除し、ATI完了までパッドに触れないでください。
+
+For verification, test normal pointer, scrolling, and taps. If the log emits
+`runtime recovery requested`, it should subsequently reach
+`STEP1B complete: Event Mode active`. Release the pad during recovery and do
+not touch it until ATI completes.
+
 ## UF2書込み後の再起動 / Restart after UF2 update
 
 UF2のコピー後にUSBを抜き差ししないと動作しない場合は、まずUSBを接続したままXIAOのRESETを
