@@ -46,3 +46,11 @@ config TRAVELERS_PAD_IQS9150_GRID_KSCAN
       ordinary keymap.
 
 endmenu
+
+config TRAVELERS_PAD_XIAO_BOOT_PROBE
+    bool "XIAO USB boot diagnostic"
+    default n
+    depends on ZMK_USB
+    help
+      Diagnostic-only startup indicator for distinguishing a missing USB
+      enumeration from a failed transition out of the UF2 bootloader.
