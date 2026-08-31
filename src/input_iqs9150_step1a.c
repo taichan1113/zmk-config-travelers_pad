@@ -30,6 +30,7 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_PRODUCT_NUMBER            0x076A
 #define IQS9150_REPORT_LEN                 24
 #define IQS9150_WRITE_PAYLOAD_MAX          30
+#define IQS9150_ATI_POLL_INTERVAL_MS        20
 
 #define IQS9150_SYSTEM_CONTROL_ACK_RESET  BIT(7)
 #define IQS9150_SYSTEM_CONTROL_ALP_REATI  BIT(6)
@@ -62,7 +63,7 @@ struct iqs9150_config {
 struct iqs9150_data {
 	const struct device *dev;
 	struct gpio_callback rdy_callback;
-	struct k_work work;
+	struct k_work_delayable work;
 	enum iqs9150_state state;
 	size_t block_index;
 	size_t block_offset;
@@ -183,7 +184,8 @@ static void iqs9150_fail(struct iqs9150_data *data, const char *operation, int r
 
 static void iqs9150_work_handler(struct k_work *work)
 {
-	struct iqs9150_data *data = CONTAINER_OF(work, struct iqs9150_data, work);
+	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
+	struct iqs9150_data *data = CONTAINER_OF(delayable, struct iqs9150_data, work);
 	const struct device *dev = data->dev;
 	uint8_t value[4];
 	int rc;
@@ -248,6 +250,8 @@ static void iqs9150_work_handler(struct k_work *work)
 		}
 		data->state = IQS9150_WAIT_ATI;
 		LOG_INF("STEP1B ATI requested; waiting for completion");
+		/* ATI may hold RDY low rather than create a new falling edge. */
+		k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
 		return;
 
 	case IQS9150_WAIT_ATI:
@@ -263,6 +267,9 @@ static void iqs9150_work_handler(struct k_work *work)
 		if (value[0] & IQS9150_INFO_TP_REATI_OCCURRED) {
 			data->state = IQS9150_ENABLE_EVENT_MODE;
 			LOG_INF("STEP1B ATI complete; enabling Event Mode");
+			k_work_schedule(&data->work, K_NO_WAIT);
+		} else {
+			k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
 		}
 		return;
 
@@ -296,7 +303,7 @@ static void iqs9150_rdy_callback(const struct device *port, struct gpio_callback
 
 	ARG_UNUSED(port);
 	ARG_UNUSED(pins);
-	k_work_submit(&data->work);
+	k_work_schedule(&data->work, K_NO_WAIT);
 }
 
 static int iqs9150_init(const struct device *dev)
@@ -329,7 +336,7 @@ static int iqs9150_init(const struct device *dev)
 
 	data->dev = dev;
 	data->state = IQS9150_ACK_RESET;
-	k_work_init(&data->work, iqs9150_work_handler);
+	k_work_init_delayable(&data->work, iqs9150_work_handler);
 	gpio_init_callback(&data->rdy_callback, iqs9150_rdy_callback, BIT(cfg->rdy_gpio.pin));
 	rc = gpio_add_callback(cfg->rdy_gpio.port, &data->rdy_callback);
 	if (rc != 0) {
@@ -344,7 +351,7 @@ static int iqs9150_init(const struct device *dev)
 
 	LOG_INF("IQS9150 product 0x%04x found at I2C 0x%02x", le16(product), cfg->i2c.addr);
 	if (gpio_pin_get_dt(&cfg->rdy_gpio) == 0) {
-		k_work_submit(&data->work);
+		k_work_schedule(&data->work, K_NO_WAIT);
 	}
 	return 0;
 }
