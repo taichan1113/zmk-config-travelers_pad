@@ -117,6 +117,9 @@ the next tuning pass can add scaling or inversion.
 場合、またはスクロールの向き・速度が合わない場合は、操作内容と結果を報告してください。
 中クリック、3本指、スワイプ、ピンチはこの版の対象外です。
 
+タップの押下と解放は別々のHID同期レポートとして送信します。これにより、ホストが押下を観測
+する前に解放状態へ戻ることを防ぎます。
+
 Firmware verification: a clean build succeeds with two-finger gesture values
 mapped to ZMK vertical/horizontal wheel HID and rising tap flags mapped to
 clicks. The tuned build uses a scroll-start distance of 8, reduces wheel output
@@ -126,6 +129,9 @@ contact and 75 maximum movement; ASIC tap flags are retained for diagnostic
 logs. After flashing, verify the four items above. Report
 unintended repeated clicks or scroll direction/speed issues. Middle click,
 three-finger gestures, swipes, and pinch are outside this build's scope.
+
+Tap press and release are sent in separate synchronized HID reports so the host
+observes the press before the release.
 
 ## UF2書込み後の再起動 / Restart after UF2 update
 

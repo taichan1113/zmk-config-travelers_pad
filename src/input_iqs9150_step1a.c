@@ -187,7 +187,10 @@ static uint16_t le16(const uint8_t *data)
 
 static void report_tap_click(const struct device *dev, uint16_t button)
 {
-	int rc = input_report_key(dev, button, 1, false, K_NO_WAIT);
+	/* Each state must be synchronized separately.  Combining press and release
+	 * in one input frame leaves the final HID report released, so the host never
+	 * observes a click. */
+	int rc = input_report_key(dev, button, 1, true, K_NO_WAIT);
 
 	if (rc == 0) {
 		rc = input_report_key(dev, button, 0, true, K_NO_WAIT);
