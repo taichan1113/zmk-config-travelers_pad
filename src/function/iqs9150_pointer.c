@@ -37,6 +37,7 @@ struct pointer_data {
 	int64_t touch_started_ms;
 	bool have_position;
 	bool touch_moved;
+	bool scroll_session;
 };
 
 static int16_t scale_scroll_delta(int16_t delta, uint16_t divisor) {
@@ -114,6 +115,10 @@ static void process_frame(const struct device *dev) {
 
 	if (data->fingers != 0) {
 		data->max_fingers = MAX(data->max_fingers, data->fingers);
+		/* IQS9150 can briefly report one contact while two fingers remain on
+		 * the surface. Once a two-finger session starts, never reinterpret an
+		 * intermediate frame as pointer motion; only all-fingers-up ends it. */
+		data->scroll_session = data->scroll_session || data->fingers >= 2;
 		if (absolute_int((int)data->x - (int)data->touch_start_x) > cfg->tap_max_move ||
 		    absolute_int((int)data->y - (int)data->touch_start_y) > cfg->tap_max_move) {
 			data->touch_moved = true;
@@ -122,7 +127,7 @@ static void process_frame(const struct device *dev) {
 		if (data->have_position && data->previous_fingers != 0) {
 			dx = (int16_t)((int)data->x - (int)data->previous_x);
 			dy = (int16_t)((int)data->y - (int)data->previous_y);
-			if (data->fingers >= 2) {
+			if (data->scroll_session) {
 				report_scroll(dev, cfg, dx, dy);
 			} else {
 				report_motion(dev, dx, dy);
@@ -143,6 +148,7 @@ static void process_frame(const struct device *dev) {
 		}
 		data->have_position = false;
 		data->max_fingers = 0;
+		data->scroll_session = false;
 	}
 
 	data->previous_fingers = data->fingers;
