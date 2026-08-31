@@ -18,6 +18,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include <travelers_pad/tap_drag.h>
+
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
 enum router_state {
@@ -27,6 +29,7 @@ enum router_state {
 	ROUTER_SCROLL_TWO,
 	ROUTER_CLAIM_GEOMETRY,
 	ROUTER_CLAIM_MULTIFINGER,
+	ROUTER_TAP_DRAG,
 };
 
 struct router_config {
@@ -129,6 +132,29 @@ static void router_process_frame(const struct device *dev)
 	uint32_t distance_delta;
 	uint32_t rotation_cross;
 	uint32_t primary_move;
+
+	/* The tap/drag function owns movement after a confirmed double-tap hold.
+	 * It emits relative movement with the button held, so never reinterpret the
+	 * same raw frames as pointer motion or two-finger scrolling here. */
+	if (travelers_pad_tap_drag_is_tracking()) {
+		if (data->state != ROUTER_TAP_DRAG) {
+			router_cancel_pointer(dev);
+			data->state = ROUTER_TAP_DRAG;
+			LOG_INF("tap/drag owns %uF contact stream", data->fingers);
+		}
+		if (data->fingers == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+		}
+		return;
+	}
+	if (data->state == ROUTER_TAP_DRAG) {
+		if (data->fingers == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+		}
+		return;
+	}
 
 	if (data->sensor_reset) {
 		router_cancel_pointer(dev);

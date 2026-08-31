@@ -1,4 +1,4 @@
-description: Travelers Pad IQS9150 pointer, scroll, and tap function
+description: Travelers Pad IQS9150 pointer and scroll function
 
 compatible: "zmk,travelers-pad-iqs9150-pointer"
 
@@ -13,11 +13,3 @@ properties:
     type: int
     default: 4
     description: Divide two-finger coordinate deltas before wheel output
-  tap-max-ms:
-    type: int
-    default: 350
-    description: Maximum contact duration for a tap
-  tap-max-move:
-    type: int
-    default: 75
-    description: Maximum absolute coordinate movement for a tap

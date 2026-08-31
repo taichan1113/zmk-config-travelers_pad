@@ -31,8 +31,9 @@ scroll, acceleration, or gesture policy back into the driver.
 | 内部モジュール / Internal module | 役割 / Responsibility | 状態 / Status |
 | --- | --- | --- |
 | `driver` (`input_iqs9150_step1a.c`) | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
-| `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール、1/2本指タップ / pointer, scroll, taps | 有効 / enabled |
+| `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール / pointer and scroll | 有効 / enabled |
 | `function/iqs9150_multifinger_router.c` | 多指操作の排他判定 / exclusive multi-finger routing | 有効 / enabled |
+| `function/iqs9150_tap_drag.c` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
@@ -119,6 +120,37 @@ logs them but does not yet bind them to a ZMK action.
 | 2本指平行移動 / parallel two-finger move | `2F route=scroll committed` | スクロールのみ / scroll only |
 | ピンチまたは回転 / pinch or rotation | `2F route=geometry claimed` | スクロールなし / no scroll |
 | 3〜5本指移動 / three-to-five-finger move | `3F`〜`5F route=multifinger claimed` と終了時の方向 / claim plus direction on release | ポインタ・スクロールなし / no pointer or scroll |
+
+## タップとダブルタップ・移動開始ドラッグ / Tap and double-tap-move drag
+
+`iqs9150_tap_drag` はポインタ／スクロールとは独立して生の接触フレームを監視する。
+1本指は左、2本指は右、3本指は中クリックに対応する。単発タップは、二回目の
+タップを判定できるよう `double-tap-max-gap-ms` の間だけ保留する。近接した位置で
+同じ本数の二回目タップが始まり、`drag-start-move` を超えて動かすと該当ボタンを
+即座に押下する。以後の移動はドラッグ、指を離すとドロップとなる。
+
+`iqs9150_tap_drag` watches raw contact frames independently of pointer and scrolling.
+One, two, and three fingers select left, right, and middle click. A single tap is deferred for
+`double-tap-max-gap-ms` so a nearby second tap with the same finger count can be recognized.
+The second tap is a pending double-tap: releasing it produces a double click, while movement beyond
+`drag-start-move` immediately presses the selected button and starts dragging. Small stationary
+movement followed by release still produces a double click. The timing and distance properties are
+all DTS-tunable.
+
+二回目のタップは保留状態となる。離せばダブルクリック、`drag-start-move` を超えて動かせば
+そのフレームで該当ボタンを押してドラッグを開始する。微小な揺れのまま離した場合も
+ダブルクリックとなる。時間・距離の値はDTSで調整できる。
+
+ドラッグ開始後の座標差分はタップ機能自身が直ちに相対ポインタ出力へ変換する。同時に
+多指ルーターはその接触ストリームを抑止するため、2本指ドラッグがスクロールへ化けず、
+開始位置からずれてドラッグを始めない。The tap function emits relative pointer deltas
+immediately after drag ownership starts, while the router suppresses that stream; therefore a
+two-finger drag cannot turn into scroll or begin from a later position.
+
+複数本指では、指のF-slot番号が接触ごとに入れ替わっても同じ場所を正しく判定できる
+よう、各接触点の重心を比較・移動座標に使う。For multiple fingers, the function uses the
+contact centroid for comparison and drag movement, so IQS9150 F-slot reordering between taps does
+not make the same physical area appear distant.
 
 格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
 設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の

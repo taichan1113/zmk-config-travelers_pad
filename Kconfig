@@ -19,19 +19,20 @@ endif
 menu "Travelers Pad input functions"
 
 config TRAVELERS_PAD_IQS9150_POINTER
-    bool "IQS9150 pointer, scroll, and tap function"
+    bool "IQS9150 pointer and scroll function"
     default y
     depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_POINTER_ENABLED
     select INPUT
     help
       Convert normalized IQS9150 contact frames into relative pointer motion,
-      two-finger scrolling, and one-/two-finger taps. This is intentionally
+      two-finger scrolling. Tap and drag policy is implemented by a separate
+      function module. This is intentionally
       separate from the sensor driver.
 
 config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
     int "IQS9150 function module initialization priority"
     default 51
-    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
+    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER || TRAVELERS_PAD_IQS9150_TAP_DRAG
     help
       Must be later than the IQS9150 sensor driver's device priority (50).
 
@@ -55,6 +56,17 @@ config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
       sessions pass through immediately. Two-finger parallel motion becomes
       scrolling; pinch/rotation and three-or-more-finger sessions are kept
       out of the pointer path for future gesture bindings.
+
+config TRAVELERS_PAD_IQS9150_TAP_DRAG
+    bool "IQS9150 multi-finger tap and double-tap drag function"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TAP_DRAG_ENABLED
+    select INPUT
+    help
+      Convert one-, two-, and three-finger taps into left, right, and middle
+      clicks. A nearby second tap with the same finger count becomes a drag
+      when held. This function receives raw frames, independently of pointer
+      and multi-finger gesture routing.
 
 endmenu
 
