@@ -111,14 +111,33 @@ the next tuning pass can add scaling or inversion.
 3. 1本指タップで左クリックする。
 4. 2本指タップで右クリックする。
 
-クリックが連続発生する場合、またはスクロールの向き・速度が合わない場合は、操作内容と結果を
-報告してください。中クリック、3本指、スワイプ、ピンチはこの版の対象外です。
+調整版ではスクロール開始距離を8、ホイール出力を元の1/4に設定し、接触時間220 ms以下・移動50以下の
+ソフトウェアタップ判定を使用します。ASICタップフラグは診断ログとしても確認します。クリックが連続発生する
+場合、またはスクロールの向き・速度が合わない場合は、操作内容と結果を報告してください。
+中クリック、3本指、スワイプ、ピンチはこの版の対象外です。
 
 Firmware verification: a clean build succeeds with two-finger gesture values
 mapped to ZMK vertical/horizontal wheel HID and rising tap flags mapped to
-clicks. After flashing, verify the four items above. Report unintended repeated
-clicks or scroll direction/speed issues. Middle click, three-finger gestures,
-swipes, and pinch are outside this build's scope.
+clicks. The tuned build uses a scroll-start distance of 8, reduces wheel output
+to one fourth, and adds software tap detection (220 ms maximum contact and 50
+maximum movement); ASIC tap flags are retained for diagnostic logs. After flashing, verify the four items above. Report
+unintended repeated clicks or scroll direction/speed issues. Middle click,
+three-finger gestures, swipes, and pinch are outside this build's scope.
+
+## UF2書込み後の再起動 / Restart after UF2 update
+
+UF2のコピー後にUSBを抜き差ししないと動作しない場合は、まずUSBを接続したままXIAOのRESETを
+1回押してください。UF2コピー後のアプリ起動・USB再列挙はブートローダーとWindows側が関与する
+ため、トラックパッドドライバだけでは原因を確定できません。RESETでも毎回必要な場合は、次に
+ブートローダーのバージョンと更新可否を個別に調査します。ブートローダー更新は別途明示的な承認が
+必要です。
+
+If the board works only after unplugging USB following a UF2 copy, first keep
+USB connected and press the XIAO RESET button once. Application startup and USB
+re-enumeration after copying UF2 also involve the bootloader and Windows, so the
+trackpad driver alone cannot establish the cause. If RESET is required after
+every update, the next step is to identify the installed bootloader and assess
+an update separately. A bootloader update requires explicit approval.
 
 ## EV02 H-file analysis / H-file解析
 
