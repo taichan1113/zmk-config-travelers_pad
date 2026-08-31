@@ -202,7 +202,9 @@ static void iqs9150_work_handler(struct k_work *work)
 			return;
 		}
 		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET;
-		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		/* System Control actions are issued in the low byte. Match the
+		 * datasheet's single-byte Ack Reset transaction. */
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK", rc);
 			return;
@@ -269,7 +271,7 @@ static void iqs9150_work_handler(struct k_work *work)
 		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET |
 			    IQS9150_SYSTEM_CONTROL_ALP_REATI |
 			    IQS9150_SYSTEM_CONTROL_TP_REATI;
-		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
 		if (rc != 0) {
 			iqs9150_fail(data, "ATI start", rc);
 			return;
