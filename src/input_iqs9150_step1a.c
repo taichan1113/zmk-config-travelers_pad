@@ -1,13 +1,15 @@
 /*
- * IQS9150 EV02 Step 1A diagnostic driver.
+ * IQS9150 EV02 bring-up driver.
  *
- * This file deliberately contains no configuration writes: its job is to
- * verify the existing EV02 configuration without disturbing it.
+ * STEP1B: Apply the Azoteq GUI-generated initialization data, run ATI, then
+ * enable Event Mode.  Pointer reporting is intentionally not implemented yet.
  */
 
 #define DT_DRV_COMPAT azoteq_iqs9150
 
 #include <errno.h>
+#include <string.h>
+
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
@@ -15,155 +17,346 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include "iqs9150_ev02_init.h"
+
 LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 
-#define IQS9150_PRODUCT_INFO_REG 0x1000
-#define IQS9150_PRODUCT_INFO_LEN 20
-#define IQS9150_PRODUCT_NUMBER 0x076A
+#define IQS9150_PRODUCT_NUMBER_REG       0x1000
+#define IQS9150_RELATIVE_X_REG            0x1014
+#define IQS9150_INFO_FLAGS_REG            0x1020
+#define IQS9150_SYSTEM_CONTROL_REG        0x11BC
+#define IQS9150_CONFIG_SETTINGS_REG       0x11BE
 
-#define IQS9150_REPORT_REG 0x1014
-/* Relative/gesture data, flags, then the first touch's absolute data. */
-#define IQS9150_REPORT_LEN 24
+#define IQS9150_PRODUCT_NUMBER            0x076A
+#define IQS9150_REPORT_LEN                 24
+#define IQS9150_WRITE_PAYLOAD_MAX          30
+
+#define IQS9150_SYSTEM_CONTROL_ACK_RESET  BIT(7)
+#define IQS9150_SYSTEM_CONTROL_ALP_REATI  BIT(6)
+#define IQS9150_SYSTEM_CONTROL_TP_REATI   BIT(5)
+
+#define IQS9150_INFO_TP_ATI_ERROR          BIT(3)
+#define IQS9150_INFO_TP_REATI_OCCURRED     BIT(4)
+
+struct iqs9150_block {
+	uint16_t reg;
+	const uint8_t *data;
+	size_t len;
+};
+
+enum iqs9150_state {
+	IQS9150_ACK_RESET,
+	IQS9150_WRITE_CONFIG,
+	IQS9150_START_ATI,
+	IQS9150_WAIT_ATI,
+	IQS9150_ENABLE_EVENT_MODE,
+	IQS9150_RUNNING,
+	IQS9150_ERROR,
+};
 
 struct iqs9150_config {
-    struct i2c_dt_spec i2c;
-    struct gpio_dt_spec rdy_gpio;
+	struct i2c_dt_spec i2c;
+	struct gpio_dt_spec rdy_gpio;
 };
 
 struct iqs9150_data {
-    const struct device *dev;
-    struct gpio_callback rdy_callback;
-    struct k_work report_work;
+	const struct device *dev;
+	struct gpio_callback rdy_callback;
+	struct k_work work;
+	enum iqs9150_state state;
+	size_t block_index;
+	size_t block_offset;
 };
 
-static uint16_t get_le16(const uint8_t *value)
+static const uint8_t ev02_115c[] = {0};
+static const uint8_t ev02_1176[] = {0xFF, 0xFF, 0x03, 0x00};
+static const uint8_t ev02_117a[] = {
+	0x21, 0x4B, 0x87, 0x5E, 0x87, 0x5E, 0x87, 0x5C, 0x87, 0x5E,
+	0x87, 0x5E, 0x87, 0x5E, 0x87, 0x5E, 0x87, 0x5E, 0x87, 0x5C,
+	0x87, 0x5C, 0x87, 0x5C, 0x87, 0x5E, 0x87, 0x5E,
+};
+static const uint8_t ev02_1196[] = {
+	0xFA, 0x00, 0x2C, 0x01, 0x32, 0x00, 0x32, 0x00, 0xE8, 0x03, 0x32, 0x14,
+};
+static const uint8_t ev02_11a2[] = {
+	0x0A, 0x00, 0x32, 0x00, 0x32, 0x00, 0x32, 0x00, 0x64, 0x00, 0x0A, 0x00,
+	0x3C, 0x00, 0x05, 0x00, 0x28, 0x00, 0xDC, 0x05, 0x05, 0x08, 0x64, 0x00,
+	0x14, 0x00,
+};
+static const uint8_t ev02_11be[] = {
+	CONFIG_SETTINGS_0, CONFIG_SETTINGS_1, OTHER_SETTINGS_0, OTHER_SETTINGS_1,
+};
+static const uint8_t ev02_11c2[] = {0xFF, 0xFF, 0xFF, 0xD3, 0x00, 0x00, 0x00, 0xFC, 0xFF, 0x0F};
+static const uint8_t ev02_11cc[] = {0x1A, 0x14, 0x08, 0x08, 0x02, 0x02, 0x32, 0x32};
+static const uint8_t ev02_11d4[] = {0x46, 0x04, 0xB4, 0x64};
+static const uint8_t ev02_11d8[] = {0x28, 0x02, 0x02, 0x10, 0x07, 0x07, 0x00, 0x44, 0x40, 0x4B};
+static const uint8_t ev02_11e2[] = {
+	0x28, 0x1A, 0x12, 0x07, 0xD0, 0x07, 0xBD, 0x04, 0x06, 0x00,
+	0x7C, 0x00, 0x07, 0x80, 0x14, 0x03, 0x14, 0x14, 0x03, 0x14,
+};
+static const uint8_t ev02_11f6[] = {
+	0x1F, 0xFF, 0xFF, 0x00, 0x96, 0x00, 0x96, 0x00, 0x32, 0x00, 0x2C, 0x01,
+	0x96, 0x00, 0x2C, 0x01, 0x96, 0x00, 0x64, 0x00, 0x32, 0x00, 0x25, 0x25,
+	0x64, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x05, 0x00, 0x64, 0x00,
+};
+static const uint8_t ev02_1218[] = {
+	0x19, 0x0C, 0x18, 0x0B, 0x17, 0x0A, 0x16, 0x09, 0x15, 0x08, 0x14, 0x13,
+	0x0E, 0x02, 0x0F, 0x03, 0x10, 0x04, 0x11, 0x07, 0x05, 0x12, 0x06, 0x01,
+	0x0D, 0x00, 0x2B, 0x2A, 0x29, 0x28, 0x27, 0x26, 0x25, 0x24, 0x23, 0x21,
+	0x22, 0x20, 0x1B, 0x1C, 0x1A, 0x1E, 0x1D, 0x1F, 0x00, 0x00,
+};
+static const uint8_t ev02_zero_88[88];
+static const uint8_t ev02_zero_506[506];
+static const uint8_t ev02_zero_252[252];
+static const uint8_t ev02_2000[] = {0x01, 0x00, 0x03, 0x03, 0x14, 0x00};
+
+static const struct iqs9150_block ev02_blocks[] = {
+	{0x115C, ev02_115c, 26},
+	{0x1176, ev02_1176, sizeof(ev02_1176)},
+	{0x117A, ev02_117a, sizeof(ev02_117a)},
+	{0x1196, ev02_1196, sizeof(ev02_1196)},
+	{0x11A2, ev02_11a2, sizeof(ev02_11a2)},
+	{0x11BE, ev02_11be, sizeof(ev02_11be)},
+	{0x11C2, ev02_11c2, sizeof(ev02_11c2)},
+	{0x11CC, ev02_11cc, sizeof(ev02_11cc)},
+	{0x11D4, ev02_11d4, sizeof(ev02_11d4)},
+	{0x11D8, ev02_11d8, sizeof(ev02_11d8)},
+	{0x11E2, ev02_11e2, sizeof(ev02_11e2)},
+	{0x11F6, ev02_11f6, sizeof(ev02_11f6)},
+	{0x1218, ev02_1218, sizeof(ev02_1218)},
+	{0x1246, ev02_zero_88, sizeof(ev02_zero_88)},
+	{0x129E, ev02_zero_88, sizeof(ev02_zero_88)},
+	{0x12F6, ev02_zero_506, sizeof(ev02_zero_506)},
+	{0x14F0, ev02_zero_252, sizeof(ev02_zero_252)},
+	{0x2000, ev02_2000, sizeof(ev02_2000)},
+};
+
+static int read_reg(const struct device *dev, uint16_t reg, uint8_t *data, size_t len)
 {
-    return (uint16_t)value[0] | ((uint16_t)value[1] << 8);
+	const struct iqs9150_config *cfg = dev->config;
+	uint8_t address[] = {reg & 0xff, reg >> 8};
+
+	return i2c_write_read_dt(&cfg->i2c, address, sizeof(address), data, len);
 }
 
-static int iqs9150_read(const struct i2c_dt_spec *i2c, uint16_t reg,
-                        uint8_t *buffer, size_t length)
+static int write_reg(const struct device *dev, uint16_t reg, const uint8_t *data, size_t len)
 {
-    /* IQS9150 register addresses are 16-bit, byte-addressable little-endian. */
-    uint8_t address[] = { reg & 0xff, reg >> 8 };
+	const struct iqs9150_config *cfg = dev->config;
+	uint8_t buffer[2 + IQS9150_WRITE_PAYLOAD_MAX];
 
-    return i2c_write_read_dt(i2c, address, sizeof(address), buffer, length);
+	if (len > IQS9150_WRITE_PAYLOAD_MAX) {
+		return -EINVAL;
+	}
+
+	buffer[0] = reg & 0xff;
+	buffer[1] = reg >> 8;
+	memcpy(&buffer[2], data, len);
+	return i2c_write_dt(&cfg->i2c, buffer, len + 2);
 }
 
-static void iqs9150_log_report(struct iqs9150_data *data)
+static uint16_t le16(const uint8_t *data)
 {
-    const struct iqs9150_config *config = data->dev->config;
-    uint8_t report[IQS9150_REPORT_LEN];
-    int ret = iqs9150_read(&config->i2c, IQS9150_REPORT_REG, report,
-                           sizeof(report));
-
-    if (ret < 0) {
-        LOG_ERR("report read failed: %d", ret);
-        return;
-    }
-
-    uint16_t info_flags = get_le16(&report[12]);
-    uint16_t trackpad_flags = get_le16(&report[14]);
-    uint8_t fingers = trackpad_flags & 0x0f;
-
-    LOG_INF("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) gest=(%d,%d) "
-            "abs1=(%u,%u) strength=%u area=%u", info_flags, trackpad_flags,
-            fingers, (int16_t)get_le16(&report[0]), (int16_t)get_le16(&report[2]),
-            (int16_t)get_le16(&report[4]), (int16_t)get_le16(&report[6]),
-            get_le16(&report[16]), get_le16(&report[18]),
-            get_le16(&report[20]), get_le16(&report[22]));
+	return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
-static void iqs9150_report_work_handler(struct k_work *work)
+static void log_report(const struct device *dev)
 {
-    struct iqs9150_data *data = CONTAINER_OF(work, struct iqs9150_data,
-                                              report_work);
+	uint8_t report[IQS9150_REPORT_LEN];
+	int rc = read_reg(dev, IQS9150_RELATIVE_X_REG, report, sizeof(report));
 
-    iqs9150_log_report(data);
+	if (rc != 0) {
+		LOG_ERR("report read failed: %d", rc);
+		return;
+	}
+
+	LOG_INF("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) abs1=(%u,%u) strength=%u area=%u",
+		le16(&report[12]), le16(&report[14]), (le16(&report[14]) >> 8) & 0x0f,
+		(int16_t)le16(&report[0]), (int16_t)le16(&report[2]), le16(&report[16]),
+		le16(&report[18]), le16(&report[20]), le16(&report[22]));
 }
 
-static void iqs9150_rdy_isr(const struct device *port,
-                             struct gpio_callback *callback, uint32_t pins)
+static void iqs9150_fail(struct iqs9150_data *data, const char *operation, int rc)
 {
-    ARG_UNUSED(port);
-    ARG_UNUSED(pins);
+	data->state = IQS9150_ERROR;
+	LOG_ERR("STEP1B %s failed: %d", operation, rc);
+}
 
-    struct iqs9150_data *data = CONTAINER_OF(callback, struct iqs9150_data,
-                                              rdy_callback);
-    k_work_submit(&data->report_work);
+static void iqs9150_work_handler(struct k_work *work)
+{
+	struct iqs9150_data *data = CONTAINER_OF(work, struct iqs9150_data, work);
+	const struct device *dev = data->dev;
+	uint8_t value[4];
+	int rc;
+
+	switch (data->state) {
+	case IQS9150_ACK_RESET:
+		rc = read_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "System Control read", rc);
+			return;
+		}
+		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET;
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "reset ACK", rc);
+			return;
+		}
+		data->state = IQS9150_WRITE_CONFIG;
+		LOG_INF("STEP1B reset acknowledged; writing EV02 initialization data");
+		return;
+
+	case IQS9150_WRITE_CONFIG: {
+		const struct iqs9150_block *block;
+		size_t chunk;
+
+		if (data->block_index == ARRAY_SIZE(ev02_blocks)) {
+			data->state = IQS9150_START_ATI;
+			LOG_INF("STEP1B initialization data written; starting ATI");
+			return;
+		}
+
+		block = &ev02_blocks[data->block_index];
+		chunk = MIN(IQS9150_WRITE_PAYLOAD_MAX, block->len - data->block_offset);
+		rc = write_reg(dev, block->reg + data->block_offset,
+			       block->data + data->block_offset, chunk);
+		if (rc != 0) {
+			iqs9150_fail(data, "initialization data write", rc);
+			return;
+		}
+
+		data->block_offset += chunk;
+		if (data->block_offset == block->len) {
+			data->block_index++;
+			data->block_offset = 0;
+		}
+		return;
+	}
+
+	case IQS9150_START_ATI:
+		rc = read_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "System Control read before ATI", rc);
+			return;
+		}
+		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET |
+			    IQS9150_SYSTEM_CONTROL_ALP_REATI |
+			    IQS9150_SYSTEM_CONTROL_TP_REATI;
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "ATI start", rc);
+			return;
+		}
+		data->state = IQS9150_WAIT_ATI;
+		LOG_INF("STEP1B ATI requested; waiting for completion");
+		return;
+
+	case IQS9150_WAIT_ATI:
+		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "ATI status read", rc);
+			return;
+		}
+		if (value[0] & IQS9150_INFO_TP_ATI_ERROR) {
+			iqs9150_fail(data, "ATI (trackpad ATI error flag set)", -EIO);
+			return;
+		}
+		if (value[0] & IQS9150_INFO_TP_REATI_OCCURRED) {
+			data->state = IQS9150_ENABLE_EVENT_MODE;
+			LOG_INF("STEP1B ATI complete; enabling Event Mode");
+		}
+		return;
+
+	case IQS9150_ENABLE_EVENT_MODE:
+		value[0] = CONFIG_SETTINGS_0;
+		value[1] = CONFIG_SETTINGS_1 | BIT(0);
+		value[2] = OTHER_SETTINGS_0;
+		value[3] = OTHER_SETTINGS_1;
+		rc = write_reg(dev, IQS9150_CONFIG_SETTINGS_REG, value, sizeof(value));
+		if (rc != 0) {
+			iqs9150_fail(data, "Event Mode enable", rc);
+			return;
+		}
+		data->state = IQS9150_RUNNING;
+		LOG_INF("STEP1B complete: Event Mode active; touch the pad to produce reports");
+		return;
+
+	case IQS9150_RUNNING:
+		log_report(dev);
+		return;
+
+	case IQS9150_ERROR:
+		return;
+	}
+}
+
+static void iqs9150_rdy_callback(const struct device *port, struct gpio_callback *callback,
+				 uint32_t pins)
+{
+	struct iqs9150_data *data = CONTAINER_OF(callback, struct iqs9150_data, rdy_callback);
+
+	ARG_UNUSED(port);
+	ARG_UNUSED(pins);
+	k_work_submit(&data->work);
 }
 
 static int iqs9150_init(const struct device *dev)
 {
-    const struct iqs9150_config *config = dev->config;
-    struct iqs9150_data *data = dev->data;
-    uint8_t product[IQS9150_PRODUCT_INFO_LEN];
-    int ret;
+	const struct iqs9150_config *cfg = dev->config;
+	struct iqs9150_data *data = dev->data;
+	uint8_t product[2];
+	int rc;
 
-    if (!i2c_is_ready_dt(&config->i2c)) {
-        LOG_ERR("I2C controller is not ready");
-        return -ENODEV;
-    }
-    if (!gpio_is_ready_dt(&config->rdy_gpio)) {
-        LOG_ERR("RDY GPIO controller is not ready");
-        return -ENODEV;
-    }
+	if (!i2c_is_ready_dt(&cfg->i2c) || !gpio_is_ready_dt(&cfg->rdy_gpio)) {
+		LOG_ERR("I2C or RDY GPIO is not ready");
+		return -ENODEV;
+	}
 
-    /* A forced read is permitted by the datasheet; it may clock-stretch until
-     * a communication window is available. No configuration is modified. */
-    ret = iqs9150_read(&config->i2c, IQS9150_PRODUCT_INFO_REG, product,
-                       sizeof(product));
-    if (ret < 0) {
-        LOG_ERR("product information read failed: %d", ret);
-        return ret;
-    }
-    if (get_le16(&product[0]) != IQS9150_PRODUCT_NUMBER) {
-        LOG_ERR("unexpected product number: 0x%04x (expected 0x%04x)",
-                get_le16(&product[0]), IQS9150_PRODUCT_NUMBER);
-        return -ENODEV;
-    }
+	rc = gpio_pin_configure_dt(&cfg->rdy_gpio, GPIO_INPUT);
+	if (rc != 0) {
+		LOG_ERR("RDY GPIO configuration failed: %d", rc);
+		return rc;
+	}
 
-    LOG_INF("IQS9150 detected: product=0x%04x version=%u.%u library=0x%04x "
-            "v%u.%u", get_le16(&product[0]), get_le16(&product[2]),
-            get_le16(&product[4]), get_le16(&product[10]),
-            get_le16(&product[12]), get_le16(&product[14]));
+	rc = read_reg(dev, IQS9150_PRODUCT_NUMBER_REG, product, sizeof(product));
+	if (rc != 0) {
+		LOG_ERR("product number read failed: %d", rc);
+		return rc;
+	}
+	if (le16(product) != IQS9150_PRODUCT_NUMBER) {
+		LOG_ERR("unexpected product number: 0x%04x", le16(product));
+		return -ENODEV;
+	}
 
-    data->dev = dev;
-    k_work_init(&data->report_work, iqs9150_report_work_handler);
-    ret = gpio_pin_configure_dt(&config->rdy_gpio, GPIO_INPUT);
-    if (ret < 0) {
-        LOG_ERR("RDY GPIO configuration failed: %d", ret);
-        return ret;
-    }
-    gpio_init_callback(&data->rdy_callback, iqs9150_rdy_isr,
-                       BIT(config->rdy_gpio.pin));
-    ret = gpio_add_callback(config->rdy_gpio.port, &data->rdy_callback);
-    if (ret < 0) {
-        LOG_ERR("RDY callback registration failed: %d", ret);
-        return ret;
-    }
-    ret = gpio_pin_interrupt_configure_dt(&config->rdy_gpio,
-                                          GPIO_INT_EDGE_FALLING);
-    if (ret < 0) {
-        LOG_ERR("RDY interrupt configuration failed: %d", ret);
-        return ret;
-    }
+	data->dev = dev;
+	data->state = IQS9150_ACK_RESET;
+	k_work_init(&data->work, iqs9150_work_handler);
+	gpio_init_callback(&data->rdy_callback, iqs9150_rdy_callback, BIT(cfg->rdy_gpio.pin));
+	rc = gpio_add_callback(cfg->rdy_gpio.port, &data->rdy_callback);
+	if (rc != 0) {
+		LOG_ERR("RDY callback add failed: %d", rc);
+		return rc;
+	}
+	rc = gpio_pin_interrupt_configure_dt(&cfg->rdy_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+	if (rc != 0) {
+		LOG_ERR("RDY interrupt configuration failed: %d", rc);
+		return rc;
+	}
 
-    LOG_INF("IQS9150 Step 1A ready; waiting for RDY");
-    if (gpio_pin_get_dt(&config->rdy_gpio) == 0) {
-        k_work_submit(&data->report_work);
-    }
-    return 0;
+	LOG_INF("IQS9150 product 0x%04x found at I2C 0x%02x", le16(product), cfg->i2c.addr);
+	if (gpio_pin_get_dt(&cfg->rdy_gpio) == 0) {
+		k_work_submit(&data->work);
+	}
+	return 0;
 }
 
-#define IQS9150_DEFINE(inst)                                                   \
-    static struct iqs9150_data iqs9150_data_##inst;                            \
-    static const struct iqs9150_config iqs9150_config_##inst = {               \
-        .i2c = I2C_DT_SPEC_INST_GET(inst),                                      \
-        .rdy_gpio = GPIO_DT_SPEC_INST_GET(inst, rdy_gpios),                     \
-    };                                                                          \
-    DEVICE_DT_INST_DEFINE(inst, iqs9150_init, NULL, &iqs9150_data_##inst,       \
-                          &iqs9150_config_##inst, POST_KERNEL,                 \
-                          CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
+#define IQS9150_DEFINE(inst) \
+	static struct iqs9150_data iqs9150_data_##inst; \
+	static const struct iqs9150_config iqs9150_config_##inst = { \
+		.i2c = I2C_DT_SPEC_INST_GET(inst), \
+		.rdy_gpio = GPIO_DT_SPEC_INST_GET(inst, rdy_gpios), \
+	}; \
+	DEVICE_DT_INST_DEFINE(inst, iqs9150_init, NULL, \
+			      &iqs9150_data_##inst, &iqs9150_config_##inst, \
+			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(IQS9150_DEFINE)
