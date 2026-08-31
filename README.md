@@ -111,16 +111,19 @@ the next tuning pass can add scaling or inversion.
 3. 1本指タップで左クリックする。
 4. 2本指タップで右クリックする。
 
-調整版ではスクロール開始距離を8、ホイール出力を元の1/4に設定し、接触時間220 ms以下・移動50以下の
-ソフトウェアタップ判定を使用します。ASICタップフラグは診断ログとしても確認します。クリックが連続発生する
+調整版ではスクロール開始距離を8、ホイール出力を元の1/4に設定します。2本指を置いたまま停止・再開しても
+相対移動を継続してスクロールへ変換します。接触時間350 ms以下・移動75以下のソフトウェアタップ判定を
+使用し、ASICタップフラグは診断ログとしても確認します。クリックが連続発生する
 場合、またはスクロールの向き・速度が合わない場合は、操作内容と結果を報告してください。
 中クリック、3本指、スワイプ、ピンチはこの版の対象外です。
 
 Firmware verification: a clean build succeeds with two-finger gesture values
 mapped to ZMK vertical/horizontal wheel HID and rising tap flags mapped to
 clicks. The tuned build uses a scroll-start distance of 8, reduces wheel output
-to one fourth, and adds software tap detection (220 ms maximum contact and 50
-maximum movement); ASIC tap flags are retained for diagnostic logs. After flashing, verify the four items above. Report
+to one fourth. While two fingers remain down, relative movement remains mapped
+to scrolling after a pause. Software tap detection uses a 350 ms maximum
+contact and 75 maximum movement; ASIC tap flags are retained for diagnostic
+logs. After flashing, verify the four items above. Report
 unintended repeated clicks or scroll direction/speed issues. Middle click,
 three-finger gestures, swipes, and pinch are outside this build's scope.
 

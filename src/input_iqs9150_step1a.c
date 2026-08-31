@@ -54,8 +54,8 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_2F_HORIZONTAL_SCROLL        BIT(7)
 
 #define IQS9150_SCROLL_DIVISOR               4
-#define IQS9150_SOFTWARE_TAP_MAX_MS        220
-#define IQS9150_SOFTWARE_TAP_MAX_MOVE       50
+#define IQS9150_SOFTWARE_TAP_MAX_MS        350
+#define IQS9150_SOFTWARE_TAP_MAX_MOVE       75
 
 struct iqs9150_block {
 	uint16_t reg;
@@ -238,10 +238,15 @@ static void report_software_tap(struct iqs9150_data *data, const uint8_t *report
 	if (data->touch_max_fingers != 0 && !data->touch_moved &&
 	    now - data->touch_started_ms <= IQS9150_SOFTWARE_TAP_MAX_MS) {
 		if (data->touch_max_fingers == 1) {
+			LOG_INF("software 1-finger tap (%lld ms)", now - data->touch_started_ms);
 			report_tap_click(data->dev, INPUT_BTN_0);
 		} else if (data->touch_max_fingers == 2) {
+			LOG_INF("software 2-finger tap (%lld ms)", now - data->touch_started_ms);
 			report_tap_click(data->dev, INPUT_BTN_1);
 		}
+	} else if (data->touch_max_fingers != 0) {
+		LOG_INF("tap rejected: fingers=%u duration=%lld ms moved=%d",
+			data->touch_max_fingers, now - data->touch_started_ms, data->touch_moved);
 	}
 	data->touch_max_fingers = 0;
 }
@@ -253,6 +258,7 @@ static void log_report(const struct device *dev)
 	int rc = read_reg(dev, IQS9150_RELATIVE_X_REG, report, sizeof(report));
 	uint8_t gestures_1f;
 	uint8_t gestures_2f;
+	uint8_t fingers;
 	bool scrolling;
 
 	if (rc != 0) {
@@ -267,8 +273,10 @@ static void log_report(const struct device *dev)
 
 	gestures_1f = report[IQS9150_REPORT_1F_GESTURE_OFFSET];
 	gestures_2f = report[IQS9150_REPORT_2F_GESTURE_OFFSET];
-	scrolling = gestures_2f & (IQS9150_2F_VERTICAL_SCROLL |
-					 IQS9150_2F_HORIZONTAL_SCROLL);
+	fingers = le16(&report[14]) & 0x0f;
+	/* Keep scrolling after a pause: the ASIC scroll-state bit can clear while
+	 * two fingers remain down, but the reported relative deltas stay valid. */
+	scrolling = fingers >= 2;
 	if ((gestures_1f & IQS9150_1F_TAP_MASK) || (gestures_2f & IQS9150_2F_TAP_MASK)) {
 		LOG_INF("hardware tap gesture: 1f=0x%02x 2f=0x%02x", gestures_1f,
 			gestures_2f);
@@ -278,16 +286,18 @@ static void log_report(const struct device *dev)
 	if (scrolling) {
 		int16_t gesture_x = le16(&report[IQS9150_REPORT_GESTURE_X_OFFSET]);
 		int16_t gesture_y = le16(&report[IQS9150_REPORT_GESTURE_Y_OFFSET]);
+		int16_t scroll_x = gesture_x != 0 ? gesture_x : le16(&report[0]);
+		int16_t scroll_y = gesture_y != 0 ? gesture_y : le16(&report[2]);
 
-		if (gesture_x != 0) {
-			rc = input_report_rel(dev, INPUT_REL_HWHEEL, scale_scroll_delta(gesture_x),
-					      gesture_y == 0, K_NO_WAIT);
+		if (scroll_x != 0) {
+			rc = input_report_rel(dev, INPUT_REL_HWHEEL, scale_scroll_delta(scroll_x),
+					      scroll_y == 0, K_NO_WAIT);
 			if (rc != 0) {
 				LOG_ERR("horizontal scroll report failed: %d", rc);
 			}
 		}
-		if (gesture_y != 0) {
-			rc = input_report_rel(dev, INPUT_REL_WHEEL, -scale_scroll_delta(gesture_y), true,
+		if (scroll_y != 0) {
+			rc = input_report_rel(dev, INPUT_REL_WHEEL, -scale_scroll_delta(scroll_y), true,
 					      K_NO_WAIT);
 			if (rc != 0) {
 				LOG_ERR("vertical scroll report failed: %d", rc);
