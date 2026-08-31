@@ -35,6 +35,29 @@ scroll, acceleration, or gesture policy back into the driver.
 | `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
+## 2点独立座標 / Independent two-contact coordinates
+
+IQS9150ドライバは、Finger 1を `ABS_X/Y`、Finger 2を `ABS_RX/RY`、接触本数を
+`ABS_Z`、Finger 2座標の有効性を `ABS_RUDDER` として、同じ入力フレームで出力します。
+既存のポインタ機能はFinger 1だけを使用するため、この追加だけでポインタ動作は変わりません。
+将来のピンチ・正確な2本指スクロールなどの機能モジュールは、この2点座標を利用します。
+
+The IQS9150 driver emits Finger 1 as `ABS_X/Y`, Finger 2 as `ABS_RX/RY`,
+contact count as `ABS_Z`, and Finger 2 validity as `ABS_RUDDER` in one input
+frame. Existing pointer handling consumes only Finger 1, so this extension
+does not change pointer behavior. Future pinch and precise two-finger modules
+will consume both coordinates.
+
+実機検証時はoverlayの `two-finger-diagnostics` を有効にします。2本指で静止・平行移動・
+指間を広げる／狭める操作を行い、100 msごとの `2F frame` ログで `f1=(x,y,1)` と
+`f2=(x,y,1)` が別々に変化することを確認してください。`f2` の末尾が `0` の場合は、
+そのフレームでは第2接触点を信頼しません。
+
+For hardware validation, enable `two-finger-diagnostics` in the overlay. Hold,
+move, spread, and pinch two fingers while checking the throttled `2F frame`
+logs. `f1=(x,y,1)` and `f2=(x,y,1)` must change independently. A trailing
+`0` on `f2` means that frame's second contact is not trusted.
+
 格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
 設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の
 4つの任意セル割当を持ちます。使用時はノードを `status = "okay"` にし、`chosen` の

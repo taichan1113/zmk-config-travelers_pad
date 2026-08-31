@@ -33,6 +33,9 @@
         compatible = "azoteq,iqs9150";
         reg = <0x56>;
         rdy-gpios = <&gpio1 15 GPIO_ACTIVE_LOW>;
+        /* Temporary validation aid: report independent two-finger coordinates
+         * at INFO level. 実機検証用に2点座標をINFOログへ出力する。 */
+        two-finger-diagnostics;
     };
 };
 

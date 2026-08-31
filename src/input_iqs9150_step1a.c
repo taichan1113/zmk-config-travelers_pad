@@ -9,6 +9,7 @@
 #define DT_DRV_COMPAT azoteq_iqs9150
 
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <zephyr/device.h>
@@ -31,7 +32,7 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_CONFIG_SETTINGS_REG       0x11BE
 
 #define IQS9150_PRODUCT_NUMBER            0x076A
-#define IQS9150_REPORT_LEN                 24
+#define IQS9150_REPORT_LEN                 28
 #define IQS9150_WRITE_PAYLOAD_MAX          30
 #define IQS9150_ATI_POLL_INTERVAL_MS        20
 
@@ -48,6 +49,14 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
+#define IQS9150_REPORT_FINGER1_X_OFFSET     16
+#define IQS9150_REPORT_FINGER1_Y_OFFSET     18
+#define IQS9150_REPORT_FINGER2_X_OFFSET     24
+#define IQS9150_REPORT_FINGER2_Y_OFFSET     26
+
+#define IQS9150_TP_FINGER_COUNT_MASK       BIT_MASK(4)
+#define IQS9150_TP_FINGER1_CONFIDENCE      BIT(8)
+#define IQS9150_TP_FINGER2_CONFIDENCE      BIT(9)
 
 #define IQS9150_1F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
 #define IQS9150_2F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
@@ -73,6 +82,7 @@ enum iqs9150_state {
 struct iqs9150_config {
 	struct i2c_dt_spec i2c;
 	struct gpio_dt_spec rdy_gpio;
+	bool two_finger_diagnostics;
 };
 
 struct iqs9150_data {
@@ -82,6 +92,7 @@ struct iqs9150_data {
 	enum iqs9150_state state;
 	uint8_t ack_attempts;
 	uint8_t report_error_count;
+	int64_t last_two_finger_log_ms;
 	size_t block_index;
 	size_t block_offset;
 };
@@ -211,6 +222,13 @@ static void report_contact_frame(const struct device *dev)
 	uint8_t gestures_1f;
 	uint8_t gestures_2f;
 	uint8_t fingers;
+	uint16_t trackpad_flags;
+	uint16_t finger1_x;
+	uint16_t finger1_y;
+	uint16_t finger2_x;
+	uint16_t finger2_y;
+	bool finger2_valid;
+	const struct iqs9150_config *cfg = dev->config;
 
 	if (rc != 0) {
 		LOG_ERR("report read failed: %d", rc);
@@ -226,24 +244,44 @@ static void report_contact_frame(const struct device *dev)
 		return;
 	}
 
-	LOG_DBG("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) abs1=(%u,%u) strength=%u area=%u",
-		le16(&report[12]), le16(&report[14]), le16(&report[14]) & 0x0f,
-		(int16_t)le16(&report[0]), (int16_t)le16(&report[2]), le16(&report[16]),
-		le16(&report[18]), le16(&report[20]), le16(&report[22]));
+	trackpad_flags = le16(&report[14]);
+	fingers = trackpad_flags & IQS9150_TP_FINGER_COUNT_MASK;
+	finger1_x = le16(&report[IQS9150_REPORT_FINGER1_X_OFFSET]);
+	finger1_y = le16(&report[IQS9150_REPORT_FINGER1_Y_OFFSET]);
+	finger2_x = le16(&report[IQS9150_REPORT_FINGER2_X_OFFSET]);
+	finger2_y = le16(&report[IQS9150_REPORT_FINGER2_Y_OFFSET]);
+	finger2_valid = fingers >= 2 && (trackpad_flags & IQS9150_TP_FINGER2_CONFIDENCE) &&
+			finger2_x != UINT16_MAX && finger2_y != UINT16_MAX;
+
+	LOG_DBG("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) f1=(%u,%u) f2=(%u,%u) f2valid=%d",
+		le16(&report[12]), trackpad_flags, fingers, (int16_t)le16(&report[0]),
+		(int16_t)le16(&report[2]), finger1_x, finger1_y, finger2_x, finger2_y,
+		finger2_valid);
 
 	gestures_1f = report[IQS9150_REPORT_1F_GESTURE_OFFSET];
 	gestures_2f = report[IQS9150_REPORT_2F_GESTURE_OFFSET];
-	fingers = le16(&report[14]) & 0x0f;
 	if ((gestures_1f & IQS9150_1F_TAP_MASK) || (gestures_2f & IQS9150_2F_TAP_MASK)) {
 		LOG_INF("hardware tap gesture: 1f=0x%02x 2f=0x%02x", gestures_1f,
 			gestures_2f);
 	}
 
-	/* Publish a complete, device-neutral contact frame. Zephyr 3.5's compact
-	 * input-code set has no pressure/TOOL_FINGER definitions, so ABS_Z carries
-	 * the contact count alongside ABS_X/Y. No pointer policy remains here. */
-	rc = input_report_abs(dev, INPUT_ABS_X, le16(&report[16]), false, K_NO_WAIT);
-	rc |= input_report_abs(dev, INPUT_ABS_Y, le16(&report[18]), false, K_NO_WAIT);
+	if (cfg->two_finger_diagnostics && fingers >= 2 &&
+	    k_uptime_get() - data->last_two_finger_log_ms >= 100) {
+		LOG_INF("2F frame: flags=0x%04x f1=(%u,%u,%d) f2=(%u,%u,%d)",
+			trackpad_flags, finger1_x, finger1_y,
+			!!(trackpad_flags & IQS9150_TP_FINGER1_CONFIDENCE), finger2_x, finger2_y,
+			finger2_valid);
+		data->last_two_finger_log_ms = k_uptime_get();
+	}
+
+	/* Publish a device-neutral two-contact frame. ABS_X/Y is Finger 1;
+	 * ABS_RX/RY is Finger 2; ABS_RUDDER is Finger 2 validity; and ABS_Z is
+	 * the contact count. Existing pointer functions consume only Finger 1. */
+	rc = input_report_abs(dev, INPUT_ABS_X, finger1_x, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_Y, finger1_y, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RX, finger2_x, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RY, finger2_y, false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_RUDDER, finger2_valid, false, K_NO_WAIT);
 	rc |= input_report_abs(dev, INPUT_ABS_Z, fingers, false, K_NO_WAIT);
 	rc |= input_report_key(dev, INPUT_BTN_TOUCH, fingers != 0, true, K_NO_WAIT);
 	if (rc != 0) {
@@ -483,6 +521,7 @@ static int iqs9150_init(const struct device *dev)
 	static const struct iqs9150_config iqs9150_config_##inst = { \
 		.i2c = I2C_DT_SPEC_INST_GET(inst), \
 		.rdy_gpio = GPIO_DT_SPEC_INST_GET(inst, rdy_gpios), \
+		.two_finger_diagnostics = DT_INST_PROP_OR(inst, two_finger_diagnostics, false), \
 	}; \
 	DEVICE_DT_INST_DEFINE(inst, iqs9150_init, NULL, \
 			      &iqs9150_data_##inst, &iqs9150_config_##inst, \
