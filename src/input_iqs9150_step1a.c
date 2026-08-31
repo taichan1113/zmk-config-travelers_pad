@@ -196,14 +196,10 @@ static void iqs9150_work_handler(struct k_work *work)
 
 	switch (data->state) {
 	case IQS9150_ACK_RESET:
-		rc = read_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
-		if (rc != 0) {
-			iqs9150_fail(data, "System Control read", rc);
-			return;
-		}
-		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET;
-		/* System Control actions are issued in the low byte. Match the
-		 * datasheet's single-byte Ack Reset transaction. */
+		/* A read followed by a separate write inserts STOP and closes the RDY
+		 * communication window. At power-up the documented System Control
+		 * value is 0x02, so use the datasheet's one-transaction ACK command. */
+		value[0] = IQS9150_SYSTEM_CONTROL_ACK_RESET | BIT(1);
 		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK", rc);
@@ -263,12 +259,9 @@ static void iqs9150_work_handler(struct k_work *work)
 	}
 
 	case IQS9150_START_ATI:
-		rc = read_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
-		if (rc != 0) {
-			iqs9150_fail(data, "System Control read before ATI", rc);
-			return;
-		}
-		value[0] |= IQS9150_SYSTEM_CONTROL_ACK_RESET |
+		/* Issue all action bits in one RDY-window write. Mode Select is unused
+		 * because the exported configuration has Manual Control disabled. */
+		value[0] = IQS9150_SYSTEM_CONTROL_ACK_RESET |
 			    IQS9150_SYSTEM_CONTROL_ALP_REATI |
 			    IQS9150_SYSTEM_CONTROL_TP_REATI;
 		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
