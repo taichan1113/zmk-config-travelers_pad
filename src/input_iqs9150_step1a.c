@@ -38,6 +38,8 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 
 #define IQS9150_INFO_TP_ATI_ERROR          BIT(3)
 #define IQS9150_INFO_TP_REATI_OCCURRED     BIT(4)
+#define IQS9150_INFO_SHOW_RESET             BIT(7)
+#define IQS9150_ACK_RETRY_MAX               3
 
 struct iqs9150_block {
 	uint16_t reg;
@@ -47,6 +49,7 @@ struct iqs9150_block {
 
 enum iqs9150_state {
 	IQS9150_ACK_RESET,
+	IQS9150_VERIFY_RESET_ACK,
 	IQS9150_WRITE_CONFIG,
 	IQS9150_START_ATI,
 	IQS9150_WAIT_ATI,
@@ -65,6 +68,7 @@ struct iqs9150_data {
 	struct gpio_callback rdy_callback;
 	struct k_work_delayable work;
 	enum iqs9150_state state;
+	uint8_t ack_attempts;
 	size_t block_index;
 	size_t block_offset;
 };
@@ -171,7 +175,7 @@ static void log_report(const struct device *dev)
 	}
 
 	LOG_INF("status=0x%04x tp=0x%04x fingers=%u rel=(%d,%d) abs1=(%u,%u) strength=%u area=%u",
-		le16(&report[12]), le16(&report[14]), (le16(&report[14]) >> 8) & 0x0f,
+		le16(&report[12]), le16(&report[14]), le16(&report[14]) & 0x0f,
 		(int16_t)le16(&report[0]), (int16_t)le16(&report[2]), le16(&report[16]),
 		le16(&report[18]), le16(&report[20]), le16(&report[22]));
 }
@@ -201,6 +205,28 @@ static void iqs9150_work_handler(struct k_work *work)
 		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK", rc);
+			return;
+		}
+		data->ack_attempts++;
+		data->state = IQS9150_VERIFY_RESET_ACK;
+		LOG_INF("STEP1B reset ACK requested; verifying on next RDY");
+		return;
+
+	case IQS9150_VERIFY_RESET_ACK:
+		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "reset ACK verification", rc);
+			return;
+		}
+		if (value[0] & IQS9150_INFO_SHOW_RESET) {
+			if (data->ack_attempts >= IQS9150_ACK_RETRY_MAX) {
+				LOG_ERR("STEP1B Show Reset remains set; Info Flags=0x%02x%02x",
+					value[1], value[0]);
+				iqs9150_fail(data, "reset ACK", -EIO);
+				return;
+			}
+			data->state = IQS9150_ACK_RESET;
+			LOG_WRN("STEP1B Show Reset still set; retrying reset ACK");
 			return;
 		}
 		data->state = IQS9150_WRITE_CONFIG;
