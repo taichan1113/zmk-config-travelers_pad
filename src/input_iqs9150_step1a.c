@@ -198,9 +198,11 @@ static void iqs9150_work_handler(struct k_work *work)
 	case IQS9150_ACK_RESET:
 		/* A read followed by a separate write inserts STOP and closes the RDY
 		 * communication window. At power-up the documented System Control
-		 * value is 0x02, so use the datasheet's one-transaction ACK command. */
+		 * value is 0x0002, so acknowledge Show Reset with one complete
+		 * 16-bit System Control write (0x0082). */
 		value[0] = IQS9150_SYSTEM_CONTROL_ACK_RESET | BIT(1);
-		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
+		value[1] = 0;
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK", rc);
 			return;
@@ -259,12 +261,12 @@ static void iqs9150_work_handler(struct k_work *work)
 	}
 
 	case IQS9150_START_ATI:
-		/* Issue all action bits in one RDY-window write. Mode Select is unused
-		 * because the exported configuration has Manual Control disabled. */
-		value[0] = IQS9150_SYSTEM_CONTROL_ACK_RESET |
-			    IQS9150_SYSTEM_CONTROL_ALP_REATI |
-			    IQS9150_SYSTEM_CONTROL_TP_REATI;
-		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 1);
+		/* IQS9150 needs only the Trackpad re-ATI action here.  Keep this as a
+		 * complete 16-bit write during the RDY window; requesting ALP re-ATI
+		 * simultaneously can introduce an unrelated calibration failure. */
+		value[0] = IQS9150_SYSTEM_CONTROL_TP_REATI;
+		value[1] = 0;
+		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "ATI start", rc);
 			return;
