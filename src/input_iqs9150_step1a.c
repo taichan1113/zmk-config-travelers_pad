@@ -187,7 +187,6 @@ static void iqs9150_work_handler(struct k_work *work)
 	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
 	struct iqs9150_data *data = CONTAINER_OF(delayable, struct iqs9150_data, work);
 	const struct device *dev = data->dev;
-	const struct iqs9150_config *cfg = dev->config;
 	uint8_t value[4];
 	int rc;
 
@@ -251,19 +250,11 @@ static void iqs9150_work_handler(struct k_work *work)
 		}
 		data->state = IQS9150_WAIT_ATI;
 		LOG_INF("STEP1B ATI requested; waiting for completion");
-		/* ATI may hold RDY low rather than create a new falling edge. */
-		k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
 		return;
 
 	case IQS9150_WAIT_ATI:
-		/* IQS9150 I2C transactions are valid only while RDY is low. ATI can
-		 * finish without a fresh falling edge, so poll the GPIO only and read
-		 * Info Flags once a communication window is available. */
-		if (gpio_pin_get_dt(&cfg->rdy_gpio) != 0) {
-			k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_POLL_INTERVAL_MS));
-			return;
-		}
-
+		/* This handler is entered from the RDY falling-edge callback. Do not
+		 * poll I2C during ATI: RDY may be low while conversions are running. */
 		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "ATI result read", rc);
