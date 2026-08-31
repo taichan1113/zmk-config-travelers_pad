@@ -53,6 +53,15 @@ finger remains in the same slot across frames. For existing compatibility it
 also emits Finger 1 as `ABS_X/Y`, Finger 2 as `ABS_RX/RY`, contact count as
 `ABS_Z`, and Finger 2 validity as `ABS_RUDDER`.
 
+未接触スロットはイベント送信しません。接触開始・終了時だけ追跡IDを出力し、接触中は
+座標だけを更新します。これにより、非同期入力キューを無駄に消費せず、5点フレームを安全に
+処理できます。
+
+Inactive slots do not emit events. Tracking IDs are emitted only when a
+contact starts or ends, while active contacts update only their coordinates.
+This avoids wasting the asynchronous input queue and keeps five-contact
+frames safe to process.
+
 二本指スクロールは既存互換フレームの代表座標（Finger 1）と接触数だけを使います。一方、
 ピンチ・回転・二本指の方向整合判定は両方のスロット座標を必要とします。将来のジェスチャー
 ルーターはこの二経路を排他的に振り分け、ピンチ／回転候補をスクロールへ流しません。

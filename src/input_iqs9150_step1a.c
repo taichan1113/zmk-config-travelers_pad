@@ -97,6 +97,7 @@ struct iqs9150_data {
 	uint8_t report_error_count;
 	int64_t last_two_finger_log_ms;
 	int64_t last_multitouch_log_ms;
+	bool multitouch_slot_active[TRAVELERS_PAD_MAX_CONTACTS];
 	size_t block_index;
 	size_t block_offset;
 };
@@ -205,10 +206,17 @@ static void report_reset_frame(const struct device *dev)
 	 * synthetic click. */
 	int rc;
 
+	struct iqs9150_data *data = dev->data;
+
+	rc = 0;
 	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
-		rc = input_report_abs(dev, INPUT_ABS_MT_SLOT, index, false, K_NO_WAIT);
+		if (!data->multitouch_slot_active[index]) {
+			continue;
+		}
+		rc |= input_report_abs(dev, INPUT_ABS_MT_SLOT, index, false, K_NO_WAIT);
 		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID, -1, false,
 				       K_NO_WAIT);
+		data->multitouch_slot_active[index] = false;
 	}
 	rc |= input_report_abs(dev, INPUT_ABS_RZ, 1, false, K_NO_WAIT);
 
@@ -317,13 +325,21 @@ static void report_contact_frame(const struct device *dev)
 	 * while pinch/rotation modules consume the slot geometry. */
 	rc = 0;
 	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		if (!contacts[index].valid && !data->multitouch_slot_active[index]) {
+			continue;
+		}
 		rc |= input_report_abs(dev, INPUT_ABS_MT_SLOT, index, false, K_NO_WAIT);
-		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID,
-				       contacts[index].valid ? index : -1, false, K_NO_WAIT);
-		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_X, contacts[index].x,
-				       false, K_NO_WAIT);
-		rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_Y, contacts[index].y,
-				       false, K_NO_WAIT);
+		if (contacts[index].valid != data->multitouch_slot_active[index]) {
+			rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID,
+					       contacts[index].valid ? index : -1, false, K_NO_WAIT);
+			data->multitouch_slot_active[index] = contacts[index].valid;
+		}
+		if (contacts[index].valid) {
+			rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_X,
+					       contacts[index].x, false, K_NO_WAIT);
+			rc |= input_report_abs(dev, TRAVELERS_PAD_INPUT_ABS_MT_POSITION_Y,
+					       contacts[index].y, false, K_NO_WAIT);
+		}
 	}
 	/* Legacy compatibility frame: ABS_X/Y is Finger 1; ABS_RX/RY is Finger 2;
 	 * ABS_RUDDER is Finger 2 validity; ABS_Z is the contact count. */
