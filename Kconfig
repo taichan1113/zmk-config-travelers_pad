@@ -31,7 +31,7 @@ config TRAVELERS_PAD_IQS9150_POINTER
 config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
     int "IQS9150 function module initialization priority"
     default 51
-    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN
+    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     help
       Must be later than the IQS9150 sensor driver's device priority (50).
 
@@ -44,6 +44,17 @@ config TRAVELERS_PAD_IQS9150_GRID_KSCAN
       Convert short one-finger taps into configurable grid cells or edge
       actions. The resulting virtual KSCAN positions are handled by ZMK's
       ordinary keymap.
+
+config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
+    bool "IQS9150 exclusive multi-finger gesture router"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER_ENABLED
+    select INPUT
+    help
+      Classify raw IQS9150 sessions before pointer processing. One-finger
+      sessions pass through immediately. Two-finger parallel motion becomes
+      scrolling; pinch/rotation and three-or-more-finger sessions are kept
+      out of the pointer path for future gesture bindings.
 
 endmenu
 

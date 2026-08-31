@@ -67,11 +67,19 @@
         events = <0>;
     };
 
-    /* Function module: raw IQS9150 contact frames -> pointer/scroll/taps.
-     * 機能モジュール: IQS9150の生接触フレームをポインタ・スクロール・タップへ変換する。 */
+    /* Function module: raw frames are classified before pointer handling.
+     * 生フレームはポインタ処理前にジェスチャー種別へ振り分ける。 */
+    iqs9150_router: iqs9150_router {
+        compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
+        input-device = <&iqs9150>;
+        scroll-classify-move = <35>;
+        geometry-distance-threshold = <30000>;
+        geometry-rotation-threshold = <30000>;
+    };
+
     iqs9150_pointer: iqs9150_pointer {
         compatible = "zmk,travelers-pad-iqs9150-pointer";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_router>;
         scroll-divisor = <4>;
         tap-max-ms = <350>;
         tap-max-move = <75>;

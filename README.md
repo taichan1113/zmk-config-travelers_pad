@@ -32,6 +32,7 @@ scroll, acceleration, or gesture policy back into the driver.
 | --- | --- | --- |
 | `driver` (`input_iqs9150_step1a.c`) | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
 | `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール、1/2本指タップ / pointer, scroll, taps | 有効 / enabled |
+| `function/iqs9150_multifinger_router.c` | 多指操作の排他判定 / exclusive multi-finger routing | 有効 / enabled |
 | `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
@@ -95,6 +96,29 @@ For each `MT frame: count=3`, `count=4`, and `count=5`, verify every active
 parallel two-finger motion preserves distance, pinch changes distance, and
 rotation changes the two-finger vector angle. These are the acceptance checks
 for the next router stage.
+
+## 多指操作ルーター / Multi-finger router
+
+ポインタ機能の前にルーターを置き、操作セッションを一度だけ分類します。1本指は直ちに
+ポインタへ渡します。2本指は短時間保留し、平行移動だけをスクロールへ渡します。指間距離の
+変化（ピンチ）または二点ベクトルの回転はジオメトリ操作として確保され、スクロールを出力
+しません。3本以上も多指スワイプ候補として確保され、現在はログのみでZMK操作には未割当です。
+
+The router sits before the pointer function and classifies each session once.
+One-finger contact passes through immediately. Two-finger contact is briefly
+held: only parallel motion reaches scrolling. Distance change (pinch) or
+two-point-vector rotation is claimed as geometry and produces no scroll.
+Three or more fingers are claimed as multi-finger swipe candidates; this build
+logs them but does not yet bind them to a ZMK action.
+
+検証時は次のログと画面動作を対応させます。
+
+| 操作 / Operation | 期待ログ / Expected log | 期待HID動作 / Expected HID result |
+| --- | --- | --- |
+| 1本指移動 / one-finger move | ルーターログなし / no router log | ポインタ移動 / pointer movement |
+| 2本指平行移動 / parallel two-finger move | `2F route=scroll committed` | スクロールのみ / scroll only |
+| ピンチまたは回転 / pinch or rotation | `2F route=geometry claimed` | スクロールなし / no scroll |
+| 3〜5本指移動 / three-to-five-finger move | `3F`〜`5F route=multifinger claimed` と終了時の方向 / claim plus direction on release | ポインタ・スクロールなし / no pointer or scroll |
 
 格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
 設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の
