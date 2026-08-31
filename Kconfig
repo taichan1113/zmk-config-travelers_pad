@@ -1,12 +1,12 @@
 menuconfig IQS9150_STEP1A
-    bool "IQS9150 EV02 Step 1A diagnostic driver"
+    bool "IQS9150 EV02 sensor driver"
     default y
     depends on DT_HAS_AZOTEQ_IQS9150_ENABLED
     select I2C
     help
-      Read and log IQS9150 reports on the active-low RDY interrupt. This
-      diagnostic driver does not send pointer/HID input events and does not
-      write sensor configuration, reset, ACK reset, or trigger ATI.
+      Initialize IQS9150 EV02 on the active-low RDY interrupt, then publish
+      normalized absolute contact frames. Pointer and gesture policies are
+      implemented by separate Travelers Pad function modules.
 
 if IQS9150_STEP1A
 
@@ -15,3 +15,34 @@ module-str = iqs9150_step1a
 source "subsys/logging/Kconfig.template.log_config"
 
 endif
+
+menu "Travelers Pad input functions"
+
+config TRAVELERS_PAD_IQS9150_POINTER
+    bool "IQS9150 pointer, scroll, and tap function"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_POINTER_ENABLED
+    select INPUT
+    help
+      Convert normalized IQS9150 contact frames into relative pointer motion,
+      two-finger scrolling, and one-/two-finger taps. This is intentionally
+      separate from the sensor driver.
+
+config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
+    int "IQS9150 function module initialization priority"
+    default 51
+    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN
+    help
+      Must be later than the IQS9150 sensor driver's device priority (50).
+
+config TRAVELERS_PAD_IQS9150_GRID_KSCAN
+    bool "IQS9150 grid and edge gesture KSCAN function"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_GRID_KSCAN_ENABLED
+    select KSCAN
+    help
+      Convert short one-finger taps into configurable grid cells or edge
+      actions. The resulting virtual KSCAN positions are handled by ZMK's
+      ordinary keymap.
+
+endmenu

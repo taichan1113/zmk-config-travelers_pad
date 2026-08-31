@@ -1,8 +1,9 @@
 /*
- * IQS9150 EV02 bring-up driver.
+ * IQS9150 EV02 sensor driver.
  *
  * STEP1B: Apply the Azoteq GUI-generated initialization data, run ATI, then
- * enable Event Mode.  Pointer reporting is intentionally not implemented yet.
+ * enable Event Mode. Running mode reports normalized absolute contact frames;
+ * pointer and gesture policy belongs in Travelers Pad function modules.
  */
 
 #define DT_DRV_COMPAT azoteq_iqs9150
@@ -43,20 +44,11 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_INFO_SHOW_RESET             BIT(7)
 #define IQS9150_ACK_RETRY_MAX               3
 
-#define IQS9150_REPORT_GESTURE_X_OFFSET      4
-#define IQS9150_REPORT_GESTURE_Y_OFFSET      6
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
 
 #define IQS9150_1F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
 #define IQS9150_2F_TAP_MASK                 (BIT(0) | BIT(1) | BIT(2))
-#define IQS9150_2F_VERTICAL_SCROLL          BIT(6)
-#define IQS9150_2F_HORIZONTAL_SCROLL        BIT(7)
-
-#define IQS9150_SCROLL_DIVISOR               4
-#define IQS9150_SOFTWARE_TAP_MAX_MS        350
-#define IQS9150_SOFTWARE_TAP_MAX_MOVE       75
-
 struct iqs9150_block {
 	uint16_t reg;
 	const uint8_t *data;
@@ -85,11 +77,6 @@ struct iqs9150_data {
 	struct k_work_delayable work;
 	enum iqs9150_state state;
 	uint8_t ack_attempts;
-	uint8_t touch_max_fingers;
-	bool touch_moved;
-	int64_t touch_started_ms;
-	uint16_t touch_start_x;
-	uint16_t touch_start_y;
 	size_t block_index;
 	size_t block_offset;
 };
@@ -185,84 +172,13 @@ static uint16_t le16(const uint8_t *data)
 	return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
-static void report_tap_click(const struct device *dev, uint16_t button)
+static void report_contact_frame(const struct device *dev)
 {
-	/* Each state must be synchronized separately.  Combining press and release
-	 * in one input frame leaves the final HID report released, so the host never
-	 * observes a click. */
-	int rc = input_report_key(dev, button, 1, true, K_NO_WAIT);
-
-	if (rc == 0) {
-		rc = input_report_key(dev, button, 0, true, K_NO_WAIT);
-	}
-	if (rc != 0) {
-		LOG_ERR("tap click report failed: %d", rc);
-	}
-}
-
-static int16_t scale_scroll_delta(int16_t delta)
-{
-	int16_t scaled = delta / IQS9150_SCROLL_DIVISOR;
-
-	if (scaled == 0 && delta != 0) {
-		return delta > 0 ? 1 : -1;
-	}
-	return scaled;
-}
-
-static void report_software_tap(struct iqs9150_data *data, const uint8_t *report)
-{
-	uint8_t fingers = le16(&report[14]) & 0x0f;
-	uint16_t x = le16(&report[16]);
-	uint16_t y = le16(&report[18]);
-	int64_t now = k_uptime_get();
-	int delta_x;
-	int delta_y;
-
-	if (fingers != 0) {
-		if (data->touch_max_fingers == 0) {
-			data->touch_started_ms = now;
-			data->touch_start_x = x;
-			data->touch_start_y = y;
-			data->touch_moved = false;
-		}
-		data->touch_max_fingers = MAX(data->touch_max_fingers, fingers);
-		delta_x = (int)x - (int)data->touch_start_x;
-		delta_y = (int)y - (int)data->touch_start_y;
-		if (delta_x > IQS9150_SOFTWARE_TAP_MAX_MOVE ||
-		    delta_x < -IQS9150_SOFTWARE_TAP_MAX_MOVE ||
-		    delta_y > IQS9150_SOFTWARE_TAP_MAX_MOVE ||
-		    delta_y < -IQS9150_SOFTWARE_TAP_MAX_MOVE) {
-			data->touch_moved = true;
-		}
-		return;
-	}
-
-	if (data->touch_max_fingers != 0 && !data->touch_moved &&
-	    now - data->touch_started_ms <= IQS9150_SOFTWARE_TAP_MAX_MS) {
-		if (data->touch_max_fingers == 1) {
-			LOG_INF("software 1-finger tap (%lld ms)", now - data->touch_started_ms);
-			report_tap_click(data->dev, INPUT_BTN_0);
-		} else if (data->touch_max_fingers == 2) {
-			LOG_INF("software 2-finger tap (%lld ms)", now - data->touch_started_ms);
-			report_tap_click(data->dev, INPUT_BTN_1);
-		}
-	} else if (data->touch_max_fingers != 0) {
-		LOG_INF("tap rejected: fingers=%u duration=%lld ms moved=%d",
-			data->touch_max_fingers, now - data->touch_started_ms, data->touch_moved);
-	}
-	data->touch_max_fingers = 0;
-}
-
-static void log_report(const struct device *dev)
-{
-	struct iqs9150_data *data = dev->data;
 	uint8_t report[IQS9150_REPORT_LEN];
 	int rc = read_reg(dev, IQS9150_RELATIVE_X_REG, report, sizeof(report));
 	uint8_t gestures_1f;
 	uint8_t gestures_2f;
 	uint8_t fingers;
-	bool scrolling;
 
 	if (rc != 0) {
 		LOG_ERR("report read failed: %d", rc);
@@ -277,55 +193,21 @@ static void log_report(const struct device *dev)
 	gestures_1f = report[IQS9150_REPORT_1F_GESTURE_OFFSET];
 	gestures_2f = report[IQS9150_REPORT_2F_GESTURE_OFFSET];
 	fingers = le16(&report[14]) & 0x0f;
-	/* Keep scrolling after a pause: the ASIC scroll-state bit can clear while
-	 * two fingers remain down, but the reported relative deltas stay valid. */
-	scrolling = fingers >= 2;
 	if ((gestures_1f & IQS9150_1F_TAP_MASK) || (gestures_2f & IQS9150_2F_TAP_MASK)) {
 		LOG_INF("hardware tap gesture: 1f=0x%02x 2f=0x%02x", gestures_1f,
 			gestures_2f);
 	}
 
-	/* input-listener turns relative and wheel events into ZMK mouse HID. */
-	if (scrolling) {
-		int16_t gesture_x = le16(&report[IQS9150_REPORT_GESTURE_X_OFFSET]);
-		int16_t gesture_y = le16(&report[IQS9150_REPORT_GESTURE_Y_OFFSET]);
-		int16_t scroll_x = gesture_x != 0 ? gesture_x : le16(&report[0]);
-		int16_t scroll_y = gesture_y != 0 ? gesture_y : le16(&report[2]);
-
-		if (scroll_x != 0) {
-			rc = input_report_rel(dev, INPUT_REL_HWHEEL, scale_scroll_delta(scroll_x),
-					      scroll_y == 0, K_NO_WAIT);
-			if (rc != 0) {
-				LOG_ERR("horizontal scroll report failed: %d", rc);
-			}
-		}
-		if (scroll_y != 0) {
-			rc = input_report_rel(dev, INPUT_REL_WHEEL, -scale_scroll_delta(scroll_y), true,
-					      K_NO_WAIT);
-			if (rc != 0) {
-				LOG_ERR("vertical scroll report failed: %d", rc);
-			}
-		}
-	} else {
-		if (report[0] != 0 || report[1] != 0) {
-			rc = input_report_rel(dev, INPUT_REL_X, (int16_t)le16(&report[0]),
-					      report[2] == 0 && report[3] == 0, K_NO_WAIT);
-			if (rc != 0) {
-				LOG_ERR("pointer X report failed: %d", rc);
-			}
-		}
-		if (report[2] != 0 || report[3] != 0) {
-			rc = input_report_rel(dev, INPUT_REL_Y, (int16_t)le16(&report[2]), true,
-					      K_NO_WAIT);
-			if (rc != 0) {
-				LOG_ERR("pointer Y report failed: %d", rc);
-			}
-		}
+	/* Publish a complete, device-neutral contact frame. Zephyr 3.5's compact
+	 * input-code set has no pressure/TOOL_FINGER definitions, so ABS_Z carries
+	 * the contact count alongside ABS_X/Y. No pointer policy remains here. */
+	rc = input_report_abs(dev, INPUT_ABS_X, le16(&report[16]), false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_Y, le16(&report[18]), false, K_NO_WAIT);
+	rc |= input_report_abs(dev, INPUT_ABS_Z, fingers, false, K_NO_WAIT);
+	rc |= input_report_key(dev, INPUT_BTN_TOUCH, fingers != 0, true, K_NO_WAIT);
+	if (rc != 0) {
+		LOG_ERR("contact frame report failed: %d", rc);
 	}
-
-	/* The EV02 reports finger count and coordinates reliably, so use them for
-	 * taps as well as retaining the ASIC gesture flags as diagnostics. */
-	report_software_tap(data, report);
 }
 
 static void iqs9150_fail(struct iqs9150_data *data, const char *operation, int rc)
@@ -458,7 +340,7 @@ static void iqs9150_work_handler(struct k_work *work)
 		return;
 
 	case IQS9150_RUNNING:
-		log_report(dev);
+		report_contact_frame(dev);
 		return;
 
 	case IQS9150_ERROR:

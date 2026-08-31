@@ -1,4 +1,4 @@
-# IQS9150EV02 / XIAO nRF52840 — Step 1A / Step 1B / Step 1C
+# IQS9150EV02 / XIAO nRF52840 — Travelers Pad
 
 ## 現在の状態 / Current status
 
@@ -16,6 +16,37 @@ for left/right click. It does not yet implement speed tuning, middle click,
 swipes, or pinch.
 
 This is a ZMK/Zephyr module for IQS9150EV02 bring-up and basic pointer output.
+
+## モジュール構成 / Module architecture
+
+センサ固有の処理と操作ポリシーを分離しています。`driver` はIQS9150の初期化、RDY、ATI、
+Event Mode、および正規化した接触フレーム（絶対X/Y、接触本数）だけを担当します。
+クリック、スクロール、加速、ジェスチャーをここへ戻さないでください。
+
+Sensor-specific work and interaction policy are separate. The `driver` owns
+IQS9150 initialization, RDY, ATI, Event Mode, and normalized contact frames
+(absolute X/Y and finger count) only. Do not put click,
+scroll, acceleration, or gesture policy back into the driver.
+
+| 内部モジュール / Internal module | 役割 / Responsibility | 状態 / Status |
+| --- | --- | --- |
+| `driver` (`input_iqs9150_step1a.c`) | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
+| `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール、1/2本指タップ / pointer, scroll, taps | 有効 / enabled |
+| `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
+| `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
+
+格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
+設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の
+4つの任意セル割当を持ちます。使用時はノードを `status = "okay"` にし、`chosen` の
+`zmk,kscan` とmatrix transform/keymapをその格子用に切り替えます。初期設定で無効なのは、
+既存のポインタ・タップ操作を変えないためです。
+
+When enabled, short one-finger grid taps become virtual KSCAN keys rather than
+ordinary left clicks, so ZMK keymap bindings control their actions. The sample
+`iqs9150_grid` node has a 3×3 grid and four configurable edge cells (left,
+right, top, bottom). Set its `status = "okay"` and switch the chosen
+`zmk,kscan`, matrix transform, and keymap to the grid when using it. It stays
+disabled initially to preserve the existing pointer and tap behavior.
 
 ## 配線とDTS / Wiring and DTS
 

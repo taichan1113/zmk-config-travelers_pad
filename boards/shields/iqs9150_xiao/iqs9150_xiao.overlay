@@ -61,10 +61,42 @@
         events = <0>;
     };
 
-    /* Forward IQS9150 relative input events to ZMK's mouse HID endpoint.
-     * IQS9150 の相対移動イベントを ZMK のマウス HID へ転送する。 */
+    /* Function module: raw IQS9150 contact frames -> pointer/scroll/taps.
+     * 機能モジュール: IQS9150の生接触フレームをポインタ・スクロール・タップへ変換する。 */
+    iqs9150_pointer: iqs9150_pointer {
+        compatible = "zmk,travelers-pad-iqs9150-pointer";
+        input-device = <&iqs9150>;
+        scroll-divisor = <4>;
+        tap-max-ms = <350>;
+        tap-max-move = <75>;
+    };
+
+    /* Optional function module: short one-finger taps become virtual KSCAN
+     * cells. It is disabled by default so ordinary one-finger tap remains a
+     * mouse click. Enable it together with a matching chosen zmk,kscan and
+     * matrix transform/keymap when gesture-layer input is wanted.
+     *
+     * 任意の機能モジュール: 短い1本指タップを仮想KSCANセルへ変換する。通常の
+     * 1本指タップを左クリックとして維持するため、初期状態では無効にする。 */
+    iqs9150_grid: iqs9150_grid {
+        compatible = "zmk,travelers-pad-iqs9150-grid-kscan";
+        status = "disabled";
+        input-device = <&iqs9150>;
+        rows = <3>;
+        columns = <3>;
+        surface-x = <2000>;
+        surface-y = <1213>;
+        edge-size = <100>;
+        /* left, right, top, bottom: each item is <row column>. */
+        edge-keys = <2 0>, <2 1>, <2 2>, <1 1>;
+        tap-max-ms = <350>;
+        tap-max-move = <75>;
+    };
+
+    /* Forward function-module output to ZMK's mouse HID endpoint.
+     * 機能モジュールの出力をZMKのマウスHIDエンドポイントへ転送する。 */
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
-        device = <&iqs9150>;
+        device = <&iqs9150_pointer>;
     };
 };
