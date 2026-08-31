@@ -1,0 +1,2 @@
+zephyr_library()
+zephyr_library_sources_ifdef(CONFIG_IQS9150_STEP1A src/input_iqs9150_step1a.c)

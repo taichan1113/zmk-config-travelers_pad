@@ -1,0 +1,2 @@
+config SHIELD_IQS9150_XIAO
+    def_bool $(shields_list_contains,iqs9150_xiao)

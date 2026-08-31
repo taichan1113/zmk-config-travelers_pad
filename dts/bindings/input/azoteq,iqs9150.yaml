@@ -1,0 +1,14 @@
+description: Azoteq IQS9150 capacitive trackpad controller
+
+compatible: "azoteq,iqs9150"
+
+include: i2c-device.yaml
+
+properties:
+  rdy-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO connected to the IQS9150 RDY output. RDY is active-low and
+      open-drain. Put pull-up flags here only when the EV02 board does not
+      provide the required external pull-up.

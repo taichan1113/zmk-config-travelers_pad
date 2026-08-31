@@ -1,0 +1,17 @@
+menuconfig IQS9150_STEP1A
+    bool "IQS9150 EV02 Step 1A diagnostic driver"
+    default y
+    depends on DT_HAS_AZOTEQ_IQS9150_ENABLED
+    select I2C
+    help
+      Read and log IQS9150 reports on the active-low RDY interrupt. This
+      diagnostic driver does not send pointer/HID input events and does not
+      write sensor configuration, reset, ACK reset, or trigger ATI.
+
+if IQS9150_STEP1A
+
+module = IQS9150_STEP1A
+module-str = iqs9150_step1a
+source "subsys/logging/Kconfig.template.log_config"
+
+endif

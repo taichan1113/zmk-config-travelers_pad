@@ -1,0 +1,6 @@
+if SHIELD_IQS9150_XIAO
+
+config ZMK_KEYBOARD_NAME
+    default "IQS9150 EV02"
+
+endif

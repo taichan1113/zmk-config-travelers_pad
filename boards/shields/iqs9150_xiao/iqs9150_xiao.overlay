@@ -1,0 +1,63 @@
+/* IQS9150EV02 / Seeed XIAO nRF52840 wiring (XIAO top view, right header):
+ * GND -> EV02 GND       3V3 -> EV02 VDD
+ * P1.14 -> EV02 SDA     P1.13 -> EV02 SCL
+ * P1.15 -> EV02 RDY
+ *
+ * P1.12 is deliberately unused in Step 1A. Do not connect it to MCLR yet:
+ * the firmware must not reset an EV02 whose GUI configuration is being kept.
+ */
+
+#include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
+#include <dt-bindings/zmk/matrix_transform.h>
+
+&i2c0_default {
+    group1 {
+        psels = <NRF_PSEL(TWIM_SDA, 1, 14)>,
+                <NRF_PSEL(TWIM_SCL, 1, 13)>;
+    };
+};
+
+&i2c0_sleep {
+    group1 {
+        psels = <NRF_PSEL(TWIM_SDA, 1, 14)>,
+                <NRF_PSEL(TWIM_SCL, 1, 13)>;
+        low-power-enable;
+    };
+};
+
+&i2c0 {
+    status = "okay";
+    clock-frequency = <I2C_BITRATE_FAST>;
+
+    iqs9150: trackpad@56 {
+        compatible = "azoteq,iqs9150";
+        reg = <0x56>;
+        rdy-gpios = <&gpio1 15 GPIO_ACTIVE_LOW>;
+    };
+};
+
+/* P1.13--P1.15 are now I2C/RDY and must not be claimed by SPI2. */
+&spi2 {
+    status = "disabled";
+};
+
+/ {
+    chosen {
+        zmk,kscan = &iqs9150_kscan;
+        zmk,matrix-transform = &iqs9150_transform;
+    };
+
+    iqs9150_transform: keymap_transform_0 {
+        compatible = "zmk,matrix-transform";
+        rows = <1>;
+        columns = <1>;
+        map = <RC(0, 0)>;
+    };
+
+    iqs9150_kscan: kscan_iqs9150 {
+        compatible = "zmk,kscan-mock";
+        rows = <1>;
+        columns = <1>;
+        events = <0>;
+    };
+};
