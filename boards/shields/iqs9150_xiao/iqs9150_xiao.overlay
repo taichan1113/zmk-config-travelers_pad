@@ -139,15 +139,14 @@
          * 80 counts of parallel movement. */
         edge-size = <140>;
         step-move = <80>;
-        /* 左辺から80カウント内側に入ると、左下寄りの小さな円形操作へ切り替える。
-         * Enter circle mode 80 counts inward, around a left-lower centre. */
+        /* 辺の移動方向に対応する角の局所円へ、80カウント内側で切り替える。
+         * Enter the local circle at the corner selected by edge direction. */
         circle-entry-depth = <80>;
-        /* 円の中心Y=900から±180カウントだけで円へ移行する。これにより左上の
-         * 横移動を誤って円形操作と判定しない。 */
+        /* 選択した角の中心と平行方向が±180カウント内だけで円へ移行する。 */
         circle-entry-span = <180>;
         circle-step-move = <80>;
-        circle-center-x = <360>;
-        circle-center-y = <900>;
+        circle-corner-inset-x = <360>;
+        circle-corner-inset-y = <313>;
         edge-left;
     };
 

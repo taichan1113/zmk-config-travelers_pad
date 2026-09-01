@@ -1,62 +1,81 @@
-# Edge Dial: Local Circle Continuation Isolated Test / エッジダイヤル: 局所円形継続単体試験
+# Edge Dial: Directional Corner Circle Isolated Test / エッジダイヤル: 方向連動コーナー円形単体試験
 
 ## Intent / 意図
 
-Circular movement is not another command. It is an alternative path that lets
-one edge action continue after the usable straight section of an edge runs out.
-Linear and circular motion therefore emit the **same** virtual KSCAN positions.
+Circular motion extends an edge action when the useful straight length of that
+edge runs out. It is not a separate command: linear and circular motion use the
+same virtual KSCAN positions and therefore the same keymap binding (`D`/`U` in
+this test).
 
-円形操作は別コマンドではありません。辺の直線部分を使い切った後も、同じ辺操作を継続
-するための代替軌道です。このため直線と円形は**同じ**仮想KSCAN位置を発火します。
+円形操作は、辺の直線部分を使い切った後も同じ辺操作を続けるためのものです。別コマンド
+ではないため、直線と円形は同じ仮想KSCAN位置、したがって本試験では同じ`D`/`U`を
+出力します。
 
-Only the left edge is enabled in this UF2. Downward/right-handed positive motion
-emits `D`; reverse motion emits `U`. The local circle centre is `(360,900)`,
-left and below the physical pad centre, so a stroke from the upper left down the
-left edge can curve into a small lower-left circle without returning to centre.
+The local circle centre is selected from the acquired edge and the last
+meaningful direction along that edge. It is not fixed to one corner.
 
-このUF2で有効なのは左辺だけです。下方向/正方向は`D`、逆方向は`U`です。局所円の
-中心は`(360,900)`、すなわちパッド中央より左下に置きます。左上から左辺を下へなぞった
-後、中央まで戻らずに左下の小さな円へ自然に曲げられます。
+局所円の中心は、取得した辺と、その辺に沿った最後の有意な移動方向から選びます。一つの
+角に固定しません。
+
+| Acquired edge / 取得辺 | Linear direction / 直線方向 | Circle centre / 円の中心 |
+| --- | --- | --- |
+| Left / 左 | Down / 下 | Lower-left / 左下 |
+| Left / 左 | Up / 上 | Upper-left / 左上 |
+| Right / 右 | Down / 下 | Lower-right / 右下 |
+| Right / 右 | Up / 上 | Upper-right / 右上 |
+| Top / 上 | Left / 左 | Upper-left / 左上 |
+| Top / 上 | Right / 右 | Upper-right / 右上 |
+| Bottom / 下 | Left / 左 | Lower-left / 左下 |
+| Bottom / 下 | Right / 右 | Lower-right / 右下 |
+
+This isolated UF2 enables only the left edge. The configured four local centres
+are `(360,313)`, `(1640,313)`, `(360,900)`, and `(1640,900)`.
+
+この単体UF2で有効なのは左辺だけです。4つの局所中心は`(360,313)`、`(1640,313)`、
+`(360,900)`、`(1640,900)`です。
+
+## Procedure / 手順
+
+1. Flash `travelers-pad-edge-dial-directional-circle.uf2`, reconnect USB if
+   needed, and open a plain text editor.
+   `travelers-pad-edge-dial-directional-circle.uf2`を書き込み、必要ならUSBを再接続
+   してプレーンテキストエディターを開きます。
+2. Start near the upper part of the left edge. Trace downward and confirm `D`
+   repeats. At the lower-left area, curve about 80 counts inward and draw a
+   small circle: the output remains `D`/`U`, never a new key code.
+   左辺の上側から始めて下へなぞり、`D`が繰り返されることを確認します。左下付近で
+   約80カウント内側へ曲げ、小さな円を描きます。出力は`D`/`U`のままで、新しいキー
+   コードには変わりません。
+3. Start again near the lower part of the left edge. Trace upward, then curve
+   inward at the upper-left area and make a small circle. It must select the
+   upper-left centre instead.
+   今度は左辺下側から開始して上へなぞり、左上付近で内側へ曲げて小さな円を描きます。
+   この場合は左上中心が選択されることを確認します。
+4. Start at the left edge and move horizontally inward before first moving
+   vertically. Circle mode must not start because a direction has not yet been
+   established.
+   左辺から始め、最初に縦方向へ動かさずに内側へ横移動します。辺方向が未確定なので、
+   円形モードへ入らないことを確認します。
 
 Pointer, scrolling, tap/drag, multi-finger gestures, and the 3x3 grid remain
 disabled. / ポインタ、スクロール、タップ/ドラッグ、多指ジェスチャー、3x3格子は無効です。
 
-## Procedure / 手順
-
-1. Flash `travelers-pad-edge-dial-local-circle.uf2`, reconnect USB if needed,
-   and open a plain text editor.
-   `travelers-pad-edge-dial-local-circle.uf2`を書き込み、必要ならUSBを再接続して
-   プレーンテキストエディターを開きます。
-2. Start at the upper portion of the left edge and trace downward. `D` should
-   repeat as in the accepted linear test.
-   左辺の上側から開始して下へなぞります。合格済み直線試験と同様に`D`が繰り返し
-   入力されます。
-3. Without lifting, when reaching the lower-left area, curve about 80 counts to
-   the right and draw a small circle around that lower-left area. The output
-   remains `D` or `U`; it must never change to another key code merely because
-   the path became circular.
-   指を離さず、左下付近で80カウント程度だけ右へ曲げ、左下の周りに小さな円を描きます。
-   出力は`D`または`U`のままであり、円形になっただけで別キーへ変わらないことを確認します。
-4. Reverse the rotational direction. The output direction must change promptly
-   between `D` and `U`.
-   回転方向を反転します。`D`と`U`の出力方向がすみやかに反転することを確認します。
-5. Start touches away from the left edge, or add a second finger. No key must be
-   emitted; the latter cancels an active edge session.
-   左辺以外から接触を開始するか、2本目の指を追加します。キーを発火しないこと、後者は
-   アクティブな辺セッションを解除することを確認します。
-
 ## Expected log / 期待ログ
+
+Downward on the left edge:
 
 ```
 edge dial acquired edge=0
-edge dial mode=linear edge=0 row=0 column=0
-edge dial circle acquired edge=0 center=(360,900)
+edge dial circle acquired edge=0 direction=1 center=(360,900)
 edge dial mode=circle edge=0 row=0 column=0
-edge dial mode=circle edge=0 row=0 column=1
 ```
 
-`mode` is diagnostic only; both modes use `row=0`, and thus the same keymap
-bindings. No warning/error from `travelers_pad_edge_dial` is expected.
+Upward on the left edge changes only the selected centre and direction:
 
-`mode`は診断用だけで、両モードとも`row=0`、したがって同じキーマップ割当です。
-`travelers_pad_edge_dial`由来のwarning/errorは期待しません。
+```
+edge dial circle acquired edge=0 direction=-1 center=(360,313)
+edge dial mode=circle edge=0 row=0 column=0|1
+```
+
+`mode` is diagnostic only; both modes retain `row=0` and the same keymap
+bindings. / `mode`は診断用だけで、両モードとも`row=0`、同じキーマップ割当です。

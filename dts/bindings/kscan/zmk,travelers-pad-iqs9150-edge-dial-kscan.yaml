@@ -32,12 +32,14 @@ properties:
   circle-step-move:
     type: int
     default: 80
-  circle-center-x:
+  circle-corner-inset-x:
     type: int
-    description: Optional centre X coordinate; omit to use surface centre.
-  circle-center-y:
+    default: 360
+    description: Horizontal inset of dynamic corner circle centres.
+  circle-corner-inset-y:
     type: int
-    description: Optional centre Y coordinate; omit to use surface centre.
+    default: 313
+    description: Vertical inset of dynamic corner circle centres.
   edge-left:
     type: boolean
   edge-right:
