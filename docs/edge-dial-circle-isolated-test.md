@@ -66,16 +66,22 @@ Downward on the left edge:
 
 ```
 edge dial acquired edge=0
-edge dial circle acquired edge=0 direction=1 center=(360,900)
-edge dial mode=circle edge=0 row=0 column=0
+edge dial circle acquired edge=0 direction=1 at=(x,y) center=(360,900)
+edge dial mode=circle edge=0 row=0 column=0 at=(x,y)
 ```
 
 Upward on the left edge changes only the selected centre and direction:
 
 ```
-edge dial circle acquired edge=0 direction=-1 center=(360,313)
+edge dial circle acquired edge=0 direction=-1 at=(x,y) center=(360,313)
 edge dial mode=circle edge=0 row=0 column=0|1
 ```
 
 `mode` is diagnostic only; both modes retain `row=0` and the same keymap
 bindings. / `mode`は診断用だけで、両モードとも`row=0`、同じキーマップ割当です。
+
+The `at=(x,y)` values are calibration evidence: report the physical location
+used for the stroke together with these lines if a circle is misplaced.
+
+`at=(x,y)`は位置校正のための値です。円の位置がずれる場合は、操作した物理的な位置と
+この行を合わせて報告してください。

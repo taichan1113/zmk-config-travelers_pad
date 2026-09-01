@@ -158,8 +158,9 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 	}
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
-	LOG_INF("edge dial mode=%s edge=%u row=%u column=%u",
-		data->mode == EDGE_DIAL_CIRCLE ? "circle" : "linear", data->edge, row, column);
+	LOG_INF("edge dial mode=%s edge=%u row=%u column=%u at=(%u,%u)",
+		data->mode == EDGE_DIAL_CIRCLE ? "circle" : "linear", data->edge, row, column,
+		data->x, data->y);
 }
 
 static bool edge_dial_has_entered_circle(const struct edge_dial_config *cfg,
@@ -239,7 +240,7 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->accumulated_move = 0;
 			data->mode = EDGE_DIAL_LINEAR;
 			data->linear_direction = 0;
-			LOG_INF("edge dial acquired edge=%u", data->edge);
+			LOG_INF("edge dial acquired edge=%u at=(%u,%u)", data->edge, data->x, data->y);
 		}
 		return;
 	}
@@ -254,9 +255,9 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->last_x = data->x;
 			data->last_y = data->y;
 			data->accumulated_move = 0;
-			LOG_INF("edge dial circle acquired edge=%u direction=%d center=(%u,%u)",
-				data->edge, data->linear_direction, edge_dial_circle_center_x(cfg, data),
-				edge_dial_circle_center_y(cfg, data));
+			LOG_INF("edge dial circle acquired edge=%u direction=%d at=(%u,%u) center=(%u,%u)",
+				data->edge, data->linear_direction, data->x, data->y,
+				edge_dial_circle_center_x(cfg, data), edge_dial_circle_center_y(cfg, data));
 			return;
 		}
 	} else {
