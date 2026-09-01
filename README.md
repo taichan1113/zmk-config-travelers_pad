@@ -35,6 +35,7 @@ scroll, acceleration, or gesture policy back into the driver.
 | `function/iqs9150_multifinger_router.c` | 多指操作の排他判定 / exclusive multi-finger routing | 有効 / enabled |
 | `function/iqs9150_tap_drag.c` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
+| `function/iqs9150_multifinger_gesture_kscan.c` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
 ## マルチタッチ座標 / Multi-touch coordinates
@@ -103,14 +104,40 @@ for the next router stage.
 ポインタ機能の前にルーターを置き、操作セッションを一度だけ分類します。1本指は直ちに
 ポインタへ渡します。2本指は短時間保留し、平行移動だけをスクロールへ渡します。指間距離の
 変化（ピンチ）または二点ベクトルの回転はジオメトリ操作として確保され、スクロールを出力
-しません。3本以上も多指スワイプ候補として確保され、現在はログのみでZMK操作には未割当です。
+しません。3本・4本指は完了時に仮想KSCANの位置へ変換します。5本指は独立座標による
+Grasp/Releaseとして、確定時に専用の仮想KSCAN位置へ変換します。
 
 The router sits before the pointer function and classifies each session once.
 One-finger contact passes through immediately. Two-finger contact is briefly
 held: only parallel motion reaches scrolling. Distance change (pinch) or
 two-point-vector rotation is claimed as geometry and produces no scroll.
-Three or more fingers are claimed as multi-finger swipe candidates; this build
-logs them but does not yet bind them to a ZMK action.
+Three and four fingers are claimed as swipe candidates and become virtual KSCAN positions on
+release. Five fingers use independent coordinates for Grasp/Release and emit dedicated virtual
+KSCAN positions when confirmed.
+
+## 3〜4本指スワイプと5本指形状ログ / Three-to-four-finger swipes and five-finger geometry logs
+
+`iqs9150_gesture_kscan` は重心が `swipe-min-move`（初期値180）以上移動し、接触時間が
+`swipe-max-ms`（初期値700 ms）以内の3本・4本指操作をスワイプとして確定する。3本指を行0、
+4本指を行1、左・右・上・下を列0・1・2・3として、対応する仮想KSCANを一度だけ押下・解放する。
+
+5接触が `five-finger-stable-frames`（初期値3）フレーム継続して
+同じ追跡IDであることを確認してから、5点それぞれの重心からのマンハッタン距離を基準値として
+記録する。4点以上が `five-finger-radial-move`（初期値80）以上、内側へ移動すると`Grasp`、
+外側へ移動すると`Release`候補を確定する。確定時にrow 2のcolumn 0へGrasp、column 1へReleaseを
+一度だけ出力し、全指を離すまで再発火しない。
+
+ダブルタップ＋ドラッグが接触を所有した場合は、このモジュールはジェスチャーを出力しない。
+従って3本指の中クリックドラッグと3本指スワイプは混在しない。
+
+`iqs9150_gesture_kscan` recognizes 3/4-finger swipes when centroid displacement reaches
+`swipe-min-move` (180 by default) within `swipe-max-ms` (700 ms by default). It emits one virtual
+KSCAN press/release: row 0 selects 3 fingers, row 1 selects 4 fingers, and columns 0/1/2/3 select
+left/right/up/down. For five fingers it first captures a baseline only after
+`five-finger-stable-frames` (3 by default) complete frames with the same tracking IDs. If at least
+four contacts move inward or outward from the centroid by `five-finger-radial-move` (80 by default),
+it confirms `Grasp` or `Release` and emits row 2 column 0 or 1 once, respectively, until all fingers
+are released. A double-tap drag owns its raw contact stream and suppresses gesture output.
 
 検証時は次のログと画面動作を対応させます。
 

@@ -183,8 +183,12 @@ static void router_process_frame(const struct device *dev)
 		} else if (data->state == ROUTER_CLAIM_GEOMETRY) {
 			LOG_INF("2F route=geometry candidate complete");
 		} else if (data->state == ROUTER_CLAIM_MULTIFINGER) {
-			LOG_INF("%uF route=swipe candidate direction=%s", data->max_fingers,
-				swipe_direction(data));
+			if (data->max_fingers == 5) {
+				LOG_INF("5F route=Grasp/Release candidate complete");
+			} else {
+				LOG_INF("%uF route=swipe candidate direction=%s", data->max_fingers,
+					swipe_direction(data));
+			}
 		}
 		data->state = ROUTER_IDLE;
 		data->max_fingers = 0;
@@ -201,7 +205,11 @@ static void router_process_frame(const struct device *dev)
 			LOG_INF("2F route=awaiting scroll-or-geometry classification");
 		} else {
 			data->state = ROUTER_CLAIM_MULTIFINGER;
-			LOG_INF("%uF route=multifinger claimed", data->fingers);
+			if (data->fingers == 5) {
+				LOG_INF("5F route=Grasp/Release claimed");
+			} else {
+				LOG_INF("%uF route=multifinger claimed", data->fingers);
+			}
 		}
 		return;
 	}
@@ -216,12 +224,20 @@ static void router_process_frame(const struct device *dev)
 	if (data->state == ROUTER_SCROLL_TWO && data->fingers >= 3) {
 		router_cancel_pointer(dev);
 		data->state = ROUTER_CLAIM_MULTIFINGER;
-		LOG_INF("%uF route=multifinger claimed; cancelled scroll", data->fingers);
+		if (data->fingers == 5) {
+			LOG_INF("5F route=Grasp/Release claimed; cancelled scroll");
+		} else {
+			LOG_INF("%uF route=multifinger claimed; cancelled scroll", data->fingers);
+		}
 		return;
 	}
 	if (data->state == ROUTER_AWAIT_TWO && data->fingers >= 3) {
 		data->state = ROUTER_CLAIM_MULTIFINGER;
-		LOG_INF("%uF route=multifinger claimed", data->fingers);
+		if (data->fingers == 5) {
+			LOG_INF("5F route=Grasp/Release claimed");
+		} else {
+			LOG_INF("%uF route=multifinger claimed", data->fingers);
+		}
 		return;
 	}
 	if (data->state == ROUTER_PASS_ONE) {

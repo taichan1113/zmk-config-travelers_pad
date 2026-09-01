@@ -49,8 +49,8 @@
 
 / {
     chosen {
-        zmk,kscan = &iqs9150_kscan;
-        zmk,matrix-transform = &iqs9150_transform;
+        zmk,kscan = &iqs9150_gesture_kscan;
+        zmk,matrix-transform = &iqs9150_gesture_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -65,6 +65,28 @@
         rows = <1>;
         columns = <1>;
         events = <0>;
+    };
+
+    /* Rows 0/1 are 3/4-finger left/right/up/down. Row 2 columns 0/1 are
+     * 5F Grasp/Release. The keymap keeps them inert until assigned.
+     * 行0/1は3/4本指の左/右/上/下。行2の列0/1は5本指Grasp/Release。
+     * keymapで割り当てるまでは無動作。 */
+    iqs9150_gesture_transform: gesture_transform {
+        compatible = "zmk,matrix-transform";
+        rows = <3>;
+        columns = <4>;
+        map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)
+               RC(1, 0) RC(1, 1) RC(1, 2) RC(1, 3)
+               RC(2, 0) RC(2, 1) RC(2, 2) RC(2, 3)>;
+    };
+
+    iqs9150_gesture_kscan: iqs9150_gesture_kscan {
+        compatible = "zmk,travelers-pad-iqs9150-multifinger-gesture-kscan";
+        input-device = <&iqs9150>;
+        swipe-min-move = <180>;
+        swipe-max-ms = <700>;
+        five-finger-radial-move = <80>;
+        five-finger-stable-frames = <3>;
     };
 
     /* Function module: raw frames are classified before pointer handling.

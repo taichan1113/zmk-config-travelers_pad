@@ -5,7 +5,13 @@
         compatible = "zmk,keymap";
 
         default_layer {
-            bindings = <&none>;
+            /* 3F left/right/up/down, 4F left/right/up/down, 5F left/right/up/down.
+             * Bind any ZMK behavior here. Defaults are intentionally inert.
+             * 3/4/5本指の左/右/上/下。任意のZMK behaviorへ変更できる。
+             * 初期値は意図しない操作を避けるためnone。 */
+            bindings = <&none &none &none &none
+                        &none &none &none &none
+                        &none &none &none &none>;
         };
     };
 };
