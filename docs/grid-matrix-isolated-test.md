@@ -23,12 +23,14 @@ Open Notepad. The 3x3 region is numbered left-to-right, top-to-bottom.
   7 | 8 | 9
 ```
 
-For a tap, put a finger down, keep it still for about 0.1--0.2 seconds, then
-lift it. Do not slide while touching. For a flick, start at the centre, pause
-briefly after touching, and travel straight by roughly one quarter of the pad
-before lifting.
+For a tap, put a finger down, keep it still for about 0.15--0.25 seconds, then
+lift it. Do not slide while touching. The test waits 80 ms before accepting a
+grid contact and uses a 200-count flick threshold. For a flick, start at the
+centre, pause briefly after touching, and travel straight by roughly one
+quarter of the pad before lifting.
 
-タップは、指を置いてから約0.1〜0.2秒静止し、そのまま離す。接触中に滑らせない。
+タップは、指を置いてから約0.15〜0.25秒静止し、そのまま離す。接触中に滑らせない。
+この試験では、格子接触の確定を80ms待ち、フリックしきい値を200カウントとしている。
 フリックは中央から始め、接触後に少し静止してから、パッド幅または高さのおよそ1/4を
 まっすぐ動かして離す。
 

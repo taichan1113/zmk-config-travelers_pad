@@ -265,7 +265,12 @@
     iqs9150_matrix_input: iqs9150_matrix_input {
         compatible = "zmk,travelers-pad-iqs9150-matrix-input";
         input-device = <&iqs9150>;
-        one-finger-settle-ms = <45>;
+        /* A deliberate grid tap needs to survive contact-coordinate settling.
+         * The matrix starts only after this interval; short intentional flicks
+         * remain possible after the contact has settled.
+         * 意図的な格子タップを接触座標の収束から保護する。matrixはこの時間後に
+         * 開始するため、接触が安定した後でも短い意図的フリックは可能である。 */
+        one-finger-settle-ms = <80>;
         status = "okay";
     };
 };
@@ -287,7 +292,12 @@
     columns = <3>;
     x = <2000>;
     y = <1213>;
-    flick-threshold = <100>;
+    /* 100 is only 5% of the 2000-count X range and may be crossed by
+     * pressure settling. 200 is still below the documented deliberate
+     * quarter-pad flick.
+     * 100はX軸2000カウントの5%で、接触圧による座標収束でも超え得る。200なら
+     * 文書化した意図的な1/4パッドフリックより十分小さい。 */
+    flick-threshold = <200>;
     long-press-ms = <0>;
     /* This listener receives only its private input stream. It can therefore
      * suppress its events without changing raw frames seen by other modules.
