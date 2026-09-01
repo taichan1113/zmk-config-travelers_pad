@@ -11,14 +11,17 @@ this test).
 ではないため、直線と円形は同じ仮想KSCAN位置、したがって本試験では同じ`D`/`U`を
 出力します。
 
-Circular direction is deliberately ignored: the circle provides only the
-amount of continued input. Thus, after tracing the left edge down, any circular
-motion during that same touch emits only `D`; it never changes to `U` until the
-finger is released and a new edge stroke is acquired.
+The first meaningful edge direction is locked for the complete touch sequence.
+Circular direction is deliberately ignored: the circle provides only the amount
+of continued input. Thus, after tracing the left edge down, a bend back upward
+while approaching the circle and any circular motion during that same touch both
+emit only `D`; it never changes to `U` until the finger is released and a new
+edge stroke is acquired.
 
-円の回転方向は意図的に無視します。円は継続入力の量だけを与えます。したがって左辺を
-下へなぞった後は、同じタッチ中の円操作では常に`D`だけを出力します。指を離して次の
-辺操作を取得するまで、`U`へ切り替わることはありません。
+最初の有意な辺方向を、接触シーケンス全体で固定します。円の回転方向は意図的に無視し、
+円は継続入力の量だけを与えます。したがって左辺を下へなぞった後は、円へ近づく際に上へ
+曲がった場合も、そのまま円を描いた場合も、同じタッチ中は常に`D`だけを出力します。指を
+離して新しい辺操作を取得するまで、`U`へ切り替わることはありません。
 
 The local circle centre is selected from the acquired edge and the last
 meaningful direction along that edge. It is not fixed to one corner.

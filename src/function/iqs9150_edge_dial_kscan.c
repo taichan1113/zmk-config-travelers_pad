@@ -265,8 +265,15 @@ static void edge_dial_process_frame(const struct device *dev)
 
 	if (data->mode == EDGE_DIAL_LINEAR) {
 		delta = edge_dial_parallel_delta(data);
-		if (delta != 0) {
+		/* The first meaningful trace direction owns this whole contact. Do not
+		 * reinterpret a bend toward the local circle, or a return along the edge,
+		 * as a new opposite edge action before the finger is released.
+		 * 最初の有意な辺方向が、この接触全体の操作方向を確定します。局所円へ曲がる
+		 * 動きや辺に沿った戻りを、指を離す前の逆方向操作として再解釈しません。 */
+		if (delta != 0 && data->linear_direction == 0) {
 			data->linear_direction = delta > 0 ? 1 : -1;
+			LOG_INF("edge dial direction locked edge=%u direction=%d", data->edge,
+				data->linear_direction);
 		}
 		if (edge_dial_has_entered_circle(cfg, data)) {
 			data->mode = EDGE_DIAL_CIRCLE;
