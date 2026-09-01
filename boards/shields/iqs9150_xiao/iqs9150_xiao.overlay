@@ -50,12 +50,19 @@
 
 / {
     chosen {
-        /* Basic input integration profile: no gesture/grid KSCAN source is
-         * active. The mock KSCAN merely satisfies ZMK's normal keymap setup.
-         * 基本入力結合試験プロファイル: ジェスチャー/格子KSCANを有効にしない。
-         * mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
-        zmk,kscan = &iqs9150_kscan;
-        zmk,matrix-transform = &iqs9150_transform;
+        /* Multi-finger gesture integration profile: composite KSCAN receives
+         * only the 3--5 finger gesture source; the grid source remains off.
+         * 多指ジェスチャー結合試験プロファイル: composite KSCANには3--5本指の
+         * ジェスチャーソースだけを接続し、格子ソースは無効のままとする。 */
+        zmk,kscan = &iqs9150_composite_kscan;
+        /* Keep the same ten logical positions as the gesture profile, even
+         * while its KSCAN sources are disabled. This keeps the editable
+         * gesture keymap template structurally valid without enabling any
+         * gesture action in the basic-input test.
+         * 基本入力試験でも、ジェスチャープロファイルと同じ10論理位置を維持する。
+         * KSCANソースは無効のままなのでジェスチャーは発火せず、編集可能な
+         * keymapテンプレートだけを構造的に正しく保てる。 */
+        zmk,matrix-transform = &iqs9150_composite_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -67,8 +74,8 @@
 
     iqs9150_kscan: kscan_iqs9150 {
         compatible = "zmk,kscan-mock";
-        rows = <1>;
-        columns = <1>;
+        rows = <18>;
+        columns = <4>;
         events = <0>;
     };
 
@@ -99,7 +106,7 @@
      * キーマップや既存ジェスチャードライバを壊さず子ノードとして追加できる。 */
     iqs9150_composite_kscan: iqs9150_composite_kscan {
         compatible = "zmk,kscan-composite";
-        status = "disabled";
+        status = "okay";
         rows = <18>;
         columns = <4>;
 
@@ -115,7 +122,7 @@
 
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-gesture-kscan";
-        status = "disabled";
+        status = "okay";
         input-device = <&iqs9150>;
         swipe-min-move = <180>;
         swipe-max-ms = <700>;

@@ -129,6 +129,11 @@ KSCAN positions when confirmed.
 一度だけ出力し、全指を離すまで再発火しない。
 `RC(2,2)`と`RC(2,3)`はmatrix transformから省略するため、keymapの論理positionは10個だけとなる。
 
+ジェスチャーの割当テンプレートは [`config/iqs9150_xiao.keymap`](config/iqs9150_xiao.keymap)
+にある。初期値は試験用の `F13`〜`F22` で、順序は 3本指の左/右/上/下、4本指の
+左/右/上/下、5本指のGrasp/Releaseである。必要に応じて各bindingを通常のZMK behaviorへ
+置換する。
+
 ダブルタップ＋ドラッグが接触を所有した場合は、このモジュールはジェスチャーを出力しない。
 従って3本指の中クリックドラッグと3本指スワイプは混在しない。
 
@@ -141,6 +146,11 @@ four contacts move inward or outward from the centroid by `five-finger-radial-mo
 it confirms `Grasp` or `Release` and emits row 2 column 0 or 1 once, respectively, until all fingers
 are released. `RC(2,2)` and `RC(2,3)` are omitted from the matrix transform, so the keymap has only
 10 logical positions. A double-tap drag owns its raw contact stream and suppresses gesture output.
+
+The gesture binding template is in [`config/iqs9150_xiao.keymap`](config/iqs9150_xiao.keymap).
+Its distinct `F13`--`F22` defaults are for testing, in this order: 3F left/right/up/down,
+4F left/right/up/down, then 5F Grasp/Release. Replace any entry with an ordinary ZMK behavior
+when assigning the final action.
 
 検証時は次のログと画面動作を対応させます。
 
