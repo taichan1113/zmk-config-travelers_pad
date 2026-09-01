@@ -1,0 +1,33 @@
+description: Travelers Pad IQS9150 continuous edge-trace virtual KSCAN
+compatible: "zmk,travelers-pad-iqs9150-edge-dial-kscan"
+include: [kscan.yaml, base.yaml]
+properties:
+  rows:
+    type: int
+    required: true
+  columns:
+    type: int
+    required: true
+  input-device:
+    type: phandle
+    required: true
+  surface-x:
+    type: int
+    default: 2000
+  surface-y:
+    type: int
+    default: 1213
+  edge-size:
+    type: int
+    default: 140
+  step-move:
+    type: int
+    default: 80
+  edge-left:
+    type: boolean
+  edge-right:
+    type: boolean
+  edge-top:
+    type: boolean
+  edge-bottom:
+    type: boolean

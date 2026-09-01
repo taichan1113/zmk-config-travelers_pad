@@ -50,17 +50,12 @@
 
 / {
     chosen {
-        /* Grid-matrix isolated profile: select the standard KSCAN proxy
-         * directly. Pointer, tap/drag, and multi-finger gesture output stay
-         * disabled, making a one-finger contact observable only as a grid key.
-         * 格子matrix単体試験プロファイル: 標準KSCAN proxyを直接選択する。ポインタ、
-         * タップ/ドラッグ、多指ジェスチャー出力は無効とし、1本指接触を格子キーだけで
-         * 観測できるようにする。 */
-        zmk,kscan = &kscan_gesture;
-        /* The 15 logical grid rows match the five 3x3 gesture groups emitted
-         * by zmk-input-matrix. / 15論理行はzmk-input-matrixが出力する5種類の
-         * 3x3ジェスチャー群に対応する。 */
-        zmk,matrix-transform = &iqs9150_grid_transform;
+        /* Edge-dial linear isolated profile: only the virtual edge KSCAN is
+         * selected. Pointer, tap/drag, gestures and grid input remain off.
+         * エッジダイヤル直線単体試験: 仮想エッジKSCANだけを選択する。ポインタ、
+         * タップ/ドラッグ、ジェスチャー、格子入力はすべて無効とする。 */
+        zmk,kscan = &iqs9150_edge_dial;
+        zmk,matrix-transform = &iqs9150_edge_dial_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -118,6 +113,34 @@
                RC(12, 0) RC(12, 1) RC(12, 2)
                RC(13, 0) RC(13, 1) RC(13, 2)
                RC(14, 0) RC(14, 1) RC(14, 2)>;
+    };
+
+    /* Eight physical columns: each edge has a positive and negative trace
+     * direction. This test enables only the left edge, so columns 0 and 1
+     * are the only mapped positions.
+     * 物理列は8本で、各辺に正/負のトレース方向を1組ずつ割り当てる。この試験で
+     * 有効にするのは左辺だけであるため、列0と1だけを割り当てる。 */
+    iqs9150_edge_dial_transform: edge_dial_transform {
+        compatible = "zmk,matrix-transform";
+        rows = <1>;
+        columns = <8>;
+        map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)
+               RC(0, 4) RC(0, 5) RC(0, 6) RC(0, 7)>;
+    };
+
+    iqs9150_edge_dial: iqs9150_edge_dial {
+        compatible = "zmk,travelers-pad-iqs9150-edge-dial-kscan";
+        input-device = <&iqs9150>;
+        rows = <1>;
+        columns = <8>;
+        surface-x = <2000>;
+        surface-y = <1213>;
+        /* 左端から140カウント、80カウント移動ごとに一回発火する。
+         * The leftmost 140 counts acquire the edge; one event is emitted per
+         * 80 counts of parallel movement. */
+        edge-size = <140>;
+        step-move = <80>;
+        edge-left;
     };
 
     /* Composite is deliberately the only chosen KSCAN. New optional sources
@@ -259,7 +282,7 @@
          * its transform and bindings.
          * 基本ファームには格子の論理割当がない。格子/辺モジュールがtransformと
          * bindingsをincludeするまで、この検証専用listenerは無効にする。 */
-        status = "okay";
+        status = "disabled";
     };
 
     iqs9150_matrix_input: iqs9150_matrix_input {
@@ -271,7 +294,7 @@
          * 意図的な格子タップを接触座標の収束から保護する。matrixはこの時間後に
          * 開始するため、接触が安定した後でも短い意図的フリックは可能である。 */
         one-finger-settle-ms = <80>;
-        status = "okay";
+        status = "disabled";
     };
 };
 
