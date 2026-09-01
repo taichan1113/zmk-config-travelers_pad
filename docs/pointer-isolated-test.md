@@ -39,13 +39,26 @@ KSCANは無効である。
    確認する。両方を離すとスクロールセッションは終了し、新たな1本指接触ではポインタ
    移動に戻ることを確認する。
 
+The first meaningful movement locks the scroll axis for the current two-finger
+contact: lift both fingers before changing from vertical to horizontal or vice
+versa. Slow movement is accumulated, so it may take several small reports before
+the first wheel event; it must not be lost.
+
+最初の有意な移動で、その2本指接触中のスクロール軸を固定する。縦横を切り替える前に
+両指を離すこと。低速移動は蓄積するため最初のホイールイベントまで数レポートかかるが、
+移動量は失われない。
+
 ## Evidence / 判定ログ
 
 For a failure, save approximately two seconds of serial output before and after
 the event, and state the test step. Relevant HID lines are `Mouse movement set`
-and `Mouse scroll set`. A motion value with an unexpectedly large magnitude, or
-movement reports during step 3/4, is a failure.
+and `Mouse scroll set`. A motion value with an unexpectedly large magnitude,
+wheel reports on the locked opposite axis, or movement reports during step 3/4
+is a failure. Record every `discarded implausible scroll delta` line with the
+test step; it must not be emitted during ordinary scrolling.
 
 失敗時は、該当操作の前後約2秒のシリアルログと手順番号を保存する。確認対象は
-`Mouse movement set` と `Mouse scroll set` である。予期しない大きな移動値、または
-手順3/4中の移動レポートは不合格とする。
+`Mouse movement set` と `Mouse scroll set` である。予期しない大きな移動値、固定した
+反対軸のホイール出力、または手順3/4中の移動レポートは不合格とする。
+`discarded implausible scroll delta` は発生したすべてについて手順番号を記録する。
+通常のスクロール中には発生してはならない。

@@ -142,6 +142,9 @@
          * ポインタ自身の2本指スクロールだけを単独で検証する。 */
         input-device = <&iqs9150>;
         scroll-divisor = <4>;
+        scroll-axis-lock-min-move = <12>;
+        scroll-axis-lock-ratio = <2>;
+        scroll-max-frame-delta = <128>;
     };
 
     /* Function module: one/two/three-finger tap maps to left/right/middle.
