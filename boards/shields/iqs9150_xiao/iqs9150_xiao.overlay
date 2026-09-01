@@ -192,7 +192,7 @@
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
         geometry-rotation-threshold = <30000>;
-        status = "disabled";
+        status = "okay";
     };
 
     iqs9150_pointer: iqs9150_pointer {
@@ -206,7 +206,7 @@
         scroll-axis-lock-min-move = <12>;
         scroll-axis-lock-ratio = <2>;
         scroll-max-frame-delta = <128>;
-        status = "disabled";
+        status = "okay";
     };
 
     /* Function module: one/two/three-finger tap maps to left/right/middle.
@@ -266,7 +266,7 @@
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_pointer>;
-        status = "disabled";
+        status = "okay";
     };
 
     iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {

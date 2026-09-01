@@ -24,7 +24,16 @@
 #include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 
+#include <travelers_pad/edge_dial.h>
+
 LOG_MODULE_REGISTER(travelers_pad_edge_dial, LOG_LEVEL_INF);
+
+static bool edge_dial_active;
+
+bool travelers_pad_edge_dial_is_active(void)
+{
+	return edge_dial_active;
+}
 
 enum edge_dial_edge {
 	EDGE_DIAL_LEFT,
@@ -183,6 +192,7 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 	}
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
+	edge_dial_active = true;
 	LOG_INF("edge dial mode=%s edge=%u row=%u column=%u at=(%u,%u)",
 		data->mode == EDGE_DIAL_CIRCLE ? "circle" : "linear", data->edge, row, column,
 		data->x, data->y);
@@ -272,6 +282,7 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->mode = EDGE_DIAL_LINEAR;
 		data->edge_direction = 0;
 		data->circle_direction = 0;
+		edge_dial_active = false;
 		return;
 	}
 
@@ -285,6 +296,7 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->mode = EDGE_DIAL_LINEAR;
 			data->edge_direction = 0;
 			data->circle_direction = 0;
+			edge_dial_active = false;
 			LOG_INF("edge dial acquired edge=%u at=(%u,%u)", data->edge, data->x, data->y);
 		}
 		return;
