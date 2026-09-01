@@ -41,17 +41,26 @@ meaningful direction along that edge. It is not fixed to one corner.
 | Bottom / 下 | Left / 左 | Lower-left / 左下 |
 | Bottom / 下 | Right / 右 | Lower-right / 右下 |
 
-This isolated UF2 enables only the left edge. The configured four local centres
-are `(360,313)`, `(1640,313)`, `(360,900)`, and `(1640,900)`.
+This isolated UF2 enables all four edges. The configured four local centres are
+`(360,313)`, `(1640,313)`, `(360,900)`, and `(1640,900)`.
 
-この単体UF2で有効なのは左辺だけです。4つの局所中心は`(360,313)`、`(1640,313)`、
+この単体UF2では4辺すべてを有効にします。4つの局所中心は`(360,313)`、`(1640,313)`、
 `(360,900)`、`(1640,900)`です。
+
+## Test bindings / 試験用割当
+
+| Edge / 辺 | Positive direction / 正方向 | Negative direction / 負方向 |
+| --- | --- | --- |
+| Left / 左 | Down / 下: `D` | Up / 上: `U` |
+| Right / 右 | Down / 下: `R` | Up / 上: `I` |
+| Top / 上 | Right / 右: `T` | Left / 左: `Y` |
+| Bottom / 下 | Right / 右: `B` | Left / 左: `N` |
 
 ## Procedure / 手順
 
-1. Flash `travelers-pad-edge-dial-directional-circle.uf2`, reconnect USB if
+1. Flash `travelers-pad-edge-dial-four-edge-circle.uf2`, reconnect USB if
    needed, and open a plain text editor.
-   `travelers-pad-edge-dial-directional-circle.uf2`を書き込み、必要ならUSBを再接続
+   `travelers-pad-edge-dial-four-edge-circle.uf2`を書き込み、必要ならUSBを再接続
    してプレーンテキストエディターを開きます。
 2. Start near the upper part of the left edge. Trace downward and confirm `D`
    repeats. At the lower-left area, curve about 80 counts inward and draw a
@@ -61,13 +70,17 @@ are `(360,313)`, `(1640,313)`, `(360,900)`, and `(1640,900)`.
    コードには変わりません。
 3. Start again near the lower part of the left edge. Trace upward, then curve
    inward at the upper-left area and make a small circle. It must select the
-   upper-left centre instead.
+   upper-left centre and continue `U` instead.
    今度は左辺下側から開始して上へなぞり、左上付近で内側へ曲げて小さな円を描きます。
    この場合は左上中心が選択されることを確認します。
-4. Start at the left edge and move horizontally inward before first moving
-   vertically. Circle mode must not start because a direction has not yet been
-   established.
-   左辺から始め、最初に縦方向へ動かさずに内側へ横移動します。辺方向が未確定なので、
+4. Repeat the equivalent positive and negative trace plus local circle on the
+   right, top, and bottom edges. Confirm `R/I`, `T/Y`, and `B/N` respectively,
+   including no change after leaving each edge band.
+   右辺・上辺・下辺についても、正負の辺移動と局所円を同様に試します。それぞれ`R/I`、
+   `T/Y`、`B/N`となり、辺帯域を離れた後に文字が変わらないことを確認します。
+5. Start at any edge and move inward before first moving along that edge. Circle
+   mode must not start because a direction has not yet been established.
+   任意の辺から始め、最初に辺方向へ動かさずに内側へ移動します。辺方向が未確定なので、
    円形モードへ入らないことを確認します。
 
 Pointer, scrolling, tap/drag, multi-finger gestures, and the 3x3 grid remain

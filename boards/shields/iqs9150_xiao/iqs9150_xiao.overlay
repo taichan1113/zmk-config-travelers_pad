@@ -147,7 +147,12 @@
         circle-step-move = <80>;
         circle-corner-inset-x = <360>;
         circle-corner-inset-y = <313>;
+        /* 4辺の方向・局所円への移行を単体検証する。/ Enable all four
+         * edges for the four-edge direction/circle isolated test. */
         edge-left;
+        edge-right;
+        edge-top;
+        edge-bottom;
     };
 
     /* Composite is deliberately the only chosen KSCAN. New optional sources
