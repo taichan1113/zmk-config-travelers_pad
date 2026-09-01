@@ -115,25 +115,22 @@
                RC(14, 0) RC(14, 1) RC(14, 2)>;
     };
 
-    /* Row 0 is straight edge tracing and row 1 is circular continuation.
-     * Each row has a positive/negative pair for every edge. This isolated
-     * test enables only the left edge, so only columns 0 and 1 are mapped.
-     * 行0は直線辺トレース、行1は円形継続である。各行には各辺の正/負方向の組が
-     * ある。この単体試験では左辺だけを有効にするため、列0/1だけを割り当てる。 */
+    /* Circular continuation is another trajectory for the same edge action,
+     * so it reuses the same one-row KSCAN positions. Each edge has a positive
+     * and negative pair. / 円形継続は同じ辺操作の別軌道なので、同じ1行KSCAN位置を
+     * 再利用する。各辺には正/負方向の組がある。 */
     iqs9150_edge_dial_transform: edge_dial_transform {
         compatible = "zmk,matrix-transform";
-        rows = <2>;
+        rows = <1>;
         columns = <8>;
         map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)
-               RC(0, 4) RC(0, 5) RC(0, 6) RC(0, 7)
-               RC(1, 0) RC(1, 1) RC(1, 2) RC(1, 3)
-               RC(1, 4) RC(1, 5) RC(1, 6) RC(1, 7)>;
+               RC(0, 4) RC(0, 5) RC(0, 6) RC(0, 7)>;
     };
 
     iqs9150_edge_dial: iqs9150_edge_dial {
         compatible = "zmk,travelers-pad-iqs9150-edge-dial-kscan";
         input-device = <&iqs9150>;
-        rows = <2>;
+        rows = <1>;
         columns = <8>;
         surface-x = <2000>;
         surface-y = <1213>;
@@ -142,10 +139,15 @@
          * 80 counts of parallel movement. */
         edge-size = <140>;
         step-move = <80>;
-        /* 左辺取得後に右へ320カウント入ると、パッド中心を基準とした円形操作へ
-         * 切り替える。Circular motion begins after moving 320 counts inward. */
-        circle-entry-depth = <320>;
+        /* 左辺から80カウント内側に入ると、左下寄りの小さな円形操作へ切り替える。
+         * Enter circle mode 80 counts inward, around a left-lower centre. */
+        circle-entry-depth = <80>;
+        /* 円の中心Y=900から±180カウントだけで円へ移行する。これにより左上の
+         * 横移動を誤って円形操作と判定しない。 */
+        circle-entry-span = <180>;
         circle-step-move = <80>;
+        circle-center-x = <360>;
+        circle-center-y = <900>;
         edge-left;
     };
 

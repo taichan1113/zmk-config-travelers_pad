@@ -25,10 +25,19 @@ properties:
     default: 80
   circle-entry-depth:
     type: int
-    default: 320
+    default: 80
+  circle-entry-span:
+    type: int
+    default: 250
   circle-step-move:
     type: int
     default: 80
+  circle-center-x:
+    type: int
+    description: Optional centre X coordinate; omit to use surface centre.
+  circle-center-y:
+    type: int
+    description: Optional centre Y coordinate; omit to use surface centre.
   edge-left:
     type: boolean
   edge-right:

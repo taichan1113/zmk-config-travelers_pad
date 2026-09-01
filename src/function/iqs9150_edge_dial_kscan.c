@@ -46,7 +46,10 @@ struct edge_dial_config {
 	uint16_t edge_size;
 	uint16_t step_move;
 	uint16_t circle_entry_depth;
+	uint16_t circle_entry_span;
 	uint16_t circle_step_move;
+	uint16_t circle_center_x;
+	uint16_t circle_center_y;
 	bool enabled[4];
 };
 
@@ -102,11 +105,27 @@ static int32_t edge_dial_parallel_delta(const struct edge_dial_data *data)
 	return (int32_t)data->x - data->last_x;
 }
 
+static int32_t edge_dial_circle_center_x(const struct edge_dial_config *cfg)
+{
+	return cfg->circle_center_x ? cfg->circle_center_x : cfg->surface_x / 2;
+}
+
+static int32_t edge_dial_circle_center_y(const struct edge_dial_config *cfg)
+{
+	return cfg->circle_center_y ? cfg->circle_center_y : cfg->surface_y / 2;
+}
+
+static int32_t edge_dial_absolute(int32_t value) { return value < 0 ? -value : value; }
+
 static void edge_dial_emit_step(const struct device *dev, bool positive)
 {
 	struct edge_dial_data *data = dev->data;
 	uint8_t column = ((uint8_t)data->edge * 2) + (positive ? 0 : 1);
-	uint8_t row = data->mode == EDGE_DIAL_CIRCLE ? 1 : 0;
+	/* Circular continuation is an alternate trajectory for the same edge
+	 * action, not a separate action. Keep the virtual KSCAN position unchanged.
+	 * 円形継続は別機能ではなく、同じ辺操作の代替軌道であるため、仮想KSCAN位置を
+	 * 直線時と同一に保つ。 */
+	uint8_t row = 0;
 
 	if (data->callback == NULL) {
 		LOG_WRN("edge dial ignored: KSCAN callback is not configured");
@@ -121,15 +140,25 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 static bool edge_dial_has_entered_circle(const struct edge_dial_config *cfg,
 					  const struct edge_dial_data *data)
 {
+	int32_t parallel_distance;
+
 	switch (data->edge) {
 	case EDGE_DIAL_LEFT:
-		return data->x >= cfg->edge_size + cfg->circle_entry_depth;
+		parallel_distance = (int32_t)data->y - edge_dial_circle_center_y(cfg);
+		return data->x >= cfg->edge_size + cfg->circle_entry_depth &&
+		       edge_dial_absolute(parallel_distance) <= cfg->circle_entry_span;
 	case EDGE_DIAL_RIGHT:
-		return data->x + cfg->edge_size + cfg->circle_entry_depth <= cfg->surface_x;
+		parallel_distance = (int32_t)data->y - edge_dial_circle_center_y(cfg);
+		return data->x + cfg->edge_size + cfg->circle_entry_depth <= cfg->surface_x &&
+		       edge_dial_absolute(parallel_distance) <= cfg->circle_entry_span;
 	case EDGE_DIAL_TOP:
-		return data->y >= cfg->edge_size + cfg->circle_entry_depth;
+		parallel_distance = (int32_t)data->x - edge_dial_circle_center_x(cfg);
+		return data->y >= cfg->edge_size + cfg->circle_entry_depth &&
+		       edge_dial_absolute(parallel_distance) <= cfg->circle_entry_span;
 	case EDGE_DIAL_BOTTOM:
-		return data->y + cfg->edge_size + cfg->circle_entry_depth <= cfg->surface_y;
+		parallel_distance = (int32_t)data->x - edge_dial_circle_center_x(cfg);
+		return data->y + cfg->edge_size + cfg->circle_entry_depth <= cfg->surface_y &&
+		       edge_dial_absolute(parallel_distance) <= cfg->circle_entry_span;
 	default:
 		return false;
 	}
@@ -138,8 +167,8 @@ static bool edge_dial_has_entered_circle(const struct edge_dial_config *cfg,
 static int32_t edge_dial_circular_delta(const struct edge_dial_config *cfg,
 					 const struct edge_dial_data *data)
 {
-	int32_t center_x = cfg->surface_x / 2;
-	int32_t center_y = cfg->surface_y / 2;
+	int32_t center_x = edge_dial_circle_center_x(cfg);
+	int32_t center_y = edge_dial_circle_center_y(cfg);
 	int32_t previous_x = (int32_t)data->last_x - center_x;
 	int32_t previous_y = (int32_t)data->last_y - center_y;
 	int32_t current_x = (int32_t)data->x - center_x;
@@ -190,7 +219,7 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->last_y = data->y;
 		data->accumulated_move = 0;
 		LOG_INF("edge dial circle acquired edge=%u center=(%u,%u)", data->edge,
-			cfg->surface_x / 2, cfg->surface_y / 2);
+			edge_dial_circle_center_x(cfg), edge_dial_circle_center_y(cfg));
 		return;
 	}
 
@@ -235,8 +264,11 @@ static void edge_dial_handle_input(const struct device *dev, struct input_event 
 		.surface_y = DT_INST_PROP_OR(n, surface_y, 1213),                                    \
 		.edge_size = DT_INST_PROP_OR(n, edge_size, 140),                                     \
 		.step_move = DT_INST_PROP_OR(n, step_move, 80),                                      \
-		.circle_entry_depth = DT_INST_PROP_OR(n, circle_entry_depth, 320),                   \
+		.circle_entry_depth = DT_INST_PROP_OR(n, circle_entry_depth, 80),                    \
+		.circle_entry_span = DT_INST_PROP_OR(n, circle_entry_span, 250),                     \
 		.circle_step_move = DT_INST_PROP_OR(n, circle_step_move, 80),                        \
+		.circle_center_x = DT_INST_PROP_OR(n, circle_center_x, 0),                           \
+		.circle_center_y = DT_INST_PROP_OR(n, circle_center_y, 0),                           \
 		.enabled = {DT_INST_PROP_OR(n, edge_left, false),                                    \
 			    DT_INST_PROP_OR(n, edge_right, false),                                       \
 			    DT_INST_PROP_OR(n, edge_top, false),                                         \

@@ -7,12 +7,10 @@
 
         default_layer {
             /* Edge-dial isolated test / エッジダイヤル単体試験
-             * 行0: 左辺を下へD、上へU。行1: パッド中心の周りを時計回りC、反時計
-             * 回りV。残りの辺はハードウェア設定で無効である。
-             * Row 0: left edge down=D/up=U. Row 1: around the pad center,
-             * clockwise=C/counter-clockwise=V. Other edges are disabled. */
-            bindings = <&kp D &kp U &none &none &none &none &none &none
-                        &kp C &kp V &none &none &none &none &none &none>;
+             * 左辺を下へD、上へU。円形継続も同じD/Uを送る。残りの辺は無効である。
+             * Left edge down=D/up=U. Circular continuation sends the same
+             * D/U positions. The remaining edges are disabled. */
+            bindings = <&kp D &kp U &none &none &none &none &none &none>;
         };
     };
 };
