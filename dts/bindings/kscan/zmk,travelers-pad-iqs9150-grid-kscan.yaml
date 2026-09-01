@@ -29,6 +29,21 @@ properties:
     type: array
     required: false
     description: Eight cells, left/right/top/bottom as row,column pairs
+  edge-left:
+    type: boolean
+    description: Enable the left edge
+  edge-right:
+    type: boolean
+    description: Enable the right edge
+  edge-top:
+    type: boolean
+    description: Enable the top edge
+  edge-bottom:
+    type: boolean
+    description: Enable the bottom edge
+  edges-only:
+    type: boolean
+    description: Ignore taps outside enabled edges instead of falling back to the grid
   tap-max-ms:
     type: int
     default: 350

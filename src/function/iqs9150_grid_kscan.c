@@ -27,6 +27,8 @@ struct grid_config {
 	uint16_t tap_max_move;
 	const uint16_t *edge_keys;
 	bool has_edge_keys;
+	bool edge_enabled[4];
+	bool edges_only;
 };
 
 struct grid_data {
@@ -82,6 +84,9 @@ static bool grid_edge_cell(const struct grid_config *cfg, uint16_t x, uint16_t y
 	} else {
 		return false;
 	}
+	if (!cfg->edge_enabled[edge]) {
+		return false;
+	}
 	*row = cfg->edge_keys[edge * 2];
 	*column = cfg->edge_keys[(edge * 2) + 1];
 	return grid_cell_is_valid(cfg, *row, *column);
@@ -97,6 +102,9 @@ static void grid_emit_tap(const struct device *dev) {
 		return;
 	}
 	if (!grid_edge_cell(cfg, data->start_x, data->start_y, &row, &column)) {
+		if (cfg->edges_only) {
+			return;
+		}
 		row = MIN((uint32_t)data->start_y * cfg->rows / MAX(cfg->surface_y, 1), cfg->rows - 1);
 		column = MIN((uint32_t)data->start_x * cfg->columns / MAX(cfg->surface_x, 1),
 			     cfg->columns - 1);
@@ -169,6 +177,9 @@ static void grid_handle_input(const struct device *dev, struct input_event *evt)
 		.tap_max_move = DT_INST_PROP_OR(n, tap_max_move, 75),                                    \
 		.edge_keys = grid_edge_keys_##n,                                                          \
 		.has_edge_keys = DT_INST_NODE_HAS_PROP(n, edge_keys),                                    \
+		.edge_enabled = {DT_INST_PROP_OR(n, edge_left, false), DT_INST_PROP_OR(n, edge_right, false), \
+				 DT_INST_PROP_OR(n, edge_top, false), DT_INST_PROP_OR(n, edge_bottom, false)}, \
+		.edges_only = DT_INST_PROP_OR(n, edges_only, false),                                      \
 	};                                                                                            \
 	static void grid_input_handler_##n(struct input_event *evt) {                                 \
 		grid_handle_input(DEVICE_DT_INST_GET(n), evt);                                          \

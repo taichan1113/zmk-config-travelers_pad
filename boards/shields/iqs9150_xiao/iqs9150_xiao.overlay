@@ -56,11 +56,11 @@
          * 格子matrix単体試験プロファイル: 標準KSCAN proxyを直接選択する。ポインタ、
          * タップ/ドラッグ、多指ジェスチャー出力は無効とし、1本指接触を格子キーだけで
          * 観測できるようにする。 */
-        zmk,kscan = &kscan_gesture;
+        zmk,kscan = &iqs9150_grid;
         /* The 15 logical grid rows match the five 3x3 gesture groups emitted
          * by zmk-input-matrix. / 15論理行はzmk-input-matrixが出力する5種類の
          * 3x3ジェスチャー群に対応する。 */
-        zmk,matrix-transform = &iqs9150_grid_transform;
+        zmk,matrix-transform = &iqs9150_edge_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -118,6 +118,13 @@
                RC(12, 0) RC(12, 1) RC(12, 2)
                RC(13, 0) RC(13, 1) RC(13, 2)
                RC(14, 0) RC(14, 1) RC(14, 2)>;
+    };
+
+    iqs9150_edge_transform: edge_transform {
+        compatible = "zmk,matrix-transform";
+        rows = <1>;
+        columns = <4>;
+        map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)>;
     };
 
     /* Composite is deliberately the only chosen KSCAN. New optional sources
@@ -215,15 +222,20 @@
      * 1本指タップを左クリックとして維持するため、初期状態では無効にする。 */
     iqs9150_grid: iqs9150_grid {
         compatible = "zmk,travelers-pad-iqs9150-grid-kscan";
-        status = "disabled";
+        status = "okay";
         input-device = <&iqs9150>;
-        rows = <3>;
-        columns = <3>;
+        rows = <1>;
+        columns = <4>;
         surface-x = <2000>;
         surface-y = <1213>;
-        edge-size = <100>;
+        edge-size = <140>;
         /* left, right, top, bottom: each item is <row column>. */
-        edge-keys = <2 0>, <2 1>, <2 2>, <1 1>;
+        edge-keys = <0 0>, <0 1>, <0 2>, <0 3>;
+        /* This test enables only left and top. Right/bottom must be inert.
+         * この試験では左辺と上辺だけを有効化する。右辺と下辺は無動作でなければならない。 */
+        edge-left;
+        edge-top;
+        edges-only;
         tap-max-ms = <350>;
         tap-max-move = <75>;
     };
@@ -259,7 +271,7 @@
          * its transform and bindings.
          * 基本ファームには格子の論理割当がない。格子/辺モジュールがtransformと
          * bindingsをincludeするまで、この検証専用listenerは無効にする。 */
-        status = "okay";
+        status = "disabled";
     };
 
     iqs9150_matrix_input: iqs9150_matrix_input {
@@ -271,7 +283,7 @@
          * 意図的な格子タップを接触座標の収束から保護する。matrixはこの時間後に
          * 開始するため、接触が安定した後でも短い意図的フリックは可能である。 */
         one-finger-settle-ms = <80>;
-        status = "okay";
+        status = "disabled";
     };
 };
 
