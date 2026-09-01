@@ -126,6 +126,7 @@ KSCAN positions when confirmed.
 記録する。4点以上が `five-finger-radial-move`（初期値80）以上、内側へ移動すると`Grasp`、
 外側へ移動すると`Release`候補を確定する。確定時にrow 2のcolumn 0へGrasp、column 1へReleaseを
 一度だけ出力し、全指を離すまで再発火しない。
+`RC(2,2)`と`RC(2,3)`はmatrix transformから省略するため、keymapの論理positionは10個だけとなる。
 
 ダブルタップ＋ドラッグが接触を所有した場合は、このモジュールはジェスチャーを出力しない。
 従って3本指の中クリックドラッグと3本指スワイプは混在しない。
@@ -137,7 +138,8 @@ left/right/up/down. For five fingers it first captures a baseline only after
 `five-finger-stable-frames` (3 by default) complete frames with the same tracking IDs. If at least
 four contacts move inward or outward from the centroid by `five-finger-radial-move` (80 by default),
 it confirms `Grasp` or `Release` and emits row 2 column 0 or 1 once, respectively, until all fingers
-are released. A double-tap drag owns its raw contact stream and suppresses gesture output.
+are released. `RC(2,2)` and `RC(2,3)` are omitted from the matrix transform, so the keymap has only
+10 logical positions. A double-tap drag owns its raw contact stream and suppresses gesture output.
 
 検証時は次のログと画面動作を対応させます。
 
