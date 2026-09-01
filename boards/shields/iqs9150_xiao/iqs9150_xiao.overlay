@@ -115,23 +115,25 @@
                RC(14, 0) RC(14, 1) RC(14, 2)>;
     };
 
-    /* Eight physical columns: each edge has a positive and negative trace
-     * direction. This test enables only the left edge, so columns 0 and 1
-     * are the only mapped positions.
-     * 物理列は8本で、各辺に正/負のトレース方向を1組ずつ割り当てる。この試験で
-     * 有効にするのは左辺だけであるため、列0と1だけを割り当てる。 */
+    /* Row 0 is straight edge tracing and row 1 is circular continuation.
+     * Each row has a positive/negative pair for every edge. This isolated
+     * test enables only the left edge, so only columns 0 and 1 are mapped.
+     * 行0は直線辺トレース、行1は円形継続である。各行には各辺の正/負方向の組が
+     * ある。この単体試験では左辺だけを有効にするため、列0/1だけを割り当てる。 */
     iqs9150_edge_dial_transform: edge_dial_transform {
         compatible = "zmk,matrix-transform";
-        rows = <1>;
+        rows = <2>;
         columns = <8>;
         map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)
-               RC(0, 4) RC(0, 5) RC(0, 6) RC(0, 7)>;
+               RC(0, 4) RC(0, 5) RC(0, 6) RC(0, 7)
+               RC(1, 0) RC(1, 1) RC(1, 2) RC(1, 3)
+               RC(1, 4) RC(1, 5) RC(1, 6) RC(1, 7)>;
     };
 
     iqs9150_edge_dial: iqs9150_edge_dial {
         compatible = "zmk,travelers-pad-iqs9150-edge-dial-kscan";
         input-device = <&iqs9150>;
-        rows = <1>;
+        rows = <2>;
         columns = <8>;
         surface-x = <2000>;
         surface-y = <1213>;
@@ -140,6 +142,10 @@
          * 80 counts of parallel movement. */
         edge-size = <140>;
         step-move = <80>;
+        /* 左辺取得後に右へ320カウント入ると、パッド中心を基準とした円形操作へ
+         * 切り替える。Circular motion begins after moving 320 counts inward. */
+        circle-entry-depth = <320>;
+        circle-step-move = <80>;
         edge-left;
     };
 

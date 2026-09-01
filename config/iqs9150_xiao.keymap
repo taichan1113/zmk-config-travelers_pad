@@ -6,12 +6,13 @@
         compatible = "zmk,keymap";
 
         default_layer {
-            /* Edge-dial linear isolated-test bindings / エッジダイヤル直線単体試験用
-             * 左辺を下へなぞると D、上へなぞると U を繰り返し送る。残りの辺は
-             * ハードウェア設定で無効にしており、将来の割当用に &none とする。
-             * Tracing down the left edge repeatedly sends D; tracing up sends
-             * U. The other edges are disabled in hardware and remain &none. */
-            bindings = <&kp D &kp U &none &none &none &none &none &none>;
+            /* Edge-dial isolated test / エッジダイヤル単体試験
+             * 行0: 左辺を下へD、上へU。行1: パッド中心の周りを時計回りC、反時計
+             * 回りV。残りの辺はハードウェア設定で無効である。
+             * Row 0: left edge down=D/up=U. Row 1: around the pad center,
+             * clockwise=C/counter-clockwise=V. Other edges are disabled. */
+            bindings = <&kp D &kp U &none &none &none &none &none &none
+                        &kp C &kp V &none &none &none &none &none &none>;
         };
     };
 };

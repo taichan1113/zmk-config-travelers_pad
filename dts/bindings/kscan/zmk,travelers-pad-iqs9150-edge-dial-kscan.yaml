@@ -23,6 +23,12 @@ properties:
   step-move:
     type: int
     default: 80
+  circle-entry-depth:
+    type: int
+    default: 320
+  circle-step-move:
+    type: int
+    default: 80
   edge-left:
     type: boolean
   edge-right:
