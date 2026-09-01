@@ -6,24 +6,18 @@
         compatible = "zmk,keymap";
 
         default_layer {
-            /*
-             * Multi-finger gesture binding template / 多指ジェスチャー割当テンプレート
-             *
-             * Order / 順序:
-             *   3F: left, right, up, down / 3本指: 左、右、上、下
-             *   4F: left, right, up, down / 4本指: 左、右、上、下
-             *   5F: grasp, release         / 5本指: Grasp、Release
-             *
-             * This is the current Windows-oriented assignment. Replace each
-             * entry with any ordinary ZMK binding, for example `&kp C_VOL_UP`,
-             * `&mo 1`, or `&none`.
-             *
-             * 現在はWindows向けの割当である。必要に応じて `&kp C_VOL_UP`、
-             * `&mo 1`、`&none` など任意の通常のZMK bindingへ置き換える。
-             */
-            bindings = <&kp C_AC_BACK    &kp C_AC_FORWARD &kp PG_UP       &kp PG_DN
-                        &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
-                        &kp LG(M)        &kp LS(LG(M))>;
+            /* Grid test bindings / 格子試験用割当
+             * Rows 0--2: tap (1--9), 3--5: flick up (Q--O),
+             * 6--8: flick down (A--L), 9--11: flick left (Z--.),
+             * 12--14: flick right (F1--F9).
+             * 行0--2: タップ（1--9）、3--5: 上フリック（Q--O）、
+             * 6--8: 下フリック（A--L）、9--11: 左フリック（Z--.）、
+             * 12--14: 右フリック（F1--F9）。 */
+            bindings = <&kp N1 &kp N2 &kp N3  &kp N4 &kp N5 &kp N6  &kp N7 &kp N8 &kp N9
+                        &kp Q  &kp W  &kp E   &kp R  &kp T  &kp Y   &kp U  &kp I  &kp O
+                        &kp A  &kp S  &kp D   &kp F  &kp G  &kp H   &kp J  &kp K  &kp L
+                        &kp Z  &kp X  &kp C   &kp V  &kp B  &kp N   &kp M  &kp COMMA &kp PERIOD
+                        &kp F1 &kp F2 &kp F3  &kp F4 &kp F5 &kp F6  &kp F7 &kp F8 &kp F9>;
         };
     };
 };

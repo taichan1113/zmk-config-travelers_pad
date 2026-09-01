@@ -50,19 +50,17 @@
 
 / {
     chosen {
-        /* Multi-finger gesture integration profile: composite KSCAN receives
-         * only the 3--5 finger gesture source; the grid source remains off.
-         * 多指ジェスチャー結合試験プロファイル: composite KSCANには3--5本指の
-         * ジェスチャーソースだけを接続し、格子ソースは無効のままとする。 */
-        zmk,kscan = &iqs9150_composite_kscan;
-        /* Keep the same ten logical positions as the gesture profile, even
-         * while its KSCAN sources are disabled. This keeps the editable
-         * gesture keymap template structurally valid without enabling any
-         * gesture action in the basic-input test.
-         * 基本入力試験でも、ジェスチャープロファイルと同じ10論理位置を維持する。
-         * KSCANソースは無効のままなのでジェスチャーは発火せず、編集可能な
-         * keymapテンプレートだけを構造的に正しく保てる。 */
-        zmk,matrix-transform = &iqs9150_composite_transform;
+        /* Grid-matrix isolated profile: select the standard KSCAN proxy
+         * directly. Pointer, tap/drag, and multi-finger gesture output stay
+         * disabled, making a one-finger contact observable only as a grid key.
+         * 格子matrix単体試験プロファイル: 標準KSCAN proxyを直接選択する。ポインタ、
+         * タップ/ドラッグ、多指ジェスチャー出力は無効とし、1本指接触を格子キーだけで
+         * 観測できるようにする。 */
+        zmk,kscan = &kscan_gesture;
+        /* The 15 logical grid rows match the five 3x3 gesture groups emitted
+         * by zmk-input-matrix. / 15論理行はzmk-input-matrixが出力する5種類の
+         * 3x3ジェスチャー群に対応する。 */
+        zmk,matrix-transform = &iqs9150_grid_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -99,6 +97,29 @@
                RC(17, 0) RC(17, 1)>;
     };
 
+    iqs9150_grid_transform: grid_transform {
+        compatible = "zmk,matrix-transform";
+        rows = <15>;
+        columns = <3>;
+        /* zmk-input-matrix emits five 3x3 row groups: tap, up, down, left,
+         * right. / zmk-input-matrixはタップ、上、下、左、右の各3x3行群を出力する。 */
+        map = <RC(0, 0) RC(0, 1) RC(0, 2)
+               RC(1, 0) RC(1, 1) RC(1, 2)
+               RC(2, 0) RC(2, 1) RC(2, 2)
+               RC(3, 0) RC(3, 1) RC(3, 2)
+               RC(4, 0) RC(4, 1) RC(4, 2)
+               RC(5, 0) RC(5, 1) RC(5, 2)
+               RC(6, 0) RC(6, 1) RC(6, 2)
+               RC(7, 0) RC(7, 1) RC(7, 2)
+               RC(8, 0) RC(8, 1) RC(8, 2)
+               RC(9, 0) RC(9, 1) RC(9, 2)
+               RC(10, 0) RC(10, 1) RC(10, 2)
+               RC(11, 0) RC(11, 1) RC(11, 2)
+               RC(12, 0) RC(12, 1) RC(12, 2)
+               RC(13, 0) RC(13, 1) RC(13, 2)
+               RC(14, 0) RC(14, 1) RC(14, 2)>;
+    };
+
     /* Composite is deliberately the only chosen KSCAN. New optional sources
      * (the edge module next) are added as children without changing keymap
      * ownership or the gesture driver.
@@ -106,7 +127,7 @@
      * キーマップや既存ジェスチャードライバを壊さず子ノードとして追加できる。 */
     iqs9150_composite_kscan: iqs9150_composite_kscan {
         compatible = "zmk,kscan-composite";
-        status = "okay";
+        status = "disabled";
         rows = <18>;
         columns = <4>;
 
@@ -122,7 +143,7 @@
 
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-gesture-kscan";
-        status = "okay";
+        status = "disabled";
         input-device = <&iqs9150>;
         swipe-min-move = <180>;
         swipe-max-ms = <700>;
@@ -138,6 +159,7 @@
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
         geometry-rotation-threshold = <30000>;
+        status = "disabled";
     };
 
     iqs9150_pointer: iqs9150_pointer {
@@ -151,6 +173,7 @@
         scroll-axis-lock-min-move = <12>;
         scroll-axis-lock-ratio = <2>;
         scroll-max-frame-delta = <128>;
+        status = "disabled";
     };
 
     /* Function module: one/two/three-finger tap maps to left/right/middle.
@@ -180,6 +203,7 @@
         double-tap-max-gap-ms = <250>;
         double-tap-max-distance = <120>;
         drag-start-move = <20>;
+        status = "disabled";
     };
 
     /* Optional function module: short one-finger taps become virtual KSCAN
@@ -209,11 +233,13 @@
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_pointer>;
+        status = "disabled";
     };
 
     iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_tap_drag>;
+        status = "disabled";
     };
 
     /* zmk-input-matrix is an optional grid source; it has no mapped key
@@ -233,14 +259,14 @@
          * its transform and bindings.
          * 基本ファームには格子の論理割当がない。格子/辺モジュールがtransformと
          * bindingsをincludeするまで、この検証専用listenerは無効にする。 */
-        status = "disabled";
+        status = "okay";
     };
 
     iqs9150_matrix_input: iqs9150_matrix_input {
         compatible = "zmk,travelers-pad-iqs9150-matrix-input";
         input-device = <&iqs9150>;
         one-finger-settle-ms = <45>;
-        status = "disabled";
+        status = "okay";
     };
 };
 
