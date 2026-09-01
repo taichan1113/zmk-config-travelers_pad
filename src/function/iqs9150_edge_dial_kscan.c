@@ -63,6 +63,7 @@ struct edge_dial_data {
 	enum edge_dial_edge edge;
 	enum edge_dial_mode mode;
 	int8_t linear_direction;
+	int8_t circle_direction;
 	bool active;
 	int32_t accumulated_move;
 };
@@ -216,6 +217,32 @@ static int32_t edge_dial_circular_delta(const struct edge_dial_config *cfg,
 	return cross / radius;
 }
 
+static int32_t edge_dial_logical_circle_delta(struct edge_dial_data *data, int32_t raw_delta)
+{
+	int8_t raw_direction;
+	int32_t magnitude;
+
+	if (raw_delta == 0) {
+		return 0;
+	}
+	raw_direction = raw_delta > 0 ? 1 : -1;
+	magnitude = edge_dial_absolute(raw_delta);
+	/* The first rotation direction continues the edge's existing logical
+	 * direction. Only reversing the rotation reverses output. In particular,
+	 * passing the top/bottom of a circle must not invert the action merely
+	 * because the finger's vertical tangent reverses.
+	 * 最初の回転方向は、辺操作の既存論理方向を継続する。回転方向そのものを反転した
+	 * 場合だけ出力を反転する。円の上/下を通過して指の上下接線が変わっても、操作を
+	 * 反転させない。 */
+	if (data->circle_direction == 0) {
+		data->circle_direction = raw_direction;
+		LOG_INF("edge dial circle direction locked raw=%d logical=%d", raw_direction,
+			data->linear_direction);
+	}
+	return (raw_direction == data->circle_direction ? data->linear_direction :
+							       -data->linear_direction) * magnitude;
+}
+
 static void edge_dial_process_frame(const struct device *dev)
 {
 	const struct edge_dial_config *cfg = dev->config;
@@ -228,6 +255,7 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->edge = EDGE_DIAL_NONE;
 		data->mode = EDGE_DIAL_LINEAR;
 		data->linear_direction = 0;
+		data->circle_direction = 0;
 		return;
 	}
 
@@ -240,6 +268,7 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->accumulated_move = 0;
 			data->mode = EDGE_DIAL_LINEAR;
 			data->linear_direction = 0;
+			data->circle_direction = 0;
 			LOG_INF("edge dial acquired edge=%u at=(%u,%u)", data->edge, data->x, data->y);
 		}
 		return;
@@ -255,13 +284,14 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->last_x = data->x;
 			data->last_y = data->y;
 			data->accumulated_move = 0;
+			data->circle_direction = 0;
 			LOG_INF("edge dial circle acquired edge=%u direction=%d at=(%u,%u) center=(%u,%u)",
 				data->edge, data->linear_direction, data->x, data->y,
 				edge_dial_circle_center_x(cfg, data), edge_dial_circle_center_y(cfg, data));
 			return;
 		}
 	} else {
-		delta = edge_dial_circular_delta(cfg, data);
+		delta = edge_dial_logical_circle_delta(data, edge_dial_circular_delta(cfg, data));
 	}
 	data->last_x = data->x;
 	data->last_y = data->y;

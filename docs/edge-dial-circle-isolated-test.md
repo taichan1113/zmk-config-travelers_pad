@@ -11,6 +11,15 @@ this test).
 ではないため、直線と円形は同じ仮想KSCAN位置、したがって本試験では同じ`D`/`U`を
 出力します。
 
+The first rotational direction after entering the circle inherits the edge
+direction. Thus, after tracing the left edge down, the same rotation continues
+to emit `D` through a complete circle; only deliberately reversing the rotation
+emits `U`.
+
+円へ入った直後の最初の回転方向は、辺の移動方向を引き継ぎます。したがって左辺を下へ
+なぞった後は、同じ向きで一周しても`D`を維持し、意図して回転を逆向きにした場合だけ
+`U`へ切り替わります。
+
 The local circle centre is selected from the acquired edge and the last
 meaningful direction along that edge. It is not fixed to one corner.
 
@@ -67,6 +76,7 @@ Downward on the left edge:
 ```
 edge dial acquired edge=0
 edge dial circle acquired edge=0 direction=1 at=(x,y) center=(360,900)
+edge dial circle direction locked raw=-1 logical=1
 edge dial mode=circle edge=0 row=0 column=0 at=(x,y)
 ```
 
