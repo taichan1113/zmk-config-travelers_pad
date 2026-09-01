@@ -406,8 +406,12 @@ static void tap_drag_handle_input(const struct device *dev, struct input_event *
 static int tap_drag_init(const struct device *dev)
 {
 	struct tap_drag_data *data = dev->data;
+	const struct tap_drag_config *cfg = dev->config;
 
 	k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
+	LOG_INF("tap/drag active: tap=%ums move=%u settle=%ums double-gap=%ums",
+		cfg->tap_max_ms, cfg->tap_max_move, cfg->multifinger_settle_ms,
+		cfg->double_tap_max_gap_ms);
 	return 0;
 }
 

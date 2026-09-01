@@ -50,10 +50,12 @@
 
 / {
     chosen {
-        /* All optional touchpad key sources meet at one standard ZMK KSCAN.
-         * 各タッチパッド機能の仮想キー入力を、標準KSCANへ一元化する。 */
-        zmk,kscan = &iqs9150_composite_kscan;
-        zmk,matrix-transform = &iqs9150_composite_transform;
+        /* Isolated tap/drag test profile: no gesture/grid KSCAN source is
+         * active. The mock KSCAN merely satisfies ZMK's normal keymap setup.
+         * タップ/ドラッグ単体試験プロファイル: ジェスチャー/格子KSCANを有効に
+         * しない。mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
+        zmk,kscan = &iqs9150_kscan;
+        zmk,matrix-transform = &iqs9150_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -97,6 +99,7 @@
      * キーマップや既存ジェスチャードライバを壊さず子ノードとして追加できる。 */
     iqs9150_composite_kscan: iqs9150_composite_kscan {
         compatible = "zmk,kscan-composite";
+        status = "disabled";
         rows = <18>;
         columns = <4>;
 
@@ -112,6 +115,7 @@
 
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-gesture-kscan";
+        status = "disabled";
         input-device = <&iqs9150>;
         swipe-min-move = <180>;
         swipe-max-ms = <700>;
@@ -123,6 +127,7 @@
      * 生フレームはポインタ処理前にジェスチャー種別へ振り分ける。 */
     iqs9150_router: iqs9150_router {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
+        status = "disabled";
         input-device = <&iqs9150>;
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
@@ -131,6 +136,7 @@
 
     iqs9150_pointer: iqs9150_pointer {
         compatible = "zmk,travelers-pad-iqs9150-pointer";
+        status = "disabled";
         input-device = <&iqs9150_router>;
         scroll-divisor = <4>;
     };
@@ -186,6 +192,7 @@
      * 機能モジュールの出力をZMKのマウスHIDエンドポイントへ転送する。 */
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
+        status = "disabled";
         device = <&iqs9150_pointer>;
     };
 
