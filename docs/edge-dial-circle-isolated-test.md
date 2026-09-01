@@ -11,17 +11,18 @@ this test).
 ではないため、直線と円形は同じ仮想KSCAN位置、したがって本試験では同じ`D`/`U`を
 出力します。
 
-The first meaningful edge direction is locked for the complete touch sequence.
-Circular direction is deliberately ignored: the circle provides only the amount
-of continued input. Thus, after tracing the left edge down, a bend back upward
-while approaching the circle and any circular motion during that same touch both
-emit only `D`; it never changes to `U` until the finger is released and a new
-edge stroke is acquired.
+While the finger remains in the acquired edge band, it can reverse normally:
+down emits `D` and up emits `U`. When it leaves that band for the local circle,
+the last direction from within the edge band is captured. Circular direction is
+then deliberately ignored: the circle supplies only the amount of continued
+input. Consequently, a bend back upward while approaching the circle after a
+downward left-edge trace, and every circular movement in that contact, emit only
+`D`.
 
-最初の有意な辺方向を、接触シーケンス全体で固定します。円の回転方向は意図的に無視し、
-円は継続入力の量だけを与えます。したがって左辺を下へなぞった後は、円へ近づく際に上へ
-曲がった場合も、そのまま円を描いた場合も、同じタッチ中は常に`D`だけを出力します。指を
-離して新しい辺操作を取得するまで、`U`へ切り替わることはありません。
+指が取得した辺の帯域内にある間は、通常どおり反転できます。下方向は`D`、上方向は`U`です。
+局所円へ向けてその帯域を離れる時点で、辺帯域内における最後の方向を保持します。以後、円の
+回転方向は意図的に無視し、円は継続入力の量だけを与えます。そのため左辺を下へなぞった後、
+円へ近づくため上へ曲がった場合も、その接触中の円操作でも、`D`だけを出力します。
 
 The local circle centre is selected from the acquired edge and the last
 meaningful direction along that edge. It is not fixed to one corner.

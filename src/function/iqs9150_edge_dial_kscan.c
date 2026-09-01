@@ -62,7 +62,8 @@ struct edge_dial_data {
 	uint8_t fingers;
 	enum edge_dial_edge edge;
 	enum edge_dial_mode mode;
-	int8_t linear_direction;
+	int8_t edge_direction;
+	int8_t circle_direction;
 	bool active;
 	int32_t accumulated_move;
 };
@@ -106,6 +107,28 @@ static int32_t edge_dial_parallel_delta(const struct edge_dial_data *data)
 	return (int32_t)data->x - data->last_x;
 }
 
+static bool edge_dial_is_on_acquired_edge(const struct edge_dial_config *cfg,
+					 const struct edge_dial_data *data)
+{
+	switch (data->edge) {
+	case EDGE_DIAL_LEFT:
+		return data->x <= cfg->edge_size;
+	case EDGE_DIAL_RIGHT:
+		return data->x + cfg->edge_size >= cfg->surface_x;
+	case EDGE_DIAL_TOP:
+		return data->y <= cfg->edge_size;
+	case EDGE_DIAL_BOTTOM:
+		return data->y + cfg->edge_size >= cfg->surface_y;
+	default:
+		return false;
+	}
+}
+
+static int8_t edge_dial_circle_action_direction(const struct edge_dial_data *data)
+{
+	return data->mode == EDGE_DIAL_CIRCLE ? data->circle_direction : data->edge_direction;
+}
+
 static int32_t edge_dial_circle_center_x(const struct edge_dial_config *cfg,
 					 const struct edge_dial_data *data)
 {
@@ -116,7 +139,8 @@ static int32_t edge_dial_circle_center_x(const struct edge_dial_config *cfg,
 		return cfg->surface_x - cfg->circle_corner_inset_x;
 	case EDGE_DIAL_TOP:
 	case EDGE_DIAL_BOTTOM:
-		return data->linear_direction > 0 ? cfg->surface_x - cfg->circle_corner_inset_x :
+		return edge_dial_circle_action_direction(data) > 0 ?
+			       cfg->surface_x - cfg->circle_corner_inset_x :
 					    cfg->circle_corner_inset_x;
 	default:
 		return cfg->surface_x / 2;
@@ -129,7 +153,8 @@ static int32_t edge_dial_circle_center_y(const struct edge_dial_config *cfg,
 	switch (data->edge) {
 	case EDGE_DIAL_LEFT:
 	case EDGE_DIAL_RIGHT:
-		return data->linear_direction > 0 ? cfg->surface_y - cfg->circle_corner_inset_y :
+		return edge_dial_circle_action_direction(data) > 0 ?
+			       cfg->surface_y - cfg->circle_corner_inset_y :
 					    cfg->circle_corner_inset_y;
 	case EDGE_DIAL_TOP:
 		return cfg->circle_corner_inset_y;
@@ -168,7 +193,7 @@ static bool edge_dial_has_entered_circle(const struct edge_dial_config *cfg,
 {
 	int32_t parallel_distance;
 
-	if (data->linear_direction == 0) {
+	if (data->edge_direction == 0) {
 		return false;
 	}
 
@@ -231,7 +256,7 @@ static int32_t edge_dial_logical_circle_delta(struct edge_dial_data *data, int32
 	 * 入力の量だけを与え、符号は意図的に無視します。円へ入る前に確定した辺方向が、
 	 * このタッチシーケンス全体のキーを決定します。完全な円でない操作やセンサー
 	 * ノイズによる微小な逆行で、キーが反転することを防ぎます。 */
-	return data->linear_direction * edge_dial_absolute(raw_delta);
+	return data->circle_direction * edge_dial_absolute(raw_delta);
 }
 
 static void edge_dial_process_frame(const struct device *dev)
@@ -245,7 +270,8 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->active = false;
 		data->edge = EDGE_DIAL_NONE;
 		data->mode = EDGE_DIAL_LINEAR;
-		data->linear_direction = 0;
+		data->edge_direction = 0;
+		data->circle_direction = 0;
 		return;
 	}
 
@@ -257,7 +283,8 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->last_y = data->y;
 			data->accumulated_move = 0;
 			data->mode = EDGE_DIAL_LINEAR;
-			data->linear_direction = 0;
+			data->edge_direction = 0;
+			data->circle_direction = 0;
 			LOG_INF("edge dial acquired edge=%u at=(%u,%u)", data->edge, data->x, data->y);
 		}
 		return;
@@ -265,23 +292,30 @@ static void edge_dial_process_frame(const struct device *dev)
 
 	if (data->mode == EDGE_DIAL_LINEAR) {
 		delta = edge_dial_parallel_delta(data);
-		/* The first meaningful trace direction owns this whole contact. Do not
-		 * reinterpret a bend toward the local circle, or a return along the edge,
-		 * as a new opposite edge action before the finger is released.
-		 * 最初の有意な辺方向が、この接触全体の操作方向を確定します。局所円へ曲がる
-		 * 動きや辺に沿った戻りを、指を離す前の逆方向操作として再解釈しません。 */
-		if (delta != 0 && data->linear_direction == 0) {
-			data->linear_direction = delta > 0 ? 1 : -1;
-			LOG_INF("edge dial direction locked edge=%u direction=%d", data->edge,
-				data->linear_direction);
+		if (edge_dial_is_on_acquired_edge(cfg, data)) {
+			/* While the finger remains on the acquired edge, normal direction
+			 * changes are valid. Record this as the direction to continue if the
+			 * finger then leaves the edge for the local circle.
+			 * 指が取得した辺の帯域内にある間は、通常の方向変更を許可する。その後
+			 * 局所円へ移る時に継続する方向として記録する。 */
+			if (delta != 0) {
+				data->edge_direction = delta > 0 ? 1 : -1;
+			}
+		} else if (data->edge_direction != 0) {
+			/* Once the finger has left the edge, a bend toward the local circle
+			 * must retain its last edge direction rather than emit an opposite key.
+			 * 辺を離れた後は、局所円への曲線を逆方向キーへ変換せず、最後の辺方向を
+			 * 継続する。 */
+			delta = data->edge_direction * edge_dial_absolute(delta);
 		}
 		if (edge_dial_has_entered_circle(cfg, data)) {
 			data->mode = EDGE_DIAL_CIRCLE;
 			data->last_x = data->x;
 			data->last_y = data->y;
 			data->accumulated_move = 0;
+			data->circle_direction = data->edge_direction;
 			LOG_INF("edge dial circle acquired edge=%u direction=%d at=(%u,%u) center=(%u,%u)",
-				data->edge, data->linear_direction, data->x, data->y,
+				data->edge, data->circle_direction, data->x, data->y,
 				edge_dial_circle_center_x(cfg, data), edge_dial_circle_center_y(cfg, data));
 			return;
 		}
