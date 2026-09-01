@@ -50,10 +50,10 @@
 
 / {
     chosen {
-        /* Isolated tap/drag test profile: no gesture/grid KSCAN source is
+        /* Isolated pointer test profile: no gesture/grid KSCAN source is
          * active. The mock KSCAN merely satisfies ZMK's normal keymap setup.
-         * タップ/ドラッグ単体試験プロファイル: ジェスチャー/格子KSCANを有効に
-         * しない。mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
+         * ポインタ単体試験プロファイル: ジェスチャー/格子KSCANを有効にしない。
+         * mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
         zmk,kscan = &iqs9150_kscan;
         zmk,matrix-transform = &iqs9150_transform;
     };
@@ -136,8 +136,11 @@
 
     iqs9150_pointer: iqs9150_pointer {
         compatible = "zmk,travelers-pad-iqs9150-pointer";
-        status = "disabled";
-        input-device = <&iqs9150_router>;
+        /* Bypass the router in this profile. This isolates raw contact to
+         * relative-pointer conversion, including its native 2F scrolling.
+         * このプロファイルではrouterを迂回する。生接触から相対ポインタ変換と、
+         * ポインタ自身の2本指スクロールだけを単独で検証する。 */
+        input-device = <&iqs9150>;
         scroll-divisor = <4>;
     };
 
@@ -150,6 +153,7 @@
      * 生フレームを入力として使う。 */
     iqs9150_tap_drag: iqs9150_tap_drag {
         compatible = "zmk,travelers-pad-iqs9150-tap-drag";
+        status = "disabled";
         input-device = <&iqs9150>;
         tap-max-ms = <180>;
         tap-max-move = <75>;
@@ -192,12 +196,12 @@
      * 機能モジュールの出力をZMKのマウスHIDエンドポイントへ転送する。 */
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
-        status = "disabled";
         device = <&iqs9150_pointer>;
     };
 
     iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {
         compatible = "zmk,input-listener";
+        status = "disabled";
         device = <&iqs9150_tap_drag>;
     };
 
