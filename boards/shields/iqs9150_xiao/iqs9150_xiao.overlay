@@ -50,10 +50,10 @@
 
 / {
     chosen {
-        /* Isolated pointer test profile: no gesture/grid KSCAN source is
+        /* Isolated router/pointer test profile: no gesture/grid KSCAN source is
          * active. The mock KSCAN merely satisfies ZMK's normal keymap setup.
-         * ポインタ単体試験プロファイル: ジェスチャー/格子KSCANを有効にしない。
-         * mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
+         * router/ポインタ単体試験プロファイル: ジェスチャー/格子KSCANを有効に
+         * しない。mock KSCANはZMKの通常キーマップ設定を満たすためだけに使う。 */
         zmk,kscan = &iqs9150_kscan;
         zmk,matrix-transform = &iqs9150_transform;
     };
@@ -127,7 +127,6 @@
      * 生フレームはポインタ処理前にジェスチャー種別へ振り分ける。 */
     iqs9150_router: iqs9150_router {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
-        status = "disabled";
         input-device = <&iqs9150>;
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
@@ -136,11 +135,11 @@
 
     iqs9150_pointer: iqs9150_pointer {
         compatible = "zmk,travelers-pad-iqs9150-pointer";
-        /* Bypass the router in this profile. This isolates raw contact to
-         * relative-pointer conversion, including its native 2F scrolling.
-         * このプロファイルではrouterを迂回する。生接触から相対ポインタ変換と、
-         * ポインタ自身の2本指スクロールだけを単独で検証する。 */
-        input-device = <&iqs9150>;
+        /* This profile uses the router output, not raw contact. It validates
+         * routing decisions and the following pointer hand-off only.
+         * このプロファイルは生接触ではなくrouter出力を使う。routerの判定と、
+         * その後段のポインタ受け渡しだけを検証する。 */
+        input-device = <&iqs9150_router>;
         scroll-divisor = <4>;
         scroll-axis-lock-min-move = <12>;
         scroll-axis-lock-ratio = <2>;
@@ -156,7 +155,11 @@
      * 生フレームを入力として使う。 */
     iqs9150_tap_drag: iqs9150_tap_drag {
         compatible = "zmk,travelers-pad-iqs9150-tap-drag";
-        status = "disabled";
+        /* Keep the tracker available because router ownership explicitly
+         * observes its double-tap-drag state. Its HID listener remains off,
+         * so this profile never produces tap/drag clicks or drag motion.
+         * routerはdouble-tap-dragの所有状態を参照するためtrackerだけ有効にする。
+         * HID listenerは無効のままなので、クリックやドラッグ移動は出力しない。 */
         input-device = <&iqs9150>;
         tap-max-ms = <180>;
         tap-max-move = <75>;
