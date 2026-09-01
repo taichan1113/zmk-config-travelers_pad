@@ -9,6 +9,7 @@
 
 #include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
 #include <dt-bindings/zmk/matrix_transform.h>
+#include <zmk-input-matrix/input_matrix.dtsi>
 
 &i2c0_default {
     group1 {
@@ -49,8 +50,10 @@
 
 / {
     chosen {
-        zmk,kscan = &iqs9150_gesture_kscan;
-        zmk,matrix-transform = &iqs9150_gesture_transform;
+        /* All optional touchpad key sources meet at one standard ZMK KSCAN.
+         * 各タッチパッド機能の仮想キー入力を、標準KSCANへ一元化する。 */
+        zmk,kscan = &iqs9150_composite_kscan;
+        zmk,matrix-transform = &iqs9150_composite_transform;
     };
 
     iqs9150_transform: keymap_transform_0 {
@@ -67,21 +70,44 @@
         events = <0>;
     };
 
-    /* Rows 0/1 are 3/4-finger left/right/up/down. Row 2 columns 0/1 are
-     * 5F Grasp/Release. The keymap keeps them inert until assigned.
-     * 行0/1は3/4本指の左/右/上/下。行2の列0/1は5本指Grasp/Release。
-     * keymapで割り当てるまでは無動作。 */
-    iqs9150_gesture_transform: gesture_transform {
+    /* Rows 0--14 are reserved for zmk-input-matrix's 5 x 3x3 gesture grid.
+     * Rows 15/16 are 3/4-finger left/right/up/down. Row 17 columns 0/1 are
+     * 5F Grasp/Release. Only the existing ten multi-finger positions are
+     * mapped for now, so importing the grid cannot trigger an action yet.
+     * 行0--14はzmk-input-matrixの5種類 x 3x3格子用に予約する。行15/16は
+     * 3/4本指の左/右/上/下、行17の列0/1は5本指Grasp/Releaseである。現時点
+     * では既存の10個だけをmapするため、格子を導入しても操作は発火しない。 */
+    iqs9150_composite_transform: composite_transform {
         compatible = "zmk,matrix-transform";
-        rows = <3>;
+        rows = <18>;
         columns = <4>;
-        /* RC(2, 2) and RC(2, 3) deliberately have no logical position.
+        /* RC(17, 2) and RC(17, 3) deliberately have no logical position.
          * ZMK matrix transforms may omit unused physical matrix positions.
-         * RC(2, 2) とRC(2, 3)には論理位置を作らない。ZMKのmatrix transformは
+         * RC(17, 2) とRC(17, 3)には論理位置を作らない。ZMKのmatrix transformは
          * 未使用の物理マトリクス位置をmapから省略できる。 */
-        map = <RC(0, 0) RC(0, 1) RC(0, 2) RC(0, 3)
-               RC(1, 0) RC(1, 1) RC(1, 2) RC(1, 3)
-               RC(2, 0) RC(2, 1)>;
+        map = <RC(15, 0) RC(15, 1) RC(15, 2) RC(15, 3)
+               RC(16, 0) RC(16, 1) RC(16, 2) RC(16, 3)
+               RC(17, 0) RC(17, 1)>;
+    };
+
+    /* Composite is deliberately the only chosen KSCAN. New optional sources
+     * (the edge module next) are added as children without changing keymap
+     * ownership or the gesture driver.
+     * compositeだけをchosen KSCANにする。次のエッジ機能などの任意ソースは、
+     * キーマップや既存ジェスチャードライバを壊さず子ノードとして追加できる。 */
+    iqs9150_composite_kscan: iqs9150_composite_kscan {
+        compatible = "zmk,kscan-composite";
+        rows = <18>;
+        columns = <4>;
+
+        matrix_grid {
+            kscan = <&kscan_gesture>;
+        };
+
+        multifinger_gesture {
+            kscan = <&iqs9150_gesture_kscan>;
+            row-offset = <15>;
+        };
     };
 
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
@@ -121,6 +147,14 @@
         input-device = <&iqs9150>;
         tap-max-ms = <180>;
         tap-max-move = <75>;
+        /* EV02 contact centroids can settle for several report periods
+         * after the second finger appears. The router still commits genuine
+         * scrolling independently; this value only prevents that settling
+         * from rejecting a stationary 2F/3F tap.
+         * EV02では2本目の検出後、重心が約2レポート周期安定化する。実際の
+         * スクロールはルーターが別に判定するため、この値は静止した2本/3本指
+         * タップを安定化中の座標変動で棄却しないためだけに使う。 */
+        multifinger-settle-ms = <120>;
         double-tap-max-gap-ms = <250>;
         double-tap-max-distance = <120>;
         drag-start-move = <20>;
@@ -159,4 +193,58 @@
         compatible = "zmk,input-listener";
         device = <&iqs9150_tap_drag>;
     };
+
+    /* zmk-input-matrix is an optional grid source; it has no mapped key
+     * positions in this step. The listener nevertheless validates the whole
+     * input-processor -> KSCAN proxy -> composite path at build/run time.
+     * zmk-input-matrixは任意の格子ソースであり、この段階では論理キーを割り当てない。
+     * ただしlistenerによってinput processor→KSCAN proxy→compositeの経路を
+     * ビルド時・起動時に検証する。 */
+    iqs9150_matrix_listener: iqs9150_matrix_listener {
+        compatible = "zmk,input-listener";
+        /* Receive the private active-touch stream, not raw IQS9150 reports.
+         * 生IQS9150レポートではなく、専用の接触中ストリームを受け取る。 */
+        device = <&iqs9150_matrix_input>;
+        input-processors = <&zip_matrix>;
+        /* The grid has no logical mapping in the base firmware. Keep this
+         * verification-only listener off until a grid/edge module includes
+         * its transform and bindings.
+         * 基本ファームには格子の論理割当がない。格子/辺モジュールがtransformと
+         * bindingsをincludeするまで、この検証専用listenerは無効にする。 */
+        status = "disabled";
+    };
+
+    iqs9150_matrix_input: iqs9150_matrix_input {
+        compatible = "zmk,travelers-pad-iqs9150-matrix-input";
+        input-device = <&iqs9150>;
+        one-finger-settle-ms = <45>;
+        status = "disabled";
+    };
+};
+
+/* Standard 3x3 grid input processor. It observes raw absolute coordinate/touch
+ * events without suppressing them: Zephyr fans one mutable input event out to
+ * every listener, so suppression here could hide a frame from our independent
+ * pointer, tap-drag, or multi-finger modules.
+ * 格子用input processorは生の絶対座標・タッチを抑止せず監視する。Zephyrは一つの
+ * 可変input eventを全listenerへ配信するため、ここでの抑止は独立したポインタ、
+ * タップドラッグ、多指モジュールからフレームを隠す可能性がある。 */
+&kscan_gesture {
+    rows = <15>;
+    columns = <3>;
+};
+
+&zip_matrix {
+    rows = <3>;
+    columns = <3>;
+    x = <2000>;
+    y = <1213>;
+    flick-threshold = <100>;
+    long-press-ms = <0>;
+    /* This listener receives only its private input stream. It can therefore
+     * suppress its events without changing raw frames seen by other modules.
+     * listenerは専用ストリームだけを受けるため、抑止しても他モジュールが見る
+     * 生フレームを変更しない。 */
+    suppress-abs;
+    suppress-btn-touch;
 };

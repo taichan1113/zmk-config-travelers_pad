@@ -34,7 +34,8 @@ scroll, acceleration, or gesture policy back into the driver.
 | `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール / pointer and scroll | 有効 / enabled |
 | `function/iqs9150_multifinger_router.c` | 多指操作の排他判定 / exclusive multi-finger routing | 有効 / enabled |
 | `function/iqs9150_tap_drag.c` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
-| `function/iqs9150_grid_kscan.c` | 格子タップ・端部タップをZMK keymap向け仮想KSCANへ変換 / grid and edge taps to virtual KSCAN | 実装済み、初期無効 / implemented, disabled by default |
+| `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
+| `function/iqs9150_grid_kscan.c` | 旧格子・端部タップ試作 / legacy grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
 | `function/iqs9150_multifinger_gesture_kscan.c` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
@@ -181,18 +182,22 @@ two-finger drag cannot turn into scroll or begin from a later position.
 contact centroid for comparison and drag movement, so IQS9150 F-slot reordering between taps does
 not make the same physical area appear distant.
 
-格子モジュールを有効にすると、短い1本指タップは通常の左クリックではなく、ZMK keymapで
-設定できる仮想KSCANキーになります。`iqs9150_grid` は3×3格子の例と、左・右・上・下端部の
-4つの任意セル割当を持ちます。使用時はノードを `status = "okay"` にし、`chosen` の
-`zmk,kscan` とmatrix transform/keymapをその格子用に切り替えます。初期設定で無効なのは、
-既存のポインタ・タップ操作を変えないためです。
+格子入力には外部モジュール `zmk-input-matrix` を採用する。これは絶対X/Y座標を、タップと
+上下左右フリックを含む標準仮想KSCAN格子へ変換する。`iqs9150_composite_kscan` は、この格子
+KSCANと既存の3〜5本指ジェスチャーKSCANを一つに統合する唯一の `zmk,kscan` である。
+現段階では格子の論理位置をmatrix transformから意図的に省略しているため、格子操作は発火せず、
+従来のポインタ、スクロール、タップ、3〜5本指ジェスチャーの動作を変えない。次段階の任意辺
+モジュールも、このcompositeの子として追加する。
 
-When enabled, short one-finger grid taps become virtual KSCAN keys rather than
-ordinary left clicks, so ZMK keymap bindings control their actions. The sample
-`iqs9150_grid` node has a 3×3 grid and four configurable edge cells (left,
-right, top, bottom). Set its `status = "okay"` and switch the chosen
-`zmk,kscan`, matrix transform, and keymap to the grid when using it. It stays
-disabled initially to preserve the existing pointer and tap behavior.
+Grid input uses the external `zmk-input-matrix` module. An internal active-touch
+isolation function forwards absolute X/Y coordinates only while a finger is
+down, then the module converts them into a standard virtual KSCAN grid for tap
+and four-direction flick gestures. `iqs9150_composite_kscan` is the sole
+chosen `zmk,kscan` and composes that grid KSCAN with the existing three-to-five-finger gesture KSCAN.
+For this stage, grid positions are intentionally omitted from the matrix
+transform: grid touches cause no action, preserving existing pointer, scroll,
+tap, and multi-finger gesture behavior. The forthcoming selectable-edge module
+will join this same composite as another child.
 
 ## 配線とDTS / Wiring and DTS
 
@@ -217,6 +222,17 @@ CONFIG_LOG=y
 CONFIG_IQS9150_STEP1A_LOG_LEVEL_INF=y
 ```
 
+`config/west.yml` pins `zmk-input-matrix` to a tested revision. 新しいワークスペースでは
+`west update`（このワークスペースの運用では `just init config/zmk-config-travelers_pad`）を
+実行してモジュールを取得してください。既存ワークスペースで手動ビルドする場合は、
+`ZMK_EXTRA_MODULES` に本リポジトリと `module/zmk-input-matrix` の両方を渡します。
+
+`config/west.yml` pins `zmk-input-matrix` to the tested revision. In a new
+workspace, run `west update` (or, for this workspace, `just init
+config/zmk-config-travelers_pad`) to fetch it. For a manual build in an existing
+workspace, pass both this repository and `module/zmk-input-matrix` through
+`ZMK_EXTRA_MODULES`.
+
 For this repository, `build.yaml` already selects `seeeduino_xiao_ble` plus
 the `iqs9150_xiao` shield. Build it from the ZMK workspace with:
 
@@ -225,7 +241,7 @@ west build -s zmk/app -d build/iqs9150-ev02-step1c -b seeeduino_xiao_ble \
   -S zmk-usb-logging -- \
   -DSHIELD=iqs9150_xiao \
   -DZMK_CONFIG=$PWD/config \
-  -DZMK_EXTRA_MODULES=$PWD
+  -DZMK_EXTRA_MODULES="$PWD;/home/takec/zmk-workspace/module/zmk-input-matrix"
 ```
 
 The USB logging snippet provides a CDC serial port in addition to the normal

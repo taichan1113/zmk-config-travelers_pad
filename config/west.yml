@@ -1,3 +1,11 @@
 manifest:
+  remotes:
+    - name: amgskobo
+      url-base: https://github.com/amgskobo
+  projects:
+    - name: zmk-input-matrix
+      remote: amgskobo
+      revision: 1a65e503905dd31e0c907b4ec3bfafb76c3d18ec
+      path: module/zmk-input-matrix
   self:
     path: config

@@ -89,7 +89,12 @@ static void process_frame(const struct device *dev) {
 		data->have_position = false;
 		data->scroll_session = false;
 		data->reset_frame = false;
-		LOG_WRN("input session cancelled after sensor reset");
+		/* The router uses this internal marker to end provisional pointer
+		 * processing before it hands a contact to multi-finger logic. This is
+		 * normal routing, not necessarily a physical sensor reset.
+		 * ルーターは多指ロジックへ渡す前に、この内部マーカーで仮ポインタ処理を
+		 * 終了する。通常の経路切替であり、必ずしもセンサーリセットではない。 */
+		LOG_DBG("input session cleared by routed frame marker");
 		return;
 	}
 

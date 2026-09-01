@@ -17,6 +17,13 @@ properties:
     type: int
     default: 75
     description: Maximum primary-contact movement during a tap
+  multifinger-settle-ms:
+    type: int
+    default: 45
+    description: >
+      Ignore contact-coordinate settling for this interval after a second or
+      third finger appears. 2本目または3本目の検出直後に、接触座標の安定化を
+      タップ移動として判定しない時間（ms）。
   double-tap-max-gap-ms:
     type: int
     default: 250
