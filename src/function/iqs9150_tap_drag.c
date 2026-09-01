@@ -336,7 +336,19 @@ static void process_frame(const struct device *dev)
 		    matches_first_tap(data, cfg, now)) {
 			start_double_tap_candidate(data, cfg);
 		}
-		if (data->fingers >= 2 && now < data->multifinger_settle_until_ms) {
+		if (data->fingers < data->max_fingers && !data->button_down) {
+			/* A multi-finger release is not electrically simultaneous: the EV02
+			 * can report the remaining finger for one or more frames before it
+			 * reports zero contacts. Its centroid is necessarily displaced from
+			 * the full-contact centroid, so it must not turn an otherwise still
+			 * 2F/3F tap into a moved gesture. Movement is evaluated only while
+			 * all fingers that formed the tap are still present.
+			 *
+			 * 複数指の離脱は電気的には同時でなく、EV02が全指離脱の前に残った
+			 * 1本を数フレーム報告することがある。その重心は全指時と必ず異なるため、
+			 * 静止した2本/3本指タップを移動扱いにしてはならない。タップ中の移動は、
+			 * タップを構成した全指が揃っているフレームだけで判定する。 */
+		} else if (data->fingers >= 2 && now < data->multifinger_settle_until_ms) {
 			/* Contact coordinates settle as the second/third finger becomes
 			 * valid. Keep rebasing during this short interval rather than
 			 * interpreting sensor settling as a user scroll.
