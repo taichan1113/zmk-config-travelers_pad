@@ -6,15 +6,20 @@
         compatible = "zmk,keymap";
 
         default_layer {
-            /* Four-edge dial isolated test / 4辺エッジダイヤル単体試験
-             * 各辺の正/負方向を固有の文字へ割り当て、辺と局所円の状態遷移を識別する。
-             * Map each edge's positive/negative direction to unique letters
-             * so edge and local-circle state transitions can be identified.
+            /* Full input integration bindings / 全入力結合試験用の割当
+             * 3/4/5本指は実際のWindows操作、エッジはログと画面上で区別しやすい
+             * 固有文字にする。Map 3/4/5-finger gestures to Windows actions and
+             * each edge direction to a distinct letter for visible verification.
              *
-             * 左: 下D / 上U, 右: 下R / 上I,
-             * 上: 右T / 左Y, 下: 右B / 左N. */
-            bindings = <&kp D &kp U &kp R &kp I
-                        &kp T &kp Y &kp B &kp N>;
+             * 3F: Back / Forward / PageUp / PageDown
+             * 4F: Win+Left / Right / Up / Down
+             * 5F: Win+M / Win+Shift+M
+             * Edge: left D/U, right R/I, top T/Y, bottom B/N. */
+            bindings = <&kp C_AC_BACK    &kp C_AC_FORWARD &kp PG_UP       &kp PG_DN
+                        &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
+                        &kp LG(M)        &kp LS(LG(M))
+                        &kp D            &kp U             &kp R           &kp I
+                        &kp T            &kp Y             &kp B           &kp N>;
         };
     };
 };
