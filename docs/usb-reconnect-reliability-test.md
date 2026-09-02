@@ -11,6 +11,15 @@ USB電源の復帰時には、IQS9150自身の電源投入/リセット完了よ
 場合がある。ドライバは一時的な`0xeeee`を恒久的なデバイス不在と扱わず、最大1秒間、
 製品番号を再試行したまま有効状態を維持する。
 
+The driver also reads the active Config Settings at startup. When its
+`Terminate Comms Window` bit is set (as in the EV02 GUI value `0x461E`), it
+ends every completed I²C session with the documented `0xEEEE` command. This
+prevents each configuration write from waiting for the sensor's I²C timeout.
+
+ドライバは起動時に有効なConfig Settingsも読み取る。EV02 GUI設定値`0x461E`のように
+`Terminate Comms Window`ビットが有効なら、各I²Cセッションを規定の`0xEEEE`コマンドで
+明示終了する。これにより、各設定書込みがセンサー側I²Cタイムアウトを待つことを防ぐ。
+
 The diagnostic UF2 also enables the XIAO boot probe. The red LED flashes only
 while the application is running but USB is not configured; it turns off once
 USB is configured.
@@ -31,6 +40,7 @@ USB is configured.
    ```text
    application reached XIAO USB boot probe
    IQS9150 product 0x076a ready after N startup attempt(s)
+   IQS9150 communication termination=0xEEEE
    STEP1B complete: Event Mode active
    USB configured; boot probe complete
    ```
