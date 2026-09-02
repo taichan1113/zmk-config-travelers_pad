@@ -13,7 +13,7 @@ It also marks functions that are present but disabled or not assigned.
 ```mermaid
 flowchart TD
     HW[IQS9150 EV02 hardware<br/>IQS9150 EV02ハードウェア]
-    DRV[IQS9150 driver<br/>input_iqs9150_step1a]
+    DRV[IQS9150 driver<br/>iqs9150_ev02_driver]
     RAW[Normalized contact frames<br/>正規化済み接触フレーム]
     ROUTER[Multi-finger router<br/>多指ルーター]
     PTR[Pointer function<br/>ポインタ機能]
@@ -59,7 +59,7 @@ compatible文字列、Kconfigシンボル、Devicetreeプロパティ、キー�
 ```text
 src/
 ├── driver/iqs9150/                 # Future zmk-iqs9150-driver
-│   ├── input_iqs9150_step1a.c
+│   ├── iqs9150_ev02_driver.c
 │   └── iqs9150_ev02_init.h
 ├── function/iqs9150/               # Future zmk-iqs9150-functions
 │   ├── core/                        # Router + pointer/2F scroll
@@ -74,7 +74,7 @@ src/
 
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
-| Sensor driver / センサードライバ | `src/driver/iqs9150/input_iqs9150_step1a.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
+| Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
 | Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Enabled / 有効 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Enabled / 有効 |

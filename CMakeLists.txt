@@ -1,6 +1,6 @@
 zephyr_library()
 zephyr_include_directories(include)
-zephyr_library_sources_ifdef(CONFIG_IQS9150_STEP1A src/driver/iqs9150/input_iqs9150_step1a.c)
+zephyr_library_sources_ifdef(CONFIG_IQS9150_EV02_DRIVER src/driver/iqs9150/iqs9150_ev02_driver.c)
 
 # Reusable IQS9150 function modules. Keep their paths grouped by feature so
 # they can later be extracted together without changing their public DTS APIs.

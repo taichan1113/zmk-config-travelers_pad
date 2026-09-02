@@ -1,4 +1,4 @@
-menuconfig IQS9150_STEP1A
+menuconfig IQS9150_EV02_DRIVER
     bool "IQS9150 EV02 sensor driver"
     default y
     depends on DT_HAS_AZOTEQ_IQS9150_ENABLED
@@ -8,10 +8,10 @@ menuconfig IQS9150_STEP1A
       normalized absolute contact frames. Pointer and gesture policies are
       implemented by separate Travelers Pad function modules.
 
-if IQS9150_STEP1A
+if IQS9150_EV02_DRIVER
 
-module = IQS9150_STEP1A
-module-str = iqs9150_step1a
+module = IQS9150_EV02_DRIVER
+module-str = iqs9150_ev02_driver
 source "subsys/logging/Kconfig.template.log_config"
 
 endif
@@ -21,7 +21,7 @@ menu "Travelers Pad input functions"
 config TRAVELERS_PAD_IQS9150_POINTER
     bool "IQS9150 pointer and scroll function"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_POINTER_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_POINTER_ENABLED
     select INPUT
     help
       Convert normalized IQS9150 contact frames into relative pointer motion,
@@ -39,7 +39,7 @@ config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
 config TRAVELERS_PAD_IQS9150_GRID_KSCAN
     bool "IQS9150 grid and edge gesture KSCAN function"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_GRID_KSCAN_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_GRID_KSCAN_ENABLED
     select KSCAN
     help
       Convert short one-finger taps into configurable grid cells or edge actions.
@@ -47,7 +47,7 @@ config TRAVELERS_PAD_IQS9150_GRID_KSCAN
 config TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN
     bool "Travelers Pad IQS9150 edge dial KSCAN"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN_ENABLED
     select KSCAN
     help
       Convert motion along enabled pad edges into repeated virtual KSCAN events.
@@ -55,7 +55,7 @@ config TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER_ENABLED
     select INPUT
     help
       Classify raw IQS9150 sessions before pointer processing. One-finger
@@ -66,7 +66,7 @@ config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
 config TRAVELERS_PAD_IQS9150_TAP_DRAG
     bool "IQS9150 multi-finger tap and double-tap drag function"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TAP_DRAG_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TAP_DRAG_ENABLED
     select INPUT
     help
       Convert one-, two-, and three-finger taps into left, right, and middle
@@ -77,7 +77,7 @@ config TRAVELERS_PAD_IQS9150_TAP_DRAG
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
     bool "IQS9150 three-to-five-finger swipe KSCAN function"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN_ENABLED
     select KSCAN
     help
       Convert completed three- and four-finger swipes into virtual KSCAN
@@ -88,7 +88,7 @@ config TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
 config TRAVELERS_PAD_IQS9150_MATRIX_INPUT
     bool "IQS9150 grid input isolation function"
     default y
-    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MATRIX_INPUT_ENABLED
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MATRIX_INPUT_ENABLED
     select INPUT
     help
       Copy only active one-or-more-finger absolute X/Y and BTN_TOUCH frames to

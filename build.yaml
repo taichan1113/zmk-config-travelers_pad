@@ -2,4 +2,4 @@ include:
   - board: seeeduino_xiao_ble
     shield: iqs9150_xiao
     snippet: zmk-usb-logging
-    artifact-name: iqs9150-ev02-step1a
+    artifact-name: iqs9150-ev02

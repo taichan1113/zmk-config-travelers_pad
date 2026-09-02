@@ -24,7 +24,7 @@
 #include "iqs9150_ev02_init.h"
 #include <travelers_pad/multitouch.h>
 
-LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
+LOG_MODULE_REGISTER(iqs9150_ev02_driver, CONFIG_IQS9150_EV02_DRIVER_LOG_LEVEL);
 
 #define IQS9150_PRODUCT_NUMBER_REG       0x1000
 #define IQS9150_RELATIVE_X_REG            0x1014

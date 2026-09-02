@@ -5,7 +5,7 @@
  * XIAO P1.15  -> EV02 RDY (active-low, open-drain)
  * XIAO P1.14  -> EV02 SDA
  * XIAO P1.13  -> EV02 SCL
- * XIAO P1.12  -> EV02 MCLR (optional; reserved and not driven in Step 1A)
+ * XIAO P1.12  -> EV02 MCLR (optional; reserved and not driven by current firmware)
  *
  * Do not add GPIO_PULL_UP to rdy-gpios when the EV02 pull-up is fitted.
  * Never connect XIAO USB VBUS (5 V) to the EV02 supply input.

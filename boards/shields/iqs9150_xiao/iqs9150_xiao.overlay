@@ -3,7 +3,7 @@
  * P1.14 -> EV02 SDA     P1.13 -> EV02 SCL
  * P1.15 -> EV02 RDY
  *
- * P1.12 is deliberately unused in Step 1A. Do not connect it to MCLR yet:
+ * P1.12 is deliberately unused by the current firmware. Do not connect it to MCLR:
  * the firmware must not reset an EV02 whose GUI configuration is being kept.
  */
 

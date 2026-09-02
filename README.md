@@ -2,41 +2,39 @@
 
 ## 現在の状態 / Current status
 
-STEP1Aでは実機でI²C、RDY割込み、タッチ座標の生データ取得を確認済みです。STEP1Bは
-`IQS9150_init.h` のEV02設定を書き込み、ATI（自動調整）完了後にEvent Modeへ移行します。
-STEP1Cは検証済みの相対移動を ZMK のマウスHIDへ送ります。STEP1Dは2本指の縦横スクロールと
-タップクリック（1本指=左、2本指=右）を追加します。速度調整、3本指中クリック、スワイプ、
-ピンチはまだ実装しません。
+実機で IQS9150EV02 の初期化、ATI、Event Mode、相対ポインタ、2本指スクロール、1〜3本指の
+タップ／ドラッグ、3〜5本指ジェスチャー、エッジダイヤルを確認済みです。センサドライバは
+最大5点の接触座標を供給し、操作ポリシーは機能モジュールへ分離しています。ピンチ／回転の
+ホスト操作への割り当て、慣性、速度・加速チューニングは今後の項目です。
 
-Step 1A has verified I²C, RDY interrupts, and raw touch reports on hardware.
-Step 1B writes the EV02 settings from `IQS9150_init.h`, runs ATI, and enters
-Event Mode. Step 1C forwards verified relative motion to ZMK mouse HID.
-Step 1D adds two-finger vertical/horizontal scroll plus one-/two-finger tap
-for left/right click. It does not yet implement speed tuning, middle click,
-swipes, or pinch.
+Hardware verification covers IQS9150EV02 initialization, ATI, Event Mode,
+relative pointer motion, two-finger scroll, one-to-three-finger tap/drag,
+three-to-five-finger gestures, and the edge dial. The sensor driver provides
+up to five contact coordinates; interaction policy lives in function modules.
+Pinch/rotation host actions, inertia, and speed/acceleration tuning remain
+future work.
 
-This is a ZMK/Zephyr module for IQS9150EV02 bring-up and basic pointer output.
+This is a ZMK/Zephyr module for the IQS9150EV02 Travelers Pad.
 
 ## モジュール構成 / Module architecture
 
 センサ固有の処理と操作ポリシーを分離しています。`driver` はIQS9150の初期化、RDY、ATI、
-Event Mode、および正規化した接触フレーム（最大7点の絶対座標、接触本数）だけを担当します。
+Event Mode、および正規化した接触フレーム（最大5点の絶対座標、接触本数）だけを担当します。
 クリック、スクロール、加速、ジェスチャーをここへ戻さないでください。
 
 Sensor-specific work and interaction policy are separate. The `driver` owns
 IQS9150 initialization, RDY, ATI, Event Mode, and normalized contact frames
-(up to seven absolute contact coordinates and finger count) only. Do not put click,
+(up to five absolute contact coordinates and finger count) only. Do not put click,
 scroll, acceleration, or gesture policy back into the driver.
 
 | 内部モジュール / Internal module | 役割 / Responsibility | 状態 / Status |
 | --- | --- | --- |
-| `driver` (`input_iqs9150_step1a.c`) | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
-| `function/iqs9150_pointer.c` | 相対ポインタ、2本指スクロール / pointer and scroll | 有効 / enabled |
-| `function/iqs9150_multifinger_router.c` | 多指操作の排他判定 / exclusive multi-finger routing | 有効 / enabled |
-| `function/iqs9150_tap_drag.c` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
+| `driver/iqs9150/iqs9150_ev02_driver.c` | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
+| `function/iqs9150/core/` | 相対ポインタ、2本指スクロール、多指操作の排他判定 / pointer, scroll, exclusive multi-finger routing | 有効 / enabled |
+| `function/iqs9150/tap_drag/` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
-| `function/iqs9150_grid_kscan.c` | 旧格子・端部タップ試作 / legacy grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
-| `function/iqs9150_multifinger_gesture_kscan.c` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
+| `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
+| `function/iqs9150/multifinger_gesture/` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
 | `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
 
 ## マルチタッチ座標 / Multi-touch coordinates
@@ -212,8 +210,8 @@ will join this same composite as another child.
 ## 配線とDTS / Wiring and DTS
 
 Use the XIAO's right-hand header as follows: GND→EV02 GND, 3V3→EV02 VDD,
-P1.14→SDA, P1.13→SCL, P1.15→RDY, and P1.12→MCLR (reserved; not driven during
-Step 1A). Do not supply the EV02 from USB VBUS (5 V). Add the node in
+P1.14→SDA, P1.13→SCL, P1.15→RDY, and P1.12 remains unused (MCLR is not driven).
+Do not supply the EV02 from USB VBUS (5 V). Add the node in
 the actual build overlay is `boards/shields/iqs9150_xiao/iqs9150_xiao.overlay`.
 It remaps I2C0 from the board default pins to P1.14/P1.13 and disables SPI2,
 which otherwise uses P1.13--P1.15. `rdy-gpios` has no internal pull-up:
@@ -226,10 +224,10 @@ P1.12は未接続のままにします。EV02へ5 Vを供給しないでくだ�
 Add this repository as a ZMK module (or put it under `config/`), then enable:
 
 ```
-CONFIG_IQS9150_STEP1A=y
+CONFIG_IQS9150_EV02_DRIVER=y
 CONFIG_ZMK_POINTING=y
 CONFIG_LOG=y
-CONFIG_IQS9150_STEP1A_LOG_LEVEL_INF=y
+CONFIG_IQS9150_EV02_DRIVER_LOG_LEVEL_INF=y
 ```
 
 `config/west.yml` pins `zmk-input-matrix` to a tested revision. 新しいワークスペースでは
