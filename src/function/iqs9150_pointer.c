@@ -22,6 +22,8 @@ struct pointer_config {
 	uint16_t scroll_axis_lock_min_move;
 	uint16_t scroll_axis_lock_ratio;
 	uint16_t scroll_max_frame_delta;
+	bool scroll_invert_vertical;
+	bool scroll_invert_horizontal;
 };
 
 enum scroll_axis {
@@ -79,17 +81,20 @@ static void report_motion(const struct device *dev, int16_t dx, int16_t dy) {
 	}
 }
 
-static void report_scroll(const struct device *dev, int16_t dx, int16_t dy) {
+static void report_scroll(const struct device *dev, const struct pointer_config *cfg, int16_t dx,
+			  int16_t dy) {
 	int rc;
+	int16_t horizontal = cfg->scroll_invert_horizontal ? -dx : dx;
+	int16_t vertical = cfg->scroll_invert_vertical ? -dy : dy;
 
-	if (dx != 0) {
-		rc = input_report_rel(dev, INPUT_REL_HWHEEL, dx, dy == 0, K_NO_WAIT);
+	if (horizontal != 0) {
+		rc = input_report_rel(dev, INPUT_REL_HWHEEL, horizontal, vertical == 0, K_NO_WAIT);
 		if (rc != 0) {
 			LOG_ERR("horizontal scroll report failed: %d", rc);
 		}
 	}
-	if (dy != 0) {
-		rc = input_report_rel(dev, INPUT_REL_WHEEL, -dy, true, K_NO_WAIT);
+	if (vertical != 0) {
+		rc = input_report_rel(dev, INPUT_REL_WHEEL, -vertical, true, K_NO_WAIT);
 		if (rc != 0) {
 			LOG_ERR("vertical scroll report failed: %d", rc);
 		}
@@ -159,7 +164,7 @@ static void process_scroll_delta(const struct device *dev, const struct pointer_
 	data->scroll_remainder_x -= wheel_x * divisor;
 	data->scroll_remainder_y -= wheel_y * divisor;
 	if (wheel_x != 0 || wheel_y != 0) {
-		report_scroll(dev, (int16_t)wheel_x, (int16_t)wheel_y);
+		report_scroll(dev, cfg, (int16_t)wheel_x, (int16_t)wheel_y);
 	}
 }
 
@@ -225,9 +230,9 @@ static int pointer_init(const struct device *dev)
 {
 	const struct pointer_config *cfg = dev->config;
 
-	LOG_INF("pointer active: divisor=%u axis-min=%u ratio=%u max-delta=%u", cfg->scroll_divisor,
-		cfg->scroll_axis_lock_min_move, cfg->scroll_axis_lock_ratio,
-		cfg->scroll_max_frame_delta);
+	LOG_INF("pointer active: divisor=%u axis-min=%u ratio=%u max-delta=%u invert=%u/%u",
+		cfg->scroll_divisor, cfg->scroll_axis_lock_min_move, cfg->scroll_axis_lock_ratio,
+		cfg->scroll_max_frame_delta, cfg->scroll_invert_horizontal, cfg->scroll_invert_vertical);
 	return 0;
 }
 
@@ -262,6 +267,8 @@ static void pointer_handle_input(const struct device *dev, struct input_event *e
 		.scroll_axis_lock_min_move = DT_INST_PROP_OR(n, scroll_axis_lock_min_move, 12),         \
 		.scroll_axis_lock_ratio = DT_INST_PROP_OR(n, scroll_axis_lock_ratio, 2),                \
 		.scroll_max_frame_delta = DT_INST_PROP_OR(n, scroll_max_frame_delta, 128),              \
+		.scroll_invert_vertical = DT_INST_PROP(n, scroll_invert_vertical),                     \
+		.scroll_invert_horizontal = DT_INST_PROP(n, scroll_invert_horizontal),                 \
 	};                                                                                            \
 	static void pointer_input_handler_##n(struct input_event *evt) {                              \
 		pointer_handle_input(DEVICE_DT_INST_GET(n), evt);                                       \

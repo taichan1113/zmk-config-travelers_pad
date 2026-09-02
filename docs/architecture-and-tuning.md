@@ -1,0 +1,137 @@
+# Travelers Pad architecture and tuning / アーキテクチャと調整
+
+This document describes the current IQS9150 implementation. It separates the
+sensor driver, reusable function modules, and keyboard-specific ZMK settings.
+It also marks functions that are present but disabled or not assigned.
+
+この文書は現在のIQS9150実装を対象とします。センサードライバ、再利用可能な
+機能モジュール、キーボード固有のZMK設定を分離して説明します。実装済みでも無効、
+または未割当の機能は明記します。
+
+## Dependency graph / 依存関係
+
+```mermaid
+flowchart TD
+    HW[IQS9150 EV02 hardware<br/>IQS9150 EV02ハードウェア]
+    DRV[IQS9150 driver<br/>input_iqs9150_step1a]
+    RAW[Normalized contact frames<br/>正規化済み接触フレーム]
+    ROUTER[Multi-finger router<br/>多指ルーター]
+    PTR[Pointer function<br/>ポインタ機能]
+    TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
+    MF[3/4 swipe + 5F grasp/release<br/>3/4本指スワイプ + 5本指Grasp/Release]
+    EDGE[Edge dial<br/>エッジダイヤル]
+    GRID[Grid / matrix optional<br/>格子 / マトリクス 任意]
+    HID[ZMK input listener → HID<br/>ZMK入力listener → HID]
+    COMP[Composite KSCAN<br/>合成KSCAN]
+    KEYMAP[Keyboard keymap / behaviors<br/>キーボードkeymap / Behavior]
+    HOST[Host OS<br/>ホストOS]
+
+    HW --> DRV --> RAW
+    RAW --> ROUTER
+    RAW --> TAP
+    RAW --> MF
+    RAW --> EDGE
+    RAW -. disabled .-> GRID
+    ROUTER --> PTR --> HID --> HOST
+    TAP --> HID
+    MF --> COMP --> KEYMAP --> HOST
+    EDGE --> COMP
+    GRID -. optional .-> COMP
+    KEYMAP -->|&msc macro| HID
+```
+
+`iqs9150_tap_drag` observes raw frames independently so that it can preserve
+tap history. The router checks its drag ownership state and suppresses pointer
+or scroll output during an active drag.
+
+`iqs9150_tap_drag` はタップ履歴を保つため、生フレームを独立して監視します。
+ルーターはドラッグ所有状態を参照し、ドラッグ中のポインタ・スクロール出力を抑止します。
+
+## Layer responsibilities / レイヤーごとの責務
+
+| Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
+|---|---|---|---|---|
+| Sensor driver / センサードライバ | `input_iqs9150_step1a` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
+| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Enabled / 有効 |
+| Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
+| Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Enabled / 有効 |
+| Multi-finger gesture / 多指ジェスチャー | `iqs9150_multifinger_gesture_kscan` | 3/4F directional swipe; 5F independent-coordinate Grasp/Release / 3/4本指方向スワイプ、5本指独立座標Grasp/Release | Virtual KSCAN | Enabled / 有効 |
+| Edge / エッジ | `iqs9150_edge_dial_kscan` | Claims a 1F contact started on an enabled edge; linear trace and local-circle continuation produce repeated virtual KSCAN steps / 有効辺から始まる1本指接触を取得し、直線・局所円継続を仮想KSCANステップ化 | Virtual KSCAN | Enabled / 有効 |
+| Grid / 格子 | `iqs9150_grid_kscan`, `iqs9150_matrix_input`, `zmk-input-matrix` | 3×3 grid tap/flick and optional edge cells / 3×3格子タップ・フリックと任意エッジセル | Virtual KSCAN | Disabled / 無効 |
+| ZMK integration / ZMK統合 | Composite KSCAN, keymap, `&kp`, `&mkp`, `&msc` | Maps virtual KSCAN positions to host functions / 仮想KSCAN位置をホスト機能へ割当 | HID reports / HIDレポート | Enabled where mapped / 割当箇所のみ有効 |
+
+## Current keyboard assignment / 現在のキーボード割当
+
+These are keyboard-level bindings in `config/iqs9150_xiao.keymap`; they can be
+replaced without changing the sensor driver or function modules.
+
+以下は `config/iqs9150_xiao.keymap` のキーボード側割当です。センサードライバや
+機能モジュールを変更せず置換できます。
+
+| Source / 入力 | Direction or action / 方向・操作 | Current binding / 現在の割当 |
+|---|---|---|
+| 3F swipe / 3本指スワイプ | Left / Right / 左・右 | Mouse Back `MB4` / Mouse Forward `MB5` |
+| 3F swipe / 3本指スワイプ | Up / Down / 上・下 | Page Up / Page Down |
+| 4F swipe / 4本指スワイプ | Left / Right / Up / Down | Win+Arrow / Win+矢印 |
+| 5F geometry / 5本指ジオメトリ | Grasp / Release | Win+M / Win+Shift+M |
+| Left edge / 左端 | Down / Up / 下・上 | Brightness down / up / 輝度下げ・上げ |
+| Right edge / 右端 | Down / Up / 下・上 | Vertical scroll down / up / 縦スクロール下・上 |
+| Top edge / 上端 | Right / Left / 右・左 | Volume up / down / 音量上げ・下げ |
+| Bottom edge / 下端 | Right / Left / 右・左 | Horizontal scroll right / left / 横スクロール右・左 |
+
+## Tuning ownership / 調整項目と所有層
+
+Use the keyboard configuration first for user-preference changes. Use function
+module properties for recognition thresholds or hardware geometry. Change the
+sensor driver only for IQS9150 protocol, initialization, or contact-decoding
+issues.
+
+ユーザーの好みはまずキーボード設定で調整します。認識閾値やハードウェア形状は機能
+モジュールのプロパティで調整します。IQS9150通信、初期化、接触復号の問題だけを
+センサードライバで変更します。
+
+| Function / 機能 | Settings / 設定 | Configure in / 設定場所 | Change scope / 影響範囲 |
+|---|---|---|---|
+| Host assignment / ホスト割当 | Gesture/edge bindings, `&kp`, `&mkp`, `&msc`, macro speed/hold time / ジェスチャー・エッジ割当、Behavior、マクロ速度・保持時間 | `config/iqs9150_xiao.keymap` | Keyboard only / キーボードのみ |
+| 2F scroll direction / 2本指スクロール方向 | `scroll-invert-vertical`, `scroll-invert-horizontal` | `config/iqs9150_xiao.keymap` override of `&iqs9150_pointer` | Keyboard only / キーボードのみ |
+| 2F scroll feel / 2本指スクロール感 | `scroll-divisor`, axis lock minimum/ratio, maximum per-frame delta / 除算、軸ロック最小量・比率、最大フレーム差分 | `&iqs9150_pointer` in overlay | Pointer/2F scroll only / ポインタ・2本指のみ |
+| 2F acceleration / 2本指加速 | Not implemented as a setting yet / 現時点では設定未実装 | Future pointer-module setting / 将来のポインタモジュール設定 | 2F scroll only / 2本指のみ |
+| Tap and drag / タップ・ドラッグ | `tap-max-ms`, `tap-max-move`, `multifinger-settle-ms`, `double-tap-max-gap-ms`, `double-tap-max-distance`, `drag-start-move` | `&iqs9150_tap_drag` in overlay | Tap/drag only / タップ・ドラッグのみ |
+| 3/4F swipe / 3/4本指スワイプ | `swipe-min-move`, `swipe-max-ms` | `&iqs9150_gesture_kscan` in overlay | 3/4F only / 3/4本指のみ |
+| 5F Grasp/Release / 5本指Grasp/Release | `five-finger-radial-move`, `five-finger-stable-frames` | `&iqs9150_gesture_kscan` in overlay | 5F only / 5本指のみ |
+| Edge enablement / エッジ有効化 | `edge-left`, `edge-right`, `edge-top`, `edge-bottom` | `&iqs9150_edge_dial` in overlay | Selected edges only / 選択辺のみ |
+| Edge recognition / エッジ認識 | Surface size, `edge-size`, linear/circle movement thresholds, local circle entry/corner position / 面サイズ、辺幅、直線・円の移動閾値、局所円の進入・中心位置 | `&iqs9150_edge_dial` in overlay | Edge module only / エッジのみ |
+| Grid / 格子 | Grid settle time, transform, key bindings / 格子安定化時間、transform、キー割当 | Optional module overlay + keymap | Disabled unless explicitly enabled / 明示的に有効化するまで無効 |
+| Pinch/rotation / ピンチ・回転 | Router geometry detection thresholds exist; no host action is assigned / ルーターのジオメトリ検出閾値はあるが、ホスト動作未割当 | `&iqs9150_router`; future function module/keymap | Claimed but no visible action / 排他取得のみ、可視動作なし |
+
+## Important boundary rules / 重要な境界ルール
+
+1. The driver must not decide host keycodes, scrolling speed preferences, or
+   application actions. / ドライバはホストのキーコード、スクロール速度の好み、
+   アプリ操作を決めない。
+2. Function modules classify contact data and protect incompatible streams from
+   each other. / 機能モジュールは接触データを分類し、競合する入力経路を相互に保護する。
+3. KSCAN-producing functions are assigned through the keyboard keymap. /
+   KSCAN出力の機能はキーボードkeymapで割り当てる。
+4. The 2F scroll path currently publishes wheel events directly because it needs
+   IQS9150-specific contact-transition handling and discontinuity rejection. /
+   2本指スクロールはIQS9150固有の接触遷移処理と不連続除外が必要なため、現状は
+   ホイールイベントを直接出力する。
+5. An enabled edge owns a contact as soon as it starts within that edge. It does
+   not emit ordinary pointer movement before its first action. / 有効辺はその辺から始まる
+   接触を取得時点で所有し、最初のアクション前でも通常ポインタ移動を出力しない。
+
+## Explicitly not implemented / 現時点で未実装
+
+- User-visible pinch action / ユーザー可視のピンチ操作
+- User-visible rotation action / ユーザー可視の回転操作
+- Configurable 2F scroll acceleration or inertia / 設定可能な2本指スクロール加速・慣性
+- Enabled and mapped 3×3 grid mode / 有効化・割当済みの3×3格子モード
+
+The router already claims two-finger geometry so it does not leak into pointer
+or scroll output. A future pinch/rotation module should consume that claimed
+path and publish its own KSCAN or input events.
+
+ルーターは既に2本指ジオメトリを取得し、ポインタ・スクロールへ漏れないようにして
+います。将来のピンチ・回転モジュールはこの取得済み経路を利用し、独自のKSCANまたは
+input eventを出力します。

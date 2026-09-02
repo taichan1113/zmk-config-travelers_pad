@@ -1,25 +1,81 @@
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
+#include <dt-bindings/zmk/pointing.h>
 
 / {
+    behaviors {
+        /* The edge dial emits an instantaneous virtual KSCAN tap. &msc is a
+         * held input behavior, therefore each macro holds it long enough for
+         * one wheel report. MOVE_* values are deliberately used instead of
+         * SCRL_*: the larger velocity yields a reliable single step from this
+         * short virtual press.
+         *
+         * エッジダイヤルは仮想KSCANの瞬時タップを出力する。一方&mscは押下中に
+         * レポートするBehaviorなので、各マクロがホイール1回分だけ保持する。
+         * この短い仮想押下でも確実に動作するよう、SCRL_*ではなくより大きい
+         * MOVE_*値を使用する。 */
+        edge_scroll_up: edge_scroll_up {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <24>;
+            bindings = <&macro_press &msc MOVE_Y(600)>,
+                       <&macro_release &msc MOVE_Y(600)>;
+        };
+
+        edge_scroll_down: edge_scroll_down {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <24>;
+            bindings = <&macro_press &msc MOVE_Y(-600)>,
+                       <&macro_release &msc MOVE_Y(-600)>;
+        };
+
+        edge_scroll_right: edge_scroll_right {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <24>;
+            bindings = <&macro_press &msc MOVE_X(600)>,
+                       <&macro_release &msc MOVE_X(600)>;
+        };
+
+        edge_scroll_left: edge_scroll_left {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <24>;
+            bindings = <&macro_press &msc MOVE_X(-600)>,
+                       <&macro_release &msc MOVE_X(-600)>;
+        };
+    };
+
     keymap {
         compatible = "zmk,keymap";
 
         default_layer {
             /* Full input integration bindings / 全入力結合試験用の割当
-             * 3/4/5本指は実際のWindows操作、エッジはログと画面上で区別しやすい
-             * 固有文字にする。Map 3/4/5-finger gestures to Windows actions and
-             * each edge direction to a distinct letter for visible verification.
+             * 3/4/5本指はWindows操作、4辺は連続操作へ割り当てる。
+             * Map 3/4/5-finger gestures to Windows actions and all edges to
+             * continuous host operations.
              *
-             * 3F: Back / Forward / PageUp / PageDown
+             * 3F: Mouse Back / Forward / PageUp / PageDown
              * 4F: Win+Left / Right / Up / Down
              * 5F: Win+M / Win+Shift+M
-             * Edge: left D/U, right R/I, top T/Y, bottom B/N. */
-            bindings = <&kp C_AC_BACK    &kp C_AC_FORWARD &kp PG_UP       &kp PG_DN
+             * Edge: left brightness down/up, right scroll down/up,
+             *       top volume up/down, bottom scroll right/left. */
+            bindings = <&mkp MB4         &mkp MB5          &kp PG_UP       &kp PG_DN
                         &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
                         &kp LG(M)        &kp LS(LG(M))
-                        &kp D            &kp U             &kp R           &kp I
-                        &kp T            &kp Y             &kp B           &kp N>;
+                        &kp C_BRI_DN     &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
+                        &kp C_VOL_UP     &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left>;
         };
     };
+};
+
+/* Keyboard-level two-finger scroll tuning / キーボード側の2本指スクロール調整
+ * Uncomment only the axis to reverse. The driver retains its sensor-specific
+ * filtering; the keyboard configuration chooses the user-facing direction.
+ * 反転したい軸だけコメントを外す。センサー固有のフィルタはドライバに残し、
+ * ユーザー向けの方向だけをキーボード設定で選択する。 */
+&iqs9150_pointer {
+    /* scroll-invert-vertical; */
+    /* scroll-invert-horizontal; */
 };

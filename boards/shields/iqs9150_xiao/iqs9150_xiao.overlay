@@ -150,9 +150,11 @@
         circle-step-move = <80>;
         circle-corner-inset-x = <360>;
         circle-corner-inset-y = <313>;
-        /* 任意辺有効化の単体検証: 左・下だけを有効にする。
-         * Selectable-edge isolated test: enable only left and bottom. */
+        /* Enable all four edges for the action keymap profile.
+         * 操作キーマッププロファイルでは4辺すべてを有効にする。 */
         edge-left;
+        edge-right;
+        edge-top;
         edge-bottom;
     };
 

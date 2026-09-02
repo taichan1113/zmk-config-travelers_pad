@@ -27,11 +27,13 @@ user keymap yet.
    leakage during each gesture.
    3本/4本指の全四方向と5本指Grasp/Releaseを試す。設定済みWindows操作と、各操作中に
    ポインタ、スクロール、クリックが混入しないことを確認する。
-4. Trace each enabled edge and its local circular continuation. Confirm only
-   its assigned letter repeats; immediately after lift, a centre 1F tap must
-   still produce one left click.
-   有効な各辺と局所円継続をなぞる。対応文字だけが反復し、指を離した直後の中央1本指
-   タップは左クリック一回となることを確認する。
+4. Trace each edge and its local circular continuation. Confirm the mapped
+   continuous host action repeats; immediately after lift, a centre 1F tap must
+   still produce one left click. Left adjusts brightness, right scrolls
+   vertically, top adjusts volume, and bottom scrolls horizontally.
+   4辺と局所円継続をなぞる。対応する連続ホスト操作だけが反復し、指を離した直後の中央
+   1本指タップは左クリック一回となることを確認する。左辺は輝度、右辺は縦スクロール、
+   上辺は音量、下辺は横スクロールを操作する。
 
 ## Expected ownership / 期待する所有権
 
