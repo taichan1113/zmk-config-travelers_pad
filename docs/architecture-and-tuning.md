@@ -47,11 +47,34 @@ or scroll output during an active drag.
 `iqs9150_tap_drag` はタップ履歴を保つため、生フレームを独立して監視します。
 ルーターはドラッグ所有状態を参照し、ドラッグ中のポインタ・スクロール出力を抑止します。
 
+## Internal layout / 内部配置
+
+The repository is already arranged along the future repository boundary. This
+is only an internal move: compatible strings, Kconfig symbols, Devicetree
+properties, and keyboard settings are unchanged.
+
+リポジトリは将来のリポジトリ境界に沿って既に配置しています。これは内部移動だけであり、
+compatible文字列、Kconfigシンボル、Devicetreeプロパティ、キーボード設定は変わりません。
+
+```text
+src/
+├── driver/iqs9150/                 # Future zmk-iqs9150-driver
+│   ├── input_iqs9150_step1a.c
+│   └── iqs9150_ev02_init.h
+├── function/iqs9150/               # Future zmk-iqs9150-functions
+│   ├── core/                        # Router + pointer/2F scroll
+│   ├── tap_drag/
+│   ├── multifinger_gesture/
+│   ├── edge_dial/
+│   └── grid_adapter/                # Optional; disabled by default
+└── platform/xiao/                   # XIAO-specific diagnostics
+```
+
 ## Layer responsibilities / レイヤーごとの責務
 
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
-| Sensor driver / センサードライバ | `input_iqs9150_step1a` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
+| Sensor driver / センサードライバ | `src/driver/iqs9150/input_iqs9150_step1a.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
 | Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Enabled / 有効 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Enabled / 有効 |
