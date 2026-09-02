@@ -236,7 +236,8 @@
         double-tap-max-gap-ms = <250>;
         double-tap-max-distance = <120>;
         drag-start-move = <20>;
-        status = "disabled";
+        /* Edge-dial × tap/drag arbitration integration test. */
+        status = "okay";
     };
 
     /* Optional function module: short one-finger taps become virtual KSCAN
@@ -272,7 +273,7 @@
     iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_tap_drag>;
-        status = "disabled";
+        status = "okay";
     };
 
     /* zmk-input-matrix is an optional grid source; it has no mapped key

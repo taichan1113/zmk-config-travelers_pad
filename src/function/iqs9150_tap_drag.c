@@ -55,6 +55,9 @@ struct tap_drag_data {
 	uint16_t slot_x[TRAVELERS_PAD_MAX_CONTACTS];
 	uint16_t slot_y[TRAVELERS_PAD_MAX_CONTACTS];
 	bool slot_valid[TRAVELERS_PAD_MAX_CONTACTS];
+	uint16_t reference_slot_x[TRAVELERS_PAD_MAX_CONTACTS];
+	uint16_t reference_slot_y[TRAVELERS_PAD_MAX_CONTACTS];
+	bool reference_slot_valid[TRAVELERS_PAD_MAX_CONTACTS];
 	uint8_t fingers;
 	uint8_t previous_fingers;
 	uint8_t max_fingers;
@@ -100,6 +103,34 @@ static void update_contact_centroid(struct tap_drag_data *data)
 		data->x = sum_x / count;
 		data->y = sum_y / count;
 	}
+}
+
+static void snapshot_contact_slots(struct tap_drag_data *data)
+{
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		data->reference_slot_x[index] = data->slot_x[index];
+		data->reference_slot_y[index] = data->slot_y[index];
+		data->reference_slot_valid[index] = data->slot_valid[index];
+	}
+}
+
+static bool existing_contact_moved(const struct tap_drag_data *data, uint16_t threshold)
+{
+	/* Only compare contacts that existed before this report. A newly revealed
+	 * second/third finger legitimately moves the centroid, but it must not hide
+	 * movement of the fingers that were already down.
+	 * 直前のレポートにも存在した接触だけを比較する。新たに検出された2本目/3本目は
+	 * 重心を正当に動かすが、すでに触れていた指の移動を隠してはならない。 */
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		if (!data->slot_valid[index] || !data->reference_slot_valid[index]) {
+			continue;
+		}
+		if (absolute_int((int)data->slot_x[index] - data->reference_slot_x[index]) > threshold ||
+		    absolute_int((int)data->slot_y[index] - data->reference_slot_y[index]) > threshold) {
+			return true;
+		}
+	}
+	return false;
 }
 
 static uint16_t button_for_fingers(uint8_t fingers)
@@ -216,6 +247,7 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 	data->multifinger_settle_until_ms =
 		data->fingers >= 2 ? now + cfg->multifinger_settle_ms : 0;
 	data->second_tap = false;
+	snapshot_contact_slots(data);
 	if (data->first_valid) {
 		LOG_INF("%uF tap start centroid=(%u,%u), previous=%uF centroid=(%u,%u) gap=%lld ms",
 			data->fingers, data->x, data->y, data->first_fingers, data->first_x,
@@ -292,6 +324,7 @@ static void process_frame(const struct device *dev)
 	}
 	if (data->fingers != 0) {
 		bool fingers_increased = data->fingers > data->max_fingers;
+		bool established_contact_moved = existing_contact_moved(data, cfg->tap_max_move);
 
 		data->max_fingers = MAX(data->max_fingers, data->fingers);
 		/* A nominally simultaneous multi-finger tap can arrive as 1F then 2F
@@ -318,16 +351,24 @@ static void process_frame(const struct device *dev)
 				data->second_tap = false;
 				drag_tracking = false;
 			}
-			data->start_x = data->x;
-			data->start_y = data->y;
-			data->started_ms = now;
-			data->multifinger_settle_until_ms = now + cfg->multifinger_settle_ms;
+			if (established_contact_moved) {
+				/* Do not erase a real swipe merely because its final finger became
+				 * visible in the same report. */
+				data->moved = true;
+			} else {
+				data->start_x = data->x;
+				data->start_y = data->y;
+				data->started_ms = now;
+				data->multifinger_settle_until_ms = now + cfg->multifinger_settle_ms;
+			}
 			/* The completed multi-finger contact owns tap classification from
 			 * here. Movement while only the first finger was present must not
 			 * reject a short, stationary 2F/3F tap.
 			 * 完成した複数指接触をここからタップ判定の主体とする。最初の1本指だけの
 			 * 間の移動によって、その後の短く静止した2本/3本指タップを棄却しない。 */
-			data->moved = false;
+			if (!established_contact_moved) {
+				data->moved = false;
+			}
 		}
 		/* IQS9150 may reveal contacts across adjacent reports. Recheck while the
 		 * second touch is still stationary, rather than relying only on its first
@@ -348,7 +389,8 @@ static void process_frame(const struct device *dev)
 			 * 1本を数フレーム報告することがある。その重心は全指時と必ず異なるため、
 			 * 静止した2本/3本指タップを移動扱いにしてはならない。タップ中の移動は、
 			 * タップを構成した全指が揃っているフレームだけで判定する。 */
-		} else if (data->fingers >= 2 && now < data->multifinger_settle_until_ms) {
+		} else if (data->fingers >= 2 && now < data->multifinger_settle_until_ms &&
+			   !established_contact_moved) {
 			/* Contact coordinates settle as the second/third finger becomes
 			 * valid. Keep rebasing during this short interval rather than
 			 * interpreting sensor settling as a user scroll.
@@ -356,7 +398,8 @@ static void process_frame(const struct device *dev)
 			 * 再基準化し、センサーの安定化をユーザーのスクロールと誤認しない。 */
 			data->start_x = data->x;
 			data->start_y = data->y;
-		} else if (absolute_int((int)data->x - data->start_x) > cfg->tap_max_move ||
+		} else if (established_contact_moved ||
+			   absolute_int((int)data->x - data->start_x) > cfg->tap_max_move ||
 			   absolute_int((int)data->y - data->start_y) > cfg->tap_max_move) {
 			data->moved = true;
 		}
@@ -380,6 +423,9 @@ static void process_frame(const struct device *dev)
 		}
 	} else if (data->previous_fingers != 0) {
 		finish_contact(dev, cfg, now);
+	}
+	if (data->fingers != 0) {
+		snapshot_contact_slots(data);
 	}
 	data->previous_fingers = data->fingers;
 }
