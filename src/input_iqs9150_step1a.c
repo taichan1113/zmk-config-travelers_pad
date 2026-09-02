@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_INFO_FLAGS_REG            0x1020
 #define IQS9150_SYSTEM_CONTROL_REG        0x11BC
 #define IQS9150_CONFIG_SETTINGS_REG       0x11BE
+#define IQS9150_TERMINATE_COMMS_REG        0xEEEE
 
 #define IQS9150_PRODUCT_NUMBER            0x076A
 #define IQS9150_REPORT_LEN                 72
@@ -47,6 +48,8 @@ LOG_MODULE_REGISTER(iqs9150_step1a, CONFIG_IQS9150_STEP1A_LOG_LEVEL);
 #define IQS9150_INFO_SHOW_RESET             BIT(7)
 #define IQS9150_ACK_RETRY_MAX               3
 #define IQS9150_REPORT_ERROR_RETRY_MAX      3
+#define IQS9150_PRODUCT_RETRY_MAX           40
+#define IQS9150_PRODUCT_RETRY_INTERVAL_MS   25
 
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
@@ -69,6 +72,8 @@ struct iqs9150_block {
 };
 
 enum iqs9150_state {
+	IQS9150_WAIT_PRODUCT,
+	IQS9150_READ_COMMS_CONFIG,
 	IQS9150_ACK_RESET,
 	IQS9150_VERIFY_RESET_ACK,
 	IQS9150_WRITE_CONFIG,
@@ -95,6 +100,8 @@ struct iqs9150_data {
 	enum iqs9150_state state;
 	uint8_t ack_attempts;
 	uint8_t report_error_count;
+	uint8_t product_attempts;
+	bool terminate_comms_window;
 	int64_t last_two_finger_log_ms;
 	int64_t last_multitouch_log_ms;
 	bool multitouch_slot_active[TRAVELERS_PAD_MAX_CONTACTS];
@@ -194,6 +201,25 @@ static int write_reg(const struct device *dev, uint16_t reg, const uint8_t *data
 	return i2c_write_dt(&cfg->i2c, buffer, len + 2);
 }
 
+/* When Config Settings bit 6 is set, STOP alone does not end a communication
+ * window. The EV02 GUI image enables this bit (0x461E), so explicitly write
+ * the documented 0xEEEE terminator after every completed transaction.
+ * Config Settingsのbit 6が有効な場合、STOPだけでは通信窓が終了しない。
+ * EV02 GUI設定(0x461E)はこのbitを有効にするため、各トランザクション後に
+ * 規定の0xEEEE終了コマンドを書き込む。 */
+static int terminate_comms_if_needed(const struct iqs9150_data *data)
+{
+	const struct iqs9150_config *cfg = data->dev->config;
+	uint8_t command[] = {IQS9150_TERMINATE_COMMS_REG & 0xff,
+			     IQS9150_TERMINATE_COMMS_REG >> 8};
+
+	if (!data->terminate_comms_window) {
+		return 0;
+	}
+
+	return i2c_write_dt(&cfg->i2c, command, sizeof(command));
+}
+
 static uint16_t le16(const uint8_t *data)
 {
 	return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
@@ -258,6 +284,11 @@ static void report_contact_frame(const struct device *dev)
 		if (data->report_error_count >= IQS9150_REPORT_ERROR_RETRY_MAX) {
 			iqs9150_start_runtime_recovery(data, "consecutive report read failures", false);
 		}
+		return;
+	}
+	rc = terminate_comms_if_needed(data);
+	if (rc != 0) {
+		LOG_ERR("report communication termination failed: %d", rc);
 		return;
 	}
 	data->report_error_count = 0;
@@ -366,20 +397,74 @@ static void iqs9150_work_handler(struct k_work *work)
 	struct k_work_delayable *delayable = k_work_delayable_from_work(work);
 	struct iqs9150_data *data = CONTAINER_OF(delayable, struct iqs9150_data, work);
 	const struct device *dev = data->dev;
-	uint8_t value[4];
+	uint8_t value[4] = {0};
 	int rc;
 
 	switch (data->state) {
+	case IQS9150_WAIT_PRODUCT:
+		rc = read_reg(dev, IQS9150_PRODUCT_NUMBER_REG, value, 2);
+		if (rc == 0 && le16(value) == IQS9150_PRODUCT_NUMBER) {
+			data->state = IQS9150_ACK_RESET;
+			data->ack_attempts = 0;
+			data->block_index = 0;
+			data->block_offset = 0;
+			data->state = IQS9150_READ_COMMS_CONFIG;
+			LOG_INF("IQS9150 product 0x%04x ready after %u startup attempt(s)",
+				le16(value), data->product_attempts + 1);
+			/* The Config Settings read and following System Control write must
+			 * occur in an RDY window. / Config Settings読出しと次のSystem
+			 * Control書込みはRDYウィンドウ内で実行する。 */
+			if (gpio_pin_get_dt(&((const struct iqs9150_config *)dev->config)->rdy_gpio) ==
+			    0) {
+				k_work_schedule(&data->work, K_NO_WAIT);
+			}
+			return;
+		}
+
+		data->product_attempts++;
+		if (data->product_attempts >= IQS9150_PRODUCT_RETRY_MAX) {
+			LOG_ERR("IQS9150 product did not become ready after %u attempts (rc=%d value=0x%02x%02x)",
+				data->product_attempts, rc, value[1], value[0]);
+			data->state = IQS9150_ERROR;
+			return;
+		}
+		LOG_INF("IQS9150 startup wait: product rc=%d value=0x%02x%02x; retry %u/%u",
+			rc, value[1], value[0], data->product_attempts, IQS9150_PRODUCT_RETRY_MAX);
+		k_work_schedule(&data->work, K_MSEC(IQS9150_PRODUCT_RETRY_INTERVAL_MS));
+		return;
+
+	case IQS9150_READ_COMMS_CONFIG:
+		rc = read_reg(dev, IQS9150_CONFIG_SETTINGS_REG, value, 2);
+		if (rc != 0) {
+			iqs9150_fail(data, "Config Settings read", rc);
+			return;
+		}
+		data->terminate_comms_window = (value[1] & BIT(6)) != 0;
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "Config Settings communication termination", rc);
+			return;
+		}
+		data->state = IQS9150_ACK_RESET;
+		LOG_INF("IQS9150 communication termination=%s", data->terminate_comms_window ?
+			"0xEEEE" : "STOP");
+		return;
+
 	case IQS9150_ACK_RESET:
-		/* A read followed by a separate write inserts STOP and closes the RDY
-		 * communication window. At power-up the documented System Control
+		/* At power-up the documented System Control
 		 * value is 0x0002, so acknowledge Show Reset with one complete
-		 * 16-bit System Control write (0x0082). */
+		 * 16-bit System Control write (0x0082). Communication termination is
+		 * handled explicitly below when the active Config Settings requires it. */
 		value[0] = IQS9150_SYSTEM_CONTROL_ACK_RESET | BIT(1);
 		value[1] = 0;
 		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK", rc);
+			return;
+		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "reset ACK communication termination", rc);
 			return;
 		}
 		data->ack_attempts++;
@@ -391,6 +476,11 @@ static void iqs9150_work_handler(struct k_work *work)
 		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "reset ACK verification", rc);
+			return;
+		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "reset ACK verification termination", rc);
 			return;
 		}
 		if (value[0] & IQS9150_INFO_SHOW_RESET) {
@@ -426,6 +516,16 @@ static void iqs9150_work_handler(struct k_work *work)
 			iqs9150_fail(data, "initialization data write", rc);
 			return;
 		}
+		/* The write to Config Settings changes termination semantics for
+		 * this very communication session. */
+		if (block->reg + data->block_offset == IQS9150_CONFIG_SETTINGS_REG) {
+			data->terminate_comms_window = (block->data[data->block_offset + 1] & BIT(6)) != 0;
+		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "initialization data communication termination", rc);
+			return;
+		}
 
 		data->block_offset += chunk;
 		if (data->block_offset == block->len) {
@@ -446,6 +546,11 @@ static void iqs9150_work_handler(struct k_work *work)
 			iqs9150_fail(data, "ATI start", rc);
 			return;
 		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "ATI start communication termination", rc);
+			return;
+		}
 		data->state = IQS9150_WAIT_ATI;
 		LOG_INF("STEP1B ATI requested; waiting for completion");
 		return;
@@ -456,6 +561,11 @@ static void iqs9150_work_handler(struct k_work *work)
 		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "ATI result read", rc);
+			return;
+		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "ATI result communication termination", rc);
 			return;
 		}
 		if (value[0] & IQS9150_INFO_TP_ATI_ERROR) {
@@ -480,6 +590,12 @@ static void iqs9150_work_handler(struct k_work *work)
 			iqs9150_fail(data, "Event Mode enable", rc);
 			return;
 		}
+		data->terminate_comms_window = (value[1] & BIT(6)) != 0;
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "Event Mode communication termination", rc);
+			return;
+		}
 		data->state = IQS9150_RUNNING;
 		LOG_INF("STEP1B complete: Event Mode active; touch the pad to produce reports");
 		return;
@@ -499,6 +615,11 @@ static void iqs9150_work_handler(struct k_work *work)
 			iqs9150_fail(data, "runtime software reset", rc);
 			return;
 		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "runtime reset communication termination", rc);
+			return;
+		}
 		data->state = IQS9150_RECOVER_WAIT_RESET;
 		LOG_INF("runtime recovery: software reset requested");
 		return;
@@ -507,6 +628,11 @@ static void iqs9150_work_handler(struct k_work *work)
 		rc = read_reg(dev, IQS9150_INFO_FLAGS_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "runtime reset verification", rc);
+			return;
+		}
+		rc = terminate_comms_if_needed(data);
+		if (rc != 0) {
+			iqs9150_fail(data, "runtime reset verification termination", rc);
 			return;
 		}
 		if ((value[0] & IQS9150_INFO_SHOW_RESET) == 0) {
@@ -536,7 +662,6 @@ static int iqs9150_init(const struct device *dev)
 {
 	const struct iqs9150_config *cfg = dev->config;
 	struct iqs9150_data *data = dev->data;
-	uint8_t product[2];
 	int rc;
 
 	if (!i2c_is_ready_dt(&cfg->i2c) || !gpio_is_ready_dt(&cfg->rdy_gpio)) {
@@ -550,18 +675,8 @@ static int iqs9150_init(const struct device *dev)
 		return rc;
 	}
 
-	rc = read_reg(dev, IQS9150_PRODUCT_NUMBER_REG, product, sizeof(product));
-	if (rc != 0) {
-		LOG_ERR("product number read failed: %d", rc);
-		return rc;
-	}
-	if (le16(product) != IQS9150_PRODUCT_NUMBER) {
-		LOG_ERR("unexpected product number: 0x%04x", le16(product));
-		return -ENODEV;
-	}
-
 	data->dev = dev;
-	data->state = IQS9150_ACK_RESET;
+	data->state = IQS9150_WAIT_PRODUCT;
 	k_work_init_delayable(&data->work, iqs9150_work_handler);
 	gpio_init_callback(&data->rdy_callback, iqs9150_rdy_callback, BIT(cfg->rdy_gpio.pin));
 	rc = gpio_add_callback(cfg->rdy_gpio.port, &data->rdy_callback);
@@ -575,10 +690,13 @@ static int iqs9150_init(const struct device *dev)
 		return rc;
 	}
 
-	LOG_INF("IQS9150 product 0x%04x found at I2C 0x%02x", le16(product), cfg->i2c.addr);
-	if (gpio_pin_get_dt(&cfg->rdy_gpio) == 0) {
-		k_work_schedule(&data->work, K_NO_WAIT);
-	}
+	/* USB reconnect can restart the XIAO while the EV02 remains in its own
+	 * power-up/reset window. Do not fail device initialisation on one 0xeeee
+	 * product read; wait asynchronously for a valid product number instead.
+	 * USB再接続時にはXIAOだけ先に再起動し、EV02は電源投入/リセット途中のことがある。
+	 * 1回の0xeeee読出しでデバイス初期化を失敗させず、非同期で有効な製品番号を待つ。 */
+	LOG_INF("IQS9150 startup probe scheduled at I2C 0x%02x", cfg->i2c.addr);
+	k_work_schedule(&data->work, K_MSEC(IQS9150_PRODUCT_RETRY_INTERVAL_MS));
 	return 0;
 }
 

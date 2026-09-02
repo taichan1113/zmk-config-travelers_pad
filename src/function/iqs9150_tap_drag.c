@@ -25,6 +25,8 @@
 
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
+#define TRAVELERS_PAD_DRAG_MAX_FRAME_DELTA 256
+
 static bool drag_active;
 static bool drag_tracking;
 
@@ -38,6 +40,7 @@ bool travelers_pad_tap_drag_is_tracking(void) { return drag_tracking; }
 struct tap_drag_config {
 	uint16_t tap_max_ms;
 	uint16_t tap_max_move;
+	uint16_t multifinger_settle_ms;
 	uint16_t double_tap_max_gap_ms;
 	uint16_t double_tap_max_distance;
 	uint16_t drag_start_move;
@@ -52,12 +55,16 @@ struct tap_drag_data {
 	uint16_t slot_x[TRAVELERS_PAD_MAX_CONTACTS];
 	uint16_t slot_y[TRAVELERS_PAD_MAX_CONTACTS];
 	bool slot_valid[TRAVELERS_PAD_MAX_CONTACTS];
+	uint16_t reference_slot_x[TRAVELERS_PAD_MAX_CONTACTS];
+	uint16_t reference_slot_y[TRAVELERS_PAD_MAX_CONTACTS];
+	bool reference_slot_valid[TRAVELERS_PAD_MAX_CONTACTS];
 	uint8_t fingers;
 	uint8_t previous_fingers;
 	uint8_t max_fingers;
 	uint16_t start_x;
 	uint16_t start_y;
 	int64_t started_ms;
+	int64_t multifinger_settle_until_ms;
 	int64_t first_released_ms;
 	uint16_t first_x;
 	uint16_t first_y;
@@ -98,6 +105,34 @@ static void update_contact_centroid(struct tap_drag_data *data)
 	}
 }
 
+static void snapshot_contact_slots(struct tap_drag_data *data)
+{
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		data->reference_slot_x[index] = data->slot_x[index];
+		data->reference_slot_y[index] = data->slot_y[index];
+		data->reference_slot_valid[index] = data->slot_valid[index];
+	}
+}
+
+static bool existing_contact_moved(const struct tap_drag_data *data, uint16_t threshold)
+{
+	/* Only compare contacts that existed before this report. A newly revealed
+	 * second/third finger legitimately moves the centroid, but it must not hide
+	 * movement of the fingers that were already down.
+	 * 直前のレポートにも存在した接触だけを比較する。新たに検出された2本目/3本目は
+	 * 重心を正当に動かすが、すでに触れていた指の移動を隠してはならない。 */
+	for (uint8_t index = 0; index < TRAVELERS_PAD_MAX_CONTACTS; index++) {
+		if (!data->slot_valid[index] || !data->reference_slot_valid[index]) {
+			continue;
+		}
+		if (absolute_int((int)data->slot_x[index] - data->reference_slot_x[index]) > threshold ||
+		    absolute_int((int)data->slot_y[index] - data->reference_slot_y[index]) > threshold) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static uint16_t button_for_fingers(uint8_t fingers)
 {
 	return fingers == 1 ? INPUT_BTN_0 : fingers == 2 ? INPUT_BTN_1 : INPUT_BTN_2;
@@ -128,6 +163,17 @@ static void report_button(const struct device *dev, uint8_t fingers, bool presse
 static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
 {
 	int rc;
+
+	/* A contact-count transition must never turn an invalid centroid into a
+	 * screen-edge jump. Normal IQS9150 deltas at the report rate are much
+	 * smaller than this guard.
+	 * 接触本数の遷移によって不正な重心を画面端へのジャンプにしてはならない。
+	 * 通常のIQS9150レポート周期での差分はこの上限より十分小さい。 */
+	if (absolute_int(dx) > TRAVELERS_PAD_DRAG_MAX_FRAME_DELTA ||
+	    absolute_int(dy) > TRAVELERS_PAD_DRAG_MAX_FRAME_DELTA) {
+		LOG_WRN("discarded implausible drag delta %d/%d", dx, dy);
+		return;
+	}
 
 	if (dx != 0) {
 		rc = input_report_rel(dev, INPUT_REL_X, dx, dy == 0, K_NO_WAIT);
@@ -194,7 +240,14 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 	data->start_y = data->y;
 	data->max_fingers = data->fingers;
 	data->moved = false;
+	/* The first sensor frame can already contain two or three contacts, so the
+	 * settling window cannot be armed only by a later finger-count increase.
+	 * 最初のセンサーフレームがすでに2本または3本指の場合があるため、安定化時間を
+	 * 指数増加時だけでなく接触開始時にも設定する。 */
+	data->multifinger_settle_until_ms =
+		data->fingers >= 2 ? now + cfg->multifinger_settle_ms : 0;
 	data->second_tap = false;
+	snapshot_contact_slots(data);
 	if (data->first_valid) {
 		LOG_INF("%uF tap start centroid=(%u,%u), previous=%uF centroid=(%u,%u) gap=%lld ms",
 			data->fingers, data->x, data->y, data->first_fingers, data->first_x,
@@ -235,6 +288,8 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		data->first_fingers = data->max_fingers;
 		k_work_schedule(&data->deferred_click_work, K_MSEC(cfg->double_tap_max_gap_ms));
 	} else {
+		LOG_INF("%uF tap rejected: duration=%lld ms moved=%d max=%u", data->max_fingers,
+			now - data->started_ms, data->moved, cfg->tap_max_ms);
 		data->first_valid = false;
 		k_work_cancel_delayable(&data->deferred_click_work);
 	}
@@ -269,15 +324,51 @@ static void process_frame(const struct device *dev)
 	}
 	if (data->fingers != 0) {
 		bool fingers_increased = data->fingers > data->max_fingers;
+		bool established_contact_moved = existing_contact_moved(data, cfg->tap_max_move);
 
 		data->max_fingers = MAX(data->max_fingers, data->fingers);
 		/* A nominally simultaneous multi-finger tap can arrive as 1F then 2F
 		 * (or 3F) on adjacent reports. While it is still stationary, rebase the
-		 * tap origin to the completed contact centroid; otherwise the change from
-		 * F1 to the centroid looks like a large, false movement. */
-		if (fingers_increased && !data->moved && !data->button_down) {
-			data->start_x = data->x;
-			data->start_y = data->y;
+		 * tap origin and duration to the completed contact centroid. Otherwise a
+		 * deliberately staggered second/third finger is charged against the
+		 * final multi-finger tap duration (and the centroid shift can look like
+		 * a large, false movement).
+		 * 同時に置いたつもりの複数指は、IQS9150では1F→2F（または3F）として
+		 * 隣接レポートで届くことがある。静止中なら、完成した接触の重心だけでなく
+		 * 開始時刻も再基準化する。これにより、少し遅れて置いた2本目/3本目の時間を
+		 * 最終的な複数指タップ時間へ不当に加算しない。 */
+		if (fingers_increased && !data->button_down) {
+			if (data->second_tap && data->drag_fingers != data->fingers) {
+				/* A pending 1F double-tap must not become a 1F drag after a
+				 * second finger appears. Deliver the deferred first click, then
+				 * let the completed multi-finger contact start a new classification.
+				 * 保留中の1本指ダブルタップを、2本目の出現後に1本指ドラッグへ
+				 * 変換してはならない。先行する1本指クリックを確定し、完成した
+				 * 複数指接触を新しい操作として分類する。 */
+				LOG_INF("%uF double-tap candidate cancelled by %uF contact", data->drag_fingers,
+					data->fingers);
+				report_click(dev, data->drag_fingers);
+				data->second_tap = false;
+				drag_tracking = false;
+			}
+			if (established_contact_moved) {
+				/* Do not erase a real swipe merely because its final finger became
+				 * visible in the same report. */
+				data->moved = true;
+			} else {
+				data->start_x = data->x;
+				data->start_y = data->y;
+				data->started_ms = now;
+				data->multifinger_settle_until_ms = now + cfg->multifinger_settle_ms;
+			}
+			/* The completed multi-finger contact owns tap classification from
+			 * here. Movement while only the first finger was present must not
+			 * reject a short, stationary 2F/3F tap.
+			 * 完成した複数指接触をここからタップ判定の主体とする。最初の1本指だけの
+			 * 間の移動によって、その後の短く静止した2本/3本指タップを棄却しない。 */
+			if (!established_contact_moved) {
+				data->moved = false;
+			}
 		}
 		/* IQS9150 may reveal contacts across adjacent reports. Recheck while the
 		 * second touch is still stationary, rather than relying only on its first
@@ -286,8 +377,30 @@ static void process_frame(const struct device *dev)
 		    matches_first_tap(data, cfg, now)) {
 			start_double_tap_candidate(data, cfg);
 		}
-		if (absolute_int((int)data->x - data->start_x) > cfg->tap_max_move ||
-		    absolute_int((int)data->y - data->start_y) > cfg->tap_max_move) {
+		if (data->fingers < data->max_fingers && !data->button_down) {
+			/* A multi-finger release is not electrically simultaneous: the EV02
+			 * can report the remaining finger for one or more frames before it
+			 * reports zero contacts. Its centroid is necessarily displaced from
+			 * the full-contact centroid, so it must not turn an otherwise still
+			 * 2F/3F tap into a moved gesture. Movement is evaluated only while
+			 * all fingers that formed the tap are still present.
+			 *
+			 * 複数指の離脱は電気的には同時でなく、EV02が全指離脱の前に残った
+			 * 1本を数フレーム報告することがある。その重心は全指時と必ず異なるため、
+			 * 静止した2本/3本指タップを移動扱いにしてはならない。タップ中の移動は、
+			 * タップを構成した全指が揃っているフレームだけで判定する。 */
+		} else if (data->fingers >= 2 && now < data->multifinger_settle_until_ms &&
+			   !established_contact_moved) {
+			/* Contact coordinates settle as the second/third finger becomes
+			 * valid. Keep rebasing during this short interval rather than
+			 * interpreting sensor settling as a user scroll.
+			 * 2本目/3本目が有効化される間は座標が安定する。短時間は重心を
+			 * 再基準化し、センサーの安定化をユーザーのスクロールと誤認しない。 */
+			data->start_x = data->x;
+			data->start_y = data->y;
+		} else if (established_contact_moved ||
+			   absolute_int((int)data->x - data->start_x) > cfg->tap_max_move ||
+			   absolute_int((int)data->y - data->start_y) > cfg->tap_max_move) {
 			data->moved = true;
 		}
 		if (data->second_tap && !data->button_down &&
@@ -310,6 +423,9 @@ static void process_frame(const struct device *dev)
 		}
 	} else if (data->previous_fingers != 0) {
 		finish_contact(dev, cfg, now);
+	}
+	if (data->fingers != 0) {
+		snapshot_contact_slots(data);
 	}
 	data->previous_fingers = data->fingers;
 }
@@ -348,8 +464,12 @@ static void tap_drag_handle_input(const struct device *dev, struct input_event *
 static int tap_drag_init(const struct device *dev)
 {
 	struct tap_drag_data *data = dev->data;
+	const struct tap_drag_config *cfg = dev->config;
 
 	k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
+	LOG_INF("tap/drag active: tap=%ums move=%u settle=%ums double-gap=%ums",
+		cfg->tap_max_ms, cfg->tap_max_move, cfg->multifinger_settle_ms,
+		cfg->double_tap_max_gap_ms);
 	return 0;
 }
 
@@ -358,6 +478,7 @@ static int tap_drag_init(const struct device *dev)
 	static const struct tap_drag_config tap_drag_config_##n = {                                \
 		.tap_max_ms = DT_INST_PROP_OR(n, tap_max_ms, 180),                                    \
 		.tap_max_move = DT_INST_PROP_OR(n, tap_max_move, 75),                                \
+		.multifinger_settle_ms = DT_INST_PROP_OR(n, multifinger_settle_ms, 45),              \
 		.double_tap_max_gap_ms = DT_INST_PROP_OR(n, double_tap_max_gap_ms, 250),             \
 		.double_tap_max_distance = DT_INST_PROP_OR(n, double_tap_max_distance, 120),          \
 		.drag_start_move = DT_INST_PROP_OR(n, drag_start_move, 20),                          \

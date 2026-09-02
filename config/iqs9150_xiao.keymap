@@ -1,17 +1,25 @@
 #include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
 
 / {
     keymap {
         compatible = "zmk,keymap";
 
         default_layer {
-            /* 3F left/right/up/down, 4F left/right/up/down, 5F left/right/up/down.
-             * Bind any ZMK behavior here. Defaults are intentionally inert.
-             * 3/4/5本指の左/右/上/下。任意のZMK behaviorへ変更できる。
-             * 初期値は意図しない操作を避けるためnone。 */
-            bindings = <&none &none &none &none
-                        &none &none &none &none
-                        &none &none>;
+            /* Full input integration bindings / 全入力結合試験用の割当
+             * 3/4/5本指は実際のWindows操作、エッジはログと画面上で区別しやすい
+             * 固有文字にする。Map 3/4/5-finger gestures to Windows actions and
+             * each edge direction to a distinct letter for visible verification.
+             *
+             * 3F: Back / Forward / PageUp / PageDown
+             * 4F: Win+Left / Right / Up / Down
+             * 5F: Win+M / Win+Shift+M
+             * Edge: left D/U, right R/I, top T/Y, bottom B/N. */
+            bindings = <&kp C_AC_BACK    &kp C_AC_FORWARD &kp PG_UP       &kp PG_DN
+                        &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
+                        &kp LG(M)        &kp LS(LG(M))
+                        &kp D            &kp U             &kp R           &kp I
+                        &kp T            &kp Y             &kp B           &kp N>;
         };
     };
 };

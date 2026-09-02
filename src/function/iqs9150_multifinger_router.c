@@ -19,6 +19,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/tap_drag.h>
+#include <travelers_pad/edge_dial.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
@@ -30,6 +31,7 @@ enum router_state {
 	ROUTER_CLAIM_GEOMETRY,
 	ROUTER_CLAIM_MULTIFINGER,
 	ROUTER_TAP_DRAG,
+	ROUTER_EDGE_DIAL,
 };
 
 struct router_config {
@@ -162,6 +164,31 @@ static void router_process_frame(const struct device *dev)
 		data->max_fingers = 0;
 		data->sensor_reset = false;
 		LOG_WRN("router cancelled session after sensor reset");
+		return;
+	}
+
+	/* The edge function claims a one-finger session only after it has emitted a
+	 * real virtual KSCAN step. Cancel provisional pointer motion once, then keep
+	 * raw edge frames out of the pointer path until release. Two-or-more-finger
+	 * contacts never activate the edge function.
+	 * エッジ機能は実際の仮想KSCANを出した後だけ1本指セッションを取得する。一度だけ
+	 * 仮ポインタ移動を終了し、解放まで生のエッジフレームをポインタ経路へ渡さない。
+	 * 2本指以上の接触はエッジ機能を有効化しない。 */
+	if (travelers_pad_edge_dial_is_active()) {
+		if (data->state != ROUTER_EDGE_DIAL) {
+			router_cancel_pointer(dev);
+			data->state = ROUTER_EDGE_DIAL;
+			data->max_fingers = 1;
+			LOG_INF("edge dial owns 1F contact stream");
+		}
+		return;
+	}
+	if (data->state == ROUTER_EDGE_DIAL) {
+		if (data->fingers == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+			LOG_INF("edge dial contact released; router idle");
+		}
 		return;
 	}
 

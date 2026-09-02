@@ -32,7 +32,7 @@ config TRAVELERS_PAD_IQS9150_POINTER
 config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
     int "IQS9150 function module initialization priority"
     default 51
-    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER || TRAVELERS_PAD_IQS9150_TAP_DRAG || TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
+    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER || TRAVELERS_PAD_IQS9150_TAP_DRAG || TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN || TRAVELERS_PAD_IQS9150_MATRIX_INPUT
     help
       Must be later than the IQS9150 sensor driver's device priority (50).
 
@@ -42,9 +42,15 @@ config TRAVELERS_PAD_IQS9150_GRID_KSCAN
     depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_GRID_KSCAN_ENABLED
     select KSCAN
     help
-      Convert short one-finger taps into configurable grid cells or edge
-      actions. The resulting virtual KSCAN positions are handled by ZMK's
-      ordinary keymap.
+      Convert short one-finger taps into configurable grid cells or edge actions.
+
+config TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN
+    bool "Travelers Pad IQS9150 edge dial KSCAN"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN_ENABLED
+    select KSCAN
+    help
+      Convert motion along enabled pad edges into repeated virtual KSCAN events.
 
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
@@ -78,6 +84,17 @@ config TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
       positions. Five-finger contact is analysed as independent-coordinate
       Grasp/Release geometry and is log-only until its thresholds are
       verified. Normal ZMK keymap bindings select swipe actions.
+
+config TRAVELERS_PAD_IQS9150_MATRIX_INPUT
+    bool "IQS9150 grid input isolation function"
+    default y
+    depends on IQS9150_STEP1A && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MATRIX_INPUT_ENABLED
+    select INPUT
+    help
+      Copy only active one-or-more-finger absolute X/Y and BTN_TOUCH frames to
+      the optional grid input processor. This isolates the grid listener from
+      the raw device and avoids idle-frame processing or event suppression
+      affecting pointer, tap-drag, and multi-finger modules.
 
 endmenu
 
