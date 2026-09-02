@@ -296,7 +296,12 @@ static void edge_dial_process_frame(const struct device *dev)
 			data->mode = EDGE_DIAL_LINEAR;
 			data->edge_direction = 0;
 			data->circle_direction = 0;
-			edge_dial_active = false;
+			/* Claim on acquisition, not on the first detent. Otherwise the
+			 * initial edge movement leaks into ordinary pointer motion until the
+			 * step threshold is crossed.
+			 * 最初のステップ発火時ではなく、辺を取得した時点で所有権を得る。
+			 * そうしないと閾値へ達するまでの最初の辺移動が通常ポインタへ漏れる。 */
+			edge_dial_active = true;
 			LOG_INF("edge dial acquired edge=%u at=(%u,%u)", data->edge, data->x, data->y);
 		}
 		return;

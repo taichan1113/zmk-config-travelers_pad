@@ -32,3 +32,15 @@ properties:
     description: >
       Per-frame coordinate delta above which a scroll frame is discarded and
       rebased. この値を超える1フレーム差分は破棄して座標基準を更新する。
+  scroll-invert-vertical:
+    type: boolean
+    description: >
+      Reverse the vertical two-finger scroll direction. This is a keyboard
+      configuration option; omitted means the standard direction. 2本指の
+      縦スクロール方向を反転する。省略時は標準方向となるキーボード設定項目。
+  scroll-invert-horizontal:
+    type: boolean
+    description: >
+      Reverse the horizontal two-finger scroll direction. This is a keyboard
+      configuration option; omitted means the standard direction. 2本指の
+      横スクロール方向を反転する。省略時は標準方向となるキーボード設定項目。

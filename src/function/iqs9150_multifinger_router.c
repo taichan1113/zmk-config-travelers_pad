@@ -167,13 +167,13 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 
-	/* The edge function claims a one-finger session only after it has emitted a
-	 * real virtual KSCAN step. Cancel provisional pointer motion once, then keep
-	 * raw edge frames out of the pointer path until release. Two-or-more-finger
-	 * contacts never activate the edge function.
-	 * エッジ機能は実際の仮想KSCANを出した後だけ1本指セッションを取得する。一度だけ
-	 * 仮ポインタ移動を終了し、解放まで生のエッジフレームをポインタ経路へ渡さない。
-	 * 2本指以上の接触はエッジ機能を有効化しない。 */
+	/* An enabled edge claims a one-finger session as soon as the contact is
+	 * acquired. Keep all its raw frames out of the pointer path until release;
+	 * this prevents the initial edge travel before the first detent from moving
+	 * the cursor. Two-or-more-finger contacts never activate the edge function.
+	 * 有効辺は1本指接触を取得した時点で所有する。解放まで生フレームをポインタ経路
+	 * から除外し、最初のステップ前の辺移動でカーソルが動くことを防ぐ。2本指以上の
+	 * 接触はエッジ機能を有効化しない。 */
 	if (travelers_pad_edge_dial_is_active()) {
 		if (data->state != ROUTER_EDGE_DIAL) {
 			router_cancel_pointer(dev);
