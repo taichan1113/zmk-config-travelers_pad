@@ -18,12 +18,9 @@
 LOG_MODULE_REGISTER(travelers_pad_pointer, LOG_LEVEL_INF);
 
 struct pointer_config {
-	uint16_t scroll_divisor;
 	uint16_t scroll_axis_lock_min_move;
 	uint16_t scroll_axis_lock_ratio;
 	uint16_t scroll_max_frame_delta;
-	bool scroll_invert_vertical;
-	bool scroll_invert_horizontal;
 };
 
 enum scroll_axis {
@@ -45,8 +42,6 @@ struct pointer_data {
 	enum scroll_axis scroll_axis;
 	int32_t scroll_probe_x;
 	int32_t scroll_probe_y;
-	int32_t scroll_remainder_x;
-	int32_t scroll_remainder_y;
 	bool reset_frame;
 };
 
@@ -60,8 +55,6 @@ static void reset_scroll_state(struct pointer_data *data)
 	data->scroll_axis = SCROLL_AXIS_UNDECIDED;
 	data->scroll_probe_x = 0;
 	data->scroll_probe_y = 0;
-	data->scroll_remainder_x = 0;
-	data->scroll_remainder_y = 0;
 }
 
 static void report_motion(const struct device *dev, int16_t dx, int16_t dy) {
@@ -81,11 +74,16 @@ static void report_motion(const struct device *dev, int16_t dx, int16_t dy) {
 	}
 }
 
-static void report_scroll(const struct device *dev, const struct pointer_config *cfg, int16_t dx,
-			  int16_t dy) {
+static void report_scroll(const struct device *dev, int16_t dx, int16_t dy) {
 	int rc;
-	int16_t horizontal = cfg->scroll_invert_horizontal ? -dx : dx;
-	int16_t vertical = cfg->scroll_invert_vertical ? -dy : dy;
+
+	/* The input processor attached to this device owns user-facing inversion
+	 * and scaling. Keep this function's output in the canonical ZMK wheel
+	 * orientation so it remains a pure contact-to-relative adapter.
+	 * ユーザー向けの反転と倍率は、このデバイスのinput processorが担当する。
+	 * この機能は接触フレームを標準的なZMKホイール方向へ変換するだけにする。 */
+	int16_t horizontal = dx;
+	int16_t vertical = -dy;
 
 	if (horizontal != 0) {
 		rc = input_report_rel(dev, INPUT_REL_HWHEEL, horizontal, vertical == 0, K_NO_WAIT);
@@ -109,9 +107,6 @@ static void process_scroll_delta(const struct device *dev, const struct pointer_
 	int32_t y = dy;
 	int32_t x_abs;
 	int32_t y_abs;
-	int32_t wheel_x;
-	int32_t wheel_y;
-	uint16_t divisor = MAX(cfg->scroll_divisor, 1);
 	uint16_t ratio = MAX(cfg->scroll_axis_lock_ratio, 1);
 
 	/* Contact tracking can occasionally hand us a one-frame coordinate
@@ -157,14 +152,8 @@ static void process_scroll_delta(const struct device *dev, const struct pointer_
 	} else {
 		x = 0;
 	}
-	data->scroll_remainder_x += x;
-	data->scroll_remainder_y += y;
-	wheel_x = data->scroll_remainder_x / divisor;
-	wheel_y = data->scroll_remainder_y / divisor;
-	data->scroll_remainder_x -= wheel_x * divisor;
-	data->scroll_remainder_y -= wheel_y * divisor;
-	if (wheel_x != 0 || wheel_y != 0) {
-		report_scroll(dev, cfg, (int16_t)wheel_x, (int16_t)wheel_y);
+	if (x != 0 || y != 0) {
+		report_scroll(dev, (int16_t)x, (int16_t)y);
 	}
 }
 
@@ -230,9 +219,8 @@ static int pointer_init(const struct device *dev)
 {
 	const struct pointer_config *cfg = dev->config;
 
-	LOG_INF("pointer active: divisor=%u axis-min=%u ratio=%u max-delta=%u invert=%u/%u",
-		cfg->scroll_divisor, cfg->scroll_axis_lock_min_move, cfg->scroll_axis_lock_ratio,
-		cfg->scroll_max_frame_delta, cfg->scroll_invert_horizontal, cfg->scroll_invert_vertical);
+	LOG_INF("pointer active: axis-min=%u ratio=%u max-delta=%u; scroll transform/scaler are listener-owned",
+		cfg->scroll_axis_lock_min_move, cfg->scroll_axis_lock_ratio, cfg->scroll_max_frame_delta);
 	return 0;
 }
 
@@ -263,12 +251,9 @@ static void pointer_handle_input(const struct device *dev, struct input_event *e
 #define POINTER_INST(n)                                                                          \
 	static struct pointer_data pointer_data_##n = {.dev = DEVICE_DT_INST_GET(n)};                 \
 	static const struct pointer_config pointer_config_##n = {                                     \
-		.scroll_divisor = DT_INST_PROP_OR(n, scroll_divisor, 4),                                \
 		.scroll_axis_lock_min_move = DT_INST_PROP_OR(n, scroll_axis_lock_min_move, 12),         \
 		.scroll_axis_lock_ratio = DT_INST_PROP_OR(n, scroll_axis_lock_ratio, 2),                \
 		.scroll_max_frame_delta = DT_INST_PROP_OR(n, scroll_max_frame_delta, 128),              \
-		.scroll_invert_vertical = DT_INST_PROP(n, scroll_invert_vertical),                     \
-		.scroll_invert_horizontal = DT_INST_PROP(n, scroll_invert_horizontal),                 \
 	};                                                                                            \
 	static void pointer_input_handler_##n(struct input_event *evt) {                              \
 		pointer_handle_input(DEVICE_DT_INST_GET(n), evt);                                       \

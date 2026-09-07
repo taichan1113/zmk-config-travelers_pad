@@ -1,5 +1,15 @@
 zephyr_library()
 zephyr_include_directories(include)
+
+# zmk-input-matrix is an optional external input processor. Its public source
+# uses ZMK's input-processor driver API, whose header is owned by the ZMK app.
+# Make that API visible independently of unrelated extra modules, so a clean
+# Travelers Pad build has the same include contract as the normal ZMK build.
+# zmk-input-matrixは任意の外部input processorであり、ZMK app所有の
+# input-processor APIヘッダを使用する。無関係な追加moduleの有無に依存せず、
+# clean buildでも通常のZMK buildと同じinclude契約にする。
+zephyr_include_directories(${APPLICATION_SOURCE_DIR}/include)
+
 zephyr_library_sources_ifdef(CONFIG_IQS9150_EV02_DRIVER src/driver/iqs9150/iqs9150_ev02_driver.c)
 
 # Reusable IQS9150 function modules. Keep their paths grouped by feature so

@@ -1,23 +1,38 @@
-# Two-finger scroll direction / 2本指スクロール方向
+# Two-finger scroll tuning / 2本指スクロール調整
 
-The standard direction is the default. To reverse one axis, uncomment the
-matching property in `config/iqs9150_xiao.keymap`, then build normally.
+Two-finger scrolling is tuned at the `iqs9150_pointer_listener`, after the
+IQS9150 contact tracker has committed its axis. The listener uses standard ZMK
+input processors that apply only to `REL_WHEEL` and `REL_HWHEEL`; pointer
+movement, edge KSCAN actions, and the sensor driver are not changed.
 
-標準方向が既定値です。いずれかの軸を反転する場合は、
-`config/iqs9150_xiao.keymap` 内の対応するプロパティのコメントを外してから、
-通常どおりビルドします。
+2本指スクロールは、IQS9150の接触追跡と軸決定の後段にある
+`iqs9150_pointer_listener` で調整する。標準ZMK input processorの対象は
+`REL_WHEEL` と `REL_HWHEEL` だけなので、ポインタ移動、エッジKSCAN操作、
+センサドライバは変更されない。
+
+The default is `<&zip_scroll_scaler 1 4>`, equal to the former standard
+scroll sensitivity. To override it, uncomment and edit this block in
+`config/iqs9150_xiao.keymap`:
+
+既定値は `<&zip_scroll_scaler 1 4>` で、従来の標準スクロール感度と等価である。
+変更する場合は `config/iqs9150_xiao.keymap` の次のblockを有効化して編集する。
 
 ```dts
-&iqs9150_pointer {
-    scroll-invert-vertical;
-    /* scroll-invert-horizontal; */
+&iqs9150_pointer_listener {
+    /* Vertical natural-scroll reversal / 縦の自然スクロール反転 */
+    input-processors = <&zip_scroll_transform INPUT_TRANSFORM_Y_INVERT>,
+                       /* <1 2> twice as fast; <1 8> half speed
+                        * <1 2> は2倍速、<1 8> は半速 */
+                       <&zip_scroll_scaler 1 4>;
 };
 ```
 
-`scroll-invert-vertical` reverses up/down scrolling. `scroll-invert-horizontal`
-reverses left/right scrolling. These options do not alter pointer movement,
-edge actions, touch/drag, or the IQS9150 contact filtering.
+Add `INPUT_TRANSFORM_X_INVERT` to reverse horizontal scrolling too. For both
+axes, combine the flags with `|`:
 
-`scroll-invert-vertical` は上下スクロールを、`scroll-invert-horizontal` は
-左右スクロールを反転します。ポインタ移動、エッジ操作、タップ/ドラッグ、IQS9150の
-接触フィルタには影響しません。
+横スクロールも反転するには `INPUT_TRANSFORM_X_INVERT` を追加する。両軸は `|` で
+組み合わせる。
+
+```dts
+<&zip_scroll_transform (INPUT_TRANSFORM_X_INVERT | INPUT_TRANSFORM_Y_INVERT)>
+```

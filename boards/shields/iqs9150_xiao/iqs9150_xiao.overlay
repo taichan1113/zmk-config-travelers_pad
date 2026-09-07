@@ -9,6 +9,7 @@
 
 #include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
 #include <dt-bindings/zmk/matrix_transform.h>
+#include <input/processors.dtsi>
 #include <zmk-input-matrix/input_matrix.dtsi>
 
 &i2c0_default {
@@ -211,7 +212,6 @@
          * このプロファイルは生接触ではなくrouter出力を使う。routerの判定と、
          * その後段のポインタ受け渡しだけを検証する。 */
         input-device = <&iqs9150_router>;
-        scroll-divisor = <4>;
         scroll-axis-lock-min-move = <12>;
         scroll-axis-lock-ratio = <2>;
         scroll-max-frame-delta = <128>;
@@ -276,6 +276,14 @@
     iqs9150_pointer_listener: iqs9150_pointer_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_pointer>;
+        /* Keep wheel tuning downstream from contact tracking. The scaler
+         * preserves fractional values, so <1 4> matches the former divisor=4
+         * behavior even during slow movement. Keyboard overlays may replace
+         * this chain to invert either axis or select another multiplier.
+         * ホイール調整を接触追跡より後段へ分離する。scalerは端数を保持するため、
+         * <1 4> は低速操作でも旧 divisor=4 と同じ感度になる。キーボードoverlayは
+         * このchainを置換して軸反転または別の倍率を選択できる。 */
+        input-processors = <&zip_scroll_scaler 1 4>;
         status = "okay";
     };
 
