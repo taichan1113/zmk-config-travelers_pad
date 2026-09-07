@@ -1,13 +1,11 @@
 /*
  * Travelers Pad IQS9150 edge-hold continuation detector.
  *
- * This first stage deliberately produces no REL_X/Y or wheel reports. It
- * proves that the activation boundary is correct before a timer can extend a
- * drag or scroll beyond the physical pad edge.
+ * Confirmed drag can continue beyond the physical pad edge with timer-driven
+ * REL_X/Y reports. Two-finger scroll remains detection-only in this stage.
  *
- * この第1段階はREL_X/Yやホイールレポートを意図的に出力しない。タイマーで
- * ドラッグまたはスクロールをパッド端の外へ継続させる前に、有効化境界が正しい
- * ことを実機で検証する。
+ * 確定済みドラッグはタイマー駆動のREL_X/Yレポートでパッド端の外まで継続する。
+ * 2本指スクロールは、この段階では検出専用のままとする。
  */
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_edge_hold_continue
@@ -35,6 +33,9 @@ struct edge_hold_config {
 	uint16_t surface_x;
 	uint16_t surface_y;
 	uint16_t edge_size;
+	uint16_t drag_start_delay_ms;
+	uint16_t drag_repeat_ms;
+	int16_t drag_repeat_delta;
 };
 
 struct edge_hold_data {
@@ -49,6 +50,7 @@ struct edge_hold_data {
 	uint8_t scroll_fingers;
 	enum edge_hold_edge drag_edge;
 	enum edge_hold_edge scroll_edge;
+	struct k_work_delayable drag_repeat_work;
 };
 
 static const char *edge_name(enum edge_hold_edge edge)
@@ -118,6 +120,70 @@ static bool drag_centroid(const struct edge_hold_data *data, uint16_t *x, uint16
 	return true;
 }
 
+static void stop_drag_repeat(const struct device *dev)
+{
+	struct edge_hold_data *data = dev->data;
+
+	k_work_cancel_delayable(&data->drag_repeat_work);
+}
+
+static void drag_repeat_work_handler(struct k_work *work)
+{
+	struct edge_hold_data *data = CONTAINER_OF(work, struct edge_hold_data,
+						     drag_repeat_work.work);
+	const struct edge_hold_config *cfg = data->dev->config;
+	int16_t dx = 0;
+	int16_t dy = 0;
+	int rc;
+
+	/* The tap/drag module owns button state. This module only adds motion while
+	 * that established drag remains valid.
+	 * ボタン状態はtap/dragモジュールが所有する。本モジュールは確定ドラッグが
+	 * 有効な間だけ移動を追加する。 */
+	if (!travelers_pad_tap_drag_is_active() || data->drag_edge == EDGE_HOLD_NONE) {
+		return;
+	}
+
+	switch (data->drag_edge) {
+	case EDGE_HOLD_LEFT:
+		dx = -cfg->drag_repeat_delta;
+		break;
+	case EDGE_HOLD_RIGHT:
+		dx = cfg->drag_repeat_delta;
+		break;
+	case EDGE_HOLD_TOP:
+		dy = -cfg->drag_repeat_delta;
+		break;
+	case EDGE_HOLD_BOTTOM:
+		dy = cfg->drag_repeat_delta;
+		break;
+	default:
+		return;
+	}
+
+	if (dx != 0) {
+		rc = input_report_rel(data->dev, INPUT_REL_X, dx, true, K_NO_WAIT);
+	} else {
+		rc = input_report_rel(data->dev, INPUT_REL_Y, dy, true, K_NO_WAIT);
+	}
+	if (rc != 0) {
+		LOG_ERR("drag continuation report failed: %d", rc);
+	}
+	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_repeat_ms));
+}
+
+static void start_drag_repeat(const struct device *dev)
+{
+	const struct edge_hold_config *cfg = dev->config;
+	struct edge_hold_data *data = dev->data;
+
+	k_work_cancel_delayable(&data->drag_repeat_work);
+	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_start_delay_ms));
+	LOG_INF("drag continuation started edge=%s delay=%ums period=%ums delta=%d",
+		edge_name(data->drag_edge), cfg->drag_start_delay_ms, cfg->drag_repeat_ms,
+		cfg->drag_repeat_delta);
+}
+
 static void detect_drag_edge(const struct device *dev)
 {
 	const struct edge_hold_config *cfg = dev->config;
@@ -131,6 +197,7 @@ static void detect_drag_edge(const struct device *dev)
 		edge = edge_at(cfg, x, y);
 	}
 	if (edge != data->drag_edge) {
+		stop_drag_repeat(dev);
 		if (edge != EDGE_HOLD_NONE) {
 			LOG_INF("drag continuation eligible edge=%s centroid=(%u,%u) fingers=%u",
 				edge_name(edge), x, y, data->drag_fingers);
@@ -138,6 +205,9 @@ static void detect_drag_edge(const struct device *dev)
 			LOG_INF("drag continuation disarmed edge=%s", edge_name(data->drag_edge));
 		}
 		data->drag_edge = edge;
+		if (edge != EDGE_HOLD_NONE) {
+			start_drag_repeat(dev);
+		}
 	}
 }
 
@@ -207,8 +277,11 @@ static int edge_hold_init(const struct device *dev)
 {
 	const struct edge_hold_config *cfg = dev->config;
 
-	LOG_INF("edge hold detector active: surface=%ux%u edge=%u; output disabled",
-		cfg->surface_x, cfg->surface_y, cfg->edge_size);
+	k_work_init_delayable(&((struct edge_hold_data *)dev->data)->drag_repeat_work,
+			     drag_repeat_work_handler);
+	LOG_INF("edge hold active: surface=%ux%u edge=%u; drag delay=%ums period=%ums delta=%d; "
+		"scroll output disabled", cfg->surface_x, cfg->surface_y, cfg->edge_size,
+		cfg->drag_start_delay_ms, cfg->drag_repeat_ms, cfg->drag_repeat_delta);
 	return 0;
 }
 
@@ -218,6 +291,9 @@ static int edge_hold_init(const struct device *dev)
 		.surface_x = DT_INST_PROP_OR(n, surface_x, 2000),                                      \
 		.surface_y = DT_INST_PROP_OR(n, surface_y, 1213),                                      \
 		.edge_size = DT_INST_PROP_OR(n, edge_size, 80),                                         \
+		.drag_start_delay_ms = DT_INST_PROP_OR(n, drag_start_delay_ms, 120),                    \
+		.drag_repeat_ms = DT_INST_PROP_OR(n, drag_repeat_ms, 24),                               \
+		.drag_repeat_delta = DT_INST_PROP_OR(n, drag_repeat_delta, 8),                          \
 	};                                                                                           \
 	static void edge_hold_drag_input_handler_##n(struct input_event *evt)                       \
 	{                                                                                            \

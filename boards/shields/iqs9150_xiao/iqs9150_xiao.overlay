@@ -249,11 +249,10 @@
         status = "okay";
     };
 
-    /* Detection-only first stage for edge continuation. It receives raw
-     * frames only for confirmed drag state, and router output only for a
-     * committed 2F scroll. It must not emit HID reports yet.
-     * エッジ継続の検出専用第1段階。確定ドラッグ時だけ生フレームを、確定2本指
-     * スクロール時だけrouter出力を使う。この段階ではHIDレポートを出力しない。 */
+    /* Edge continuation: a confirmed drag emits timer-driven pointer motion
+     * only while held at an edge. 2F scroll is still detection-only here.
+     * エッジ継続: 確定ドラッグだけが辺での保持中にタイマー駆動ポインタ移動を
+     * 出力する。2本指スクロールはこの段階では引き続き検出専用とする。 */
     iqs9150_edge_hold_continue: iqs9150_edge_hold_continue {
         compatible = "zmk,travelers-pad-iqs9150-edge-hold-continue";
         drag-input-device = <&iqs9150>;
@@ -261,6 +260,9 @@
         surface-x = <2000>;
         surface-y = <1213>;
         edge-size = <80>;
+        drag-start-delay-ms = <120>;
+        drag-repeat-ms = <24>;
+        drag-repeat-delta = <8>;
         status = "okay";
     };
 
@@ -305,6 +307,12 @@
     iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_tap_drag>;
+        status = "okay";
+    };
+
+    iqs9150_edge_hold_continue_listener: iqs9150_edge_hold_continue_listener {
+        compatible = "zmk,input-listener";
+        device = <&iqs9150_edge_hold_continue>;
         status = "okay";
     };
 

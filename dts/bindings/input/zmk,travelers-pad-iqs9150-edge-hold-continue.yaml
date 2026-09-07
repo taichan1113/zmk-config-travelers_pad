@@ -1,4 +1,4 @@
-description: Travelers Pad IQS9150 edge-hold continuation detector
+description: Travelers Pad IQS9150 edge-hold continuation function
 
 compatible: "zmk,travelers-pad-iqs9150-edge-hold-continue"
 
@@ -25,3 +25,15 @@ properties:
     type: int
     default: 80
     description: Width of the physical boundary zone that arms continuation detection
+  drag-start-delay-ms:
+    type: int
+    default: 120
+    description: Hold time at an edge before virtual drag motion begins
+  drag-repeat-ms:
+    type: int
+    default: 24
+    description: Period of virtual drag motion while an edge remains held
+  drag-repeat-delta:
+    type: int
+    default: 8
+    description: Relative-coordinate delta emitted on each virtual drag-motion period

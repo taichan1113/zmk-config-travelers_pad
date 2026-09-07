@@ -53,13 +53,13 @@ config TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN
       Convert motion along enabled pad edges into repeated virtual KSCAN events.
 
 config TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE
-    bool "Travelers Pad IQS9150 edge-hold continuation detector"
+    bool "Travelers Pad IQS9150 edge-hold continuation function"
     default y
     depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE_ENABLED
     select INPUT
     help
-      Detect a confirmed drag or committed two-finger scroll reaching a physical
-      pad edge. This initial stage is log-only and emits no extra HID reports.
+      Continue a confirmed drag beyond a physical pad edge. Committed two-finger
+      scroll is detected but remains output-disabled until its own stage.
 
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
