@@ -29,6 +29,7 @@ used only when an integration failure needs to be localized.
 | Edge circle continuation / エッジ円継続 | [edge-dial-circle-isolated-test.md](edge-dial-circle-isolated-test.md) |
 | Edge × pointer / エッジ×ポインタ | [edge-pointer-arbitration-test.md](edge-pointer-arbitration-test.md) |
 | Edge × tap/drag / エッジ×タップ・ドラッグ | [edge-tap-drag-arbitration-test.md](edge-tap-drag-arbitration-test.md) |
+| Edge-hold continuation detection / エッジホールド継続の検出 | [edge-hold-continue-detection-test.md](edge-hold-continue-detection-test.md) |
 | Optional grid adapter / 任意格子アダプタ | [grid-matrix-isolated-test.md](grid-matrix-isolated-test.md) |
 | Earlier base integration / 旧基本結合確認 | [basic-input-integration-test.md](basic-input-integration-test.md) |
 

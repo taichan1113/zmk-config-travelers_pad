@@ -1,0 +1,27 @@
+description: Travelers Pad IQS9150 edge-hold continuation detector
+
+compatible: "zmk,travelers-pad-iqs9150-edge-hold-continue"
+
+include: base.yaml
+
+properties:
+  drag-input-device:
+    type: phandle
+    required: true
+    description: Raw IQS9150 contact stream used while a confirmed drag is active
+  scroll-input-device:
+    type: phandle
+    required: true
+    description: Router output stream used only after two-finger scroll is committed
+  surface-x:
+    type: int
+    default: 2000
+    description: Usable pad width in IQS9150 absolute coordinates
+  surface-y:
+    type: int
+    default: 1213
+    description: Usable pad height in IQS9150 absolute coordinates
+  edge-size:
+    type: int
+    default: 80
+    description: Width of the physical boundary zone that arms continuation detection

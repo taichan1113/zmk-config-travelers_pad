@@ -249,6 +249,21 @@
         status = "okay";
     };
 
+    /* Detection-only first stage for edge continuation. It receives raw
+     * frames only for confirmed drag state, and router output only for a
+     * committed 2F scroll. It must not emit HID reports yet.
+     * エッジ継続の検出専用第1段階。確定ドラッグ時だけ生フレームを、確定2本指
+     * スクロール時だけrouter出力を使う。この段階ではHIDレポートを出力しない。 */
+    iqs9150_edge_hold_continue: iqs9150_edge_hold_continue {
+        compatible = "zmk,travelers-pad-iqs9150-edge-hold-continue";
+        drag-input-device = <&iqs9150>;
+        scroll-input-device = <&iqs9150_router>;
+        surface-x = <2000>;
+        surface-y = <1213>;
+        edge-size = <80>;
+        status = "okay";
+    };
+
     /* Optional function module: short one-finger taps become virtual KSCAN
      * cells. It is disabled by default so ordinary one-finger tap remains a
      * mouse click. Enable it together with a matching chosen zmk,kscan and
