@@ -257,12 +257,17 @@
         compatible = "zmk,travelers-pad-iqs9150-edge-hold-continue";
         drag-input-device = <&iqs9150>;
         scroll-input-device = <&iqs9150_router>;
+        scroll-motion-input-device = <&iqs9150_pointer>;
+        scroll-output-device = <&iqs9150_pointer>;
         surface-x = <2000>;
         surface-y = <1213>;
         edge-size = <80>;
         drag-start-delay-ms = <120>;
         drag-repeat-ms = <24>;
         drag-repeat-delta = <8>;
+        scroll-start-delay-ms = <120>;
+        scroll-repeat-ms = <24>;
+        scroll-repeat-delta = <4>;
         status = "okay";
     };
 
@@ -313,6 +318,12 @@
     iqs9150_edge_hold_continue_listener: iqs9150_edge_hold_continue_listener {
         compatible = "zmk,input-listener";
         device = <&iqs9150_edge_hold_continue>;
+        /* Drag REL_X/Y is forwarded directly here. Edge-held wheel output is
+         * deliberately sent to &iqs9150_pointer, so it reuses exactly the
+         * normal 2F listener processor chain.
+         * ドラッグREL_X/Yはここから直接転送する。エッジ保持中のホイール出力は
+         * &iqs9150_pointerへ送るため、通常の2本指と完全に同じlistener processor
+         * chainを再利用する。 */
         status = "okay";
     };
 

@@ -31,6 +31,7 @@ used only when an integration failure needs to be localized.
 | Edge × tap/drag / エッジ×タップ・ドラッグ | [edge-tap-drag-arbitration-test.md](edge-tap-drag-arbitration-test.md) |
 | Edge-hold continuation detection / エッジホールド継続の検出 | [edge-hold-continue-detection-test.md](edge-hold-continue-detection-test.md) |
 | Edge-hold drag continuation / エッジホールド・ドラッグ継続 | [edge-hold-drag-continuation-test.md](edge-hold-drag-continuation-test.md) |
+| Edge-hold 2F scroll continuation / エッジホールド・2本指スクロール継続 | [edge-hold-scroll-continuation-test.md](edge-hold-scroll-continuation-test.md) |
 | Optional grid adapter / 任意格子アダプタ | [grid-matrix-isolated-test.md](grid-matrix-isolated-test.md) |
 | Earlier base integration / 旧基本結合確認 | [basic-input-integration-test.md](basic-input-integration-test.md) |
 

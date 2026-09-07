@@ -1,11 +1,13 @@
 /*
  * Travelers Pad IQS9150 edge-hold continuation detector.
  *
- * Confirmed drag can continue beyond the physical pad edge with timer-driven
- * REL_X/Y reports. Two-finger scroll remains detection-only in this stage.
+ * Confirmed drag and router-committed two-finger scroll can continue beyond
+ * the physical pad edge. Scroll direction is latched from the pointer
+ * function's already axis-locked canonical wheel output.
  *
- * 確定済みドラッグはタイマー駆動のREL_X/Yレポートでパッド端の外まで継続する。
- * 2本指スクロールは、この段階では検出専用のままとする。
+ * 確定済みドラッグとrouter確定済み2本指スクロールはパッド端の外まで継続する。
+ * スクロール方向は、ポインタ機能がすでに軸ロックして出力した標準ホイール値から
+ * ラッチする。
  */
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_edge_hold_continue
@@ -36,6 +38,10 @@ struct edge_hold_config {
 	uint16_t drag_start_delay_ms;
 	uint16_t drag_repeat_ms;
 	int16_t drag_repeat_delta;
+	const struct device *scroll_output_device;
+	uint16_t scroll_start_delay_ms;
+	uint16_t scroll_repeat_ms;
+	int16_t scroll_repeat_delta;
 };
 
 struct edge_hold_data {
@@ -47,10 +53,18 @@ struct edge_hold_data {
 	uint8_t drag_fingers;
 	uint16_t scroll_x;
 	uint16_t scroll_y;
+	uint16_t scroll_finger2_x;
+	uint16_t scroll_finger2_y;
+	bool scroll_finger2_valid;
 	uint8_t scroll_fingers;
 	enum edge_hold_edge drag_edge;
 	enum edge_hold_edge scroll_edge;
 	struct k_work_delayable drag_repeat_work;
+	struct k_work_delayable scroll_repeat_work;
+	int16_t scroll_horizontal;
+	int16_t scroll_vertical;
+	int16_t scroll_direction_horizontal;
+	int16_t scroll_direction_vertical;
 };
 
 static const char *edge_name(enum edge_hold_edge edge)
@@ -184,6 +198,65 @@ static void start_drag_repeat(const struct device *dev)
 		cfg->drag_repeat_delta);
 }
 
+static void stop_scroll_repeat(const struct device *dev)
+{
+	struct edge_hold_data *data = dev->data;
+
+	k_work_cancel_delayable(&data->scroll_repeat_work);
+	data->scroll_horizontal = 0;
+	data->scroll_vertical = 0;
+}
+
+static void scroll_repeat_work_handler(struct k_work *work)
+{
+	struct edge_hold_data *data = CONTAINER_OF(work, struct edge_hold_data,
+						     scroll_repeat_work.work);
+	const struct edge_hold_config *cfg = data->dev->config;
+	int rc;
+
+	if (data->scroll_fingers != 2 || data->scroll_edge == EDGE_HOLD_NONE ||
+	    (data->scroll_horizontal == 0 && data->scroll_vertical == 0)) {
+		return;
+	}
+
+	if (data->scroll_horizontal != 0) {
+		rc = input_report_rel(cfg->scroll_output_device, INPUT_REL_HWHEEL, data->scroll_horizontal,
+				      true, K_NO_WAIT);
+	} else {
+		rc = input_report_rel(cfg->scroll_output_device, INPUT_REL_WHEEL, data->scroll_vertical,
+				      true, K_NO_WAIT);
+	}
+	if (rc != 0) {
+		LOG_ERR("scroll continuation report failed: %d", rc);
+	}
+	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_repeat_ms));
+}
+
+static void start_scroll_repeat(const struct device *dev, int16_t horizontal, int16_t vertical)
+{
+	const struct edge_hold_config *cfg = dev->config;
+	struct edge_hold_data *data = dev->data;
+
+	if ((horizontal == 0 && vertical == 0) || data->scroll_edge == EDGE_HOLD_NONE ||
+	    data->scroll_fingers != 2) {
+		return;
+	}
+
+	/* Latch the direction for the entire edge hold. Changing it requires leaving
+	 * the boundary and deliberately entering again, matching drag continuation.
+	 * 辺の保持中は方向をラッチする。方向変更には辺から離れ、意図的に再進入する。
+	 * これはドラッグ継続と同じ操作規則である。 */
+	data->scroll_horizontal = horizontal == 0 ? 0 :
+				  (horizontal > 0 ? cfg->scroll_repeat_delta : -cfg->scroll_repeat_delta);
+	data->scroll_vertical = vertical == 0 ? 0 :
+				(vertical > 0 ? cfg->scroll_repeat_delta : -cfg->scroll_repeat_delta);
+	k_work_cancel_delayable(&data->scroll_repeat_work);
+	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_start_delay_ms));
+	LOG_INF("scroll continuation started edge=%s delay=%ums period=%ums delta=%d axis=%s",
+		edge_name(data->scroll_edge), cfg->scroll_start_delay_ms, cfg->scroll_repeat_ms,
+		cfg->scroll_repeat_delta, horizontal != 0 ? "horizontal" : "vertical");
+}
+
 static void detect_drag_edge(const struct device *dev)
 {
 	const struct edge_hold_config *cfg = dev->config;
@@ -211,22 +284,118 @@ static void detect_drag_edge(const struct device *dev)
 	}
 }
 
+static bool scroll_edge_reached(const struct edge_hold_config *cfg, const struct edge_hold_data *data,
+				enum edge_hold_edge edge)
+{
+	if (edge == EDGE_HOLD_LEFT) {
+		return data->scroll_x <= cfg->edge_size ||
+		       (data->scroll_finger2_valid && data->scroll_finger2_x <= cfg->edge_size);
+	}
+	if (edge == EDGE_HOLD_RIGHT) {
+		return data->scroll_x >= cfg->surface_x - cfg->edge_size ||
+		       (data->scroll_finger2_valid &&
+			data->scroll_finger2_x >= cfg->surface_x - cfg->edge_size);
+	}
+	if (edge == EDGE_HOLD_TOP) {
+		return data->scroll_y <= cfg->edge_size ||
+		       (data->scroll_finger2_valid && data->scroll_finger2_y <= cfg->edge_size);
+	}
+	return data->scroll_y >= cfg->surface_y - cfg->edge_size ||
+	       (data->scroll_finger2_valid && data->scroll_finger2_y >= cfg->surface_y - cfg->edge_size);
+}
+
+static uint8_t scroll_edge_finger(const struct edge_hold_config *cfg,
+				  const struct edge_hold_data *data, enum edge_hold_edge edge)
+{
+	if ((edge == EDGE_HOLD_LEFT && data->scroll_x <= cfg->edge_size) ||
+	    (edge == EDGE_HOLD_RIGHT && data->scroll_x >= cfg->surface_x - cfg->edge_size) ||
+	    (edge == EDGE_HOLD_TOP && data->scroll_y <= cfg->edge_size) ||
+	    (edge == EDGE_HOLD_BOTTOM && data->scroll_y >= cfg->surface_y - cfg->edge_size)) {
+		return 1;
+	}
+	return 2;
+}
+
 static void detect_scroll_edge(const struct device *dev)
 {
 	const struct edge_hold_config *cfg = dev->config;
 	struct edge_hold_data *data = dev->data;
-	enum edge_hold_edge edge = data->scroll_fingers == 2
-					? edge_at(cfg, data->scroll_x, data->scroll_y)
-					: EDGE_HOLD_NONE;
+	enum edge_hold_edge edge = EDGE_HOLD_NONE;
+
+	/* A scroll edge is meaningful only in the axis which the pointer function
+	 * has already committed. Either contact may reach the forward boundary:
+	 * this avoids placement-dependent failures while ignoring perpendicular
+	 * edges that are natural during a two-finger gesture.
+	 * スクロールの辺は、ポインタ機能がすでに決定した軸だけで意味を持つ。2本の
+	 * どちらが進行方向の境界に到達してもよい。これにより指の置き方依存をなくし、
+	 * 2本指操作で自然に触れ得る垂直方向の辺は無視する。 */
+	if (data->scroll_fingers == 2) {
+		if (data->scroll_direction_horizontal > 0 &&
+		    scroll_edge_reached(cfg, data, EDGE_HOLD_RIGHT)) {
+			edge = EDGE_HOLD_RIGHT;
+		} else if (data->scroll_direction_horizontal < 0 &&
+			   scroll_edge_reached(cfg, data, EDGE_HOLD_LEFT)) {
+			edge = EDGE_HOLD_LEFT;
+		} else if (data->scroll_direction_vertical > 0 &&
+			   scroll_edge_reached(cfg, data, EDGE_HOLD_BOTTOM)) {
+			edge = EDGE_HOLD_BOTTOM;
+		} else if (data->scroll_direction_vertical < 0 &&
+			   scroll_edge_reached(cfg, data, EDGE_HOLD_TOP)) {
+			edge = EDGE_HOLD_TOP;
+		}
+	}
 
 	if (edge != data->scroll_edge) {
+		stop_scroll_repeat(dev);
 		if (edge != EDGE_HOLD_NONE) {
-			LOG_INF("scroll continuation eligible edge=%s representative=(%u,%u)",
-				edge_name(edge), data->scroll_x, data->scroll_y);
+			LOG_INF("scroll continuation eligible edge=%s finger=%u f1=(%u,%u) f2=(%u,%u)",
+				edge_name(edge), scroll_edge_finger(cfg, data, edge), data->scroll_x,
+				data->scroll_y, data->scroll_finger2_x, data->scroll_finger2_y);
 		} else if (data->scroll_edge != EDGE_HOLD_NONE) {
 			LOG_INF("scroll continuation disarmed edge=%s", edge_name(data->scroll_edge));
 		}
 		data->scroll_edge = edge;
+	}
+}
+
+static void edge_hold_scroll_motion_input(const struct device *dev, struct input_event *evt)
+{
+	struct edge_hold_data *data = dev->data;
+	int16_t horizontal = 0;
+	int16_t vertical = 0;
+
+	if (evt->type == INPUT_EV_REL) {
+		if (evt->code == INPUT_REL_HWHEEL) {
+			horizontal = evt->value;
+		} else if (evt->code == INPUT_REL_WHEEL) {
+			vertical = evt->value;
+		}
+	}
+	/* Once continuation has started, preserve its direction until edge exit or
+	 * contact release even when small physical reverse motion is reported.
+	 * 継続開始後は、微小な逆方向の物理移動があっても辺から出るか接触を離すまで
+	 * 方向を保持する。 */
+	if ((horizontal != 0 || vertical != 0) && data->scroll_horizontal == 0 &&
+	    data->scroll_vertical == 0 && horizontal != 0) {
+		data->scroll_direction_horizontal = horizontal;
+		data->scroll_direction_vertical = 0;
+	} else if ((horizontal != 0 || vertical != 0) && data->scroll_horizontal == 0 &&
+		   data->scroll_vertical == 0 && vertical != 0) {
+		data->scroll_direction_horizontal = 0;
+		data->scroll_direction_vertical = vertical;
+	}
+	/* Router coordinates arrive before this pointer output on the same physical
+	 * frame. Re-evaluate now, so an edge reached on the first locked wheel
+	 * movement can arm without waiting for another touch frame.
+	 * router座標は同じ物理フレームでこのポインタ出力より先に到着する。そのため、
+	 * 初回の軸ロック済みホイール移動で到達した辺も次フレームを待たずに有効化する。 */
+	if ((horizontal != 0 || vertical != 0) && data->scroll_horizontal == 0 &&
+	    data->scroll_vertical == 0) {
+		detect_scroll_edge(dev);
+	}
+	if ((horizontal != 0 || vertical != 0) && data->scroll_edge != EDGE_HOLD_NONE &&
+	    data->scroll_horizontal == 0 && data->scroll_vertical == 0) {
+		start_scroll_repeat(dev, horizontal, vertical);
 	}
 }
 
@@ -264,8 +433,18 @@ static void edge_hold_scroll_input(const struct device *dev, struct input_event 
 			data->scroll_x = evt->value;
 		} else if (evt->code == INPUT_ABS_Y) {
 			data->scroll_y = evt->value;
+		} else if (evt->code == INPUT_ABS_RX) {
+			data->scroll_finger2_x = evt->value;
+		} else if (evt->code == INPUT_ABS_RY) {
+			data->scroll_finger2_y = evt->value;
+		} else if (evt->code == INPUT_ABS_RUDDER) {
+			data->scroll_finger2_valid = evt->value;
 		} else if (evt->code == INPUT_ABS_Z) {
 			data->scroll_fingers = evt->value;
+			if (data->scroll_fingers != 2) {
+				data->scroll_direction_horizontal = 0;
+				data->scroll_direction_vertical = 0;
+			}
 		}
 	}
 	if (evt->sync) {
@@ -279,9 +458,12 @@ static int edge_hold_init(const struct device *dev)
 
 	k_work_init_delayable(&((struct edge_hold_data *)dev->data)->drag_repeat_work,
 			     drag_repeat_work_handler);
+	k_work_init_delayable(&((struct edge_hold_data *)dev->data)->scroll_repeat_work,
+			     scroll_repeat_work_handler);
 	LOG_INF("edge hold active: surface=%ux%u edge=%u; drag delay=%ums period=%ums delta=%d; "
-		"scroll output disabled", cfg->surface_x, cfg->surface_y, cfg->edge_size,
-		cfg->drag_start_delay_ms, cfg->drag_repeat_ms, cfg->drag_repeat_delta);
+		"scroll delay=%ums period=%ums delta=%d", cfg->surface_x, cfg->surface_y, cfg->edge_size,
+		cfg->drag_start_delay_ms, cfg->drag_repeat_ms, cfg->drag_repeat_delta,
+		cfg->scroll_start_delay_ms, cfg->scroll_repeat_ms, cfg->scroll_repeat_delta);
 	return 0;
 }
 
@@ -294,6 +476,10 @@ static int edge_hold_init(const struct device *dev)
 		.drag_start_delay_ms = DT_INST_PROP_OR(n, drag_start_delay_ms, 120),                    \
 		.drag_repeat_ms = DT_INST_PROP_OR(n, drag_repeat_ms, 24),                               \
 		.drag_repeat_delta = DT_INST_PROP_OR(n, drag_repeat_delta, 8),                          \
+		.scroll_output_device = DEVICE_DT_GET(DT_INST_PHANDLE(n, scroll_output_device)),       \
+		.scroll_start_delay_ms = DT_INST_PROP_OR(n, scroll_start_delay_ms, 120),                \
+		.scroll_repeat_ms = DT_INST_PROP_OR(n, scroll_repeat_ms, 24),                           \
+		.scroll_repeat_delta = DT_INST_PROP_OR(n, scroll_repeat_delta, 4),                      \
 	};                                                                                           \
 	static void edge_hold_drag_input_handler_##n(struct input_event *evt)                       \
 	{                                                                                            \
@@ -303,10 +489,16 @@ static int edge_hold_init(const struct device *dev)
 	{                                                                                            \
 		edge_hold_scroll_input(DEVICE_DT_INST_GET(n), evt);                                    \
 	}                                                                                            \
+	static void edge_hold_scroll_motion_input_handler_##n(struct input_event *evt)              \
+	{                                                                                            \
+		edge_hold_scroll_motion_input(DEVICE_DT_INST_GET(n), evt);                              \
+	}                                                                                            \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, drag_input_device)),                 \
 			      edge_hold_drag_input_handler_##n);                                             \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, scroll_input_device)),               \
 			      edge_hold_scroll_input_handler_##n);                                           \
+	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, scroll_motion_input_device)),        \
+			      edge_hold_scroll_motion_input_handler_##n);                                    \
 	DEVICE_DT_INST_DEFINE(n, edge_hold_init, NULL, &edge_hold_data_##n, &edge_hold_config_##n,  \
 			      POST_KERNEL, CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, NULL);
 

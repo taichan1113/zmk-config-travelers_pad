@@ -124,7 +124,7 @@ issues.
 | 5F Grasp/Release / 5本指Grasp/Release | `five-finger-radial-move`, `five-finger-stable-frames` | `&iqs9150_gesture_kscan` in overlay | 5F only / 5本指のみ |
 | Edge enablement / エッジ有効化 | `edge-left`, `edge-right`, `edge-top`, `edge-bottom` | `&iqs9150_edge_dial` in overlay | Selected edges only / 選択辺のみ |
 | Edge recognition / エッジ認識 | Surface size, `edge-size`, linear/circle movement thresholds, local circle entry/corner position / 面サイズ、辺幅、直線・円の移動閾値、局所円の進入・中心位置 | `&iqs9150_edge_dial` in overlay | Edge module only / エッジのみ |
-| Edge hold continuation / エッジホールド継続 | Surface size, `edge-size`, drag start delay, repeat interval and delta / 面サイズ、`edge-size`、ドラッグ開始遅延、繰返し周期・移動量 | `&iqs9150_edge_hold_continue` in overlay | Drag output only; 2F scroll remains detection only / ドラッグ出力のみ。2本指スクロールは検出専用 |
+| Edge hold continuation / エッジホールド継続 | Surface size, `edge-size`, drag/scroll start delay, repeat interval and delta / 面サイズ、`edge-size`、ドラッグ／スクロールの開始遅延、繰返し周期・移動量 | `&iqs9150_edge_hold_continue` + listener in overlay | Drag and axis-locked 2F scroll; either finger may reach only the forward, axis-matching edge; wheel output re-enters the normal pointer listener chain / ドラッグと軸ロック済み2本指スクロール。いずれかの指が軸・進行方向に対応する辺へ達すると有効。ホイール出力は通常ポインタのlistener chainへ再入力 |
 | Grid / 格子 | Grid settle time, transform, key bindings / 格子安定化時間、transform、キー割当 | Optional module overlay + keymap | Disabled unless explicitly enabled / 明示的に有効化するまで無効 |
 | Pinch/rotation / ピンチ・回転 | Router geometry detection thresholds exist; no host action is assigned / ルーターのジオメトリ検出閾値はあるが、ホスト動作未割当 | `&iqs9150_router`; future function module/keymap | Claimed but no visible action / 排他取得のみ、可視動作なし |
 

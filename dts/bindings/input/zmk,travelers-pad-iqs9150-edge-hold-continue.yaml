@@ -13,6 +13,14 @@ properties:
     type: phandle
     required: true
     description: Router output stream used only after two-finger scroll is committed
+  scroll-motion-input-device:
+    type: phandle
+    required: true
+    description: Canonical wheel stream emitted by the pointer function after its axis lock
+  scroll-output-device:
+    type: phandle
+    required: true
+    description: Pointer function device used to re-enter its normal wheel listener chain
   surface-x:
     type: int
     default: 2000
@@ -37,3 +45,15 @@ properties:
     type: int
     default: 8
     description: Relative-coordinate delta emitted on each virtual drag-motion period
+  scroll-start-delay-ms:
+    type: int
+    default: 120
+    description: Hold time at an edge before virtual scroll begins
+  scroll-repeat-ms:
+    type: int
+    default: 24
+    description: Period of virtual scroll while an edge remains held
+  scroll-repeat-delta:
+    type: int
+    default: 4
+    description: Relative wheel delta emitted on each virtual scroll period
