@@ -1,0 +1,43 @@
+description: Travelers Pad two-finger scroll inertia function
+
+compatible: "zmk,travelers-pad-scroll-inertia"
+
+include: base.yaml
+
+properties:
+  contact-input-device:
+    type: phandle
+    required: true
+    description: Raw IQS9150 stream used to identify physical contact release
+  wheel-input-device:
+    type: phandle
+    required: true
+    description: Canonical wheel stream emitted by the pointer function
+  wheel-output-device:
+    type: phandle
+    required: true
+    description: Pointer device used to re-enter the normal wheel listener chain
+  start-delay-ms:
+    type: int
+    default: 20
+    description: Delay after two-finger release before inertia begins
+  repeat-ms:
+    type: int
+    default: 24
+    description: Period between inertia wheel reports
+  decay-numerator:
+    type: int
+    default: 3
+    description: Numerator of per-report velocity decay
+  decay-denominator:
+    type: int
+    default: 4
+    description: Denominator of per-report velocity decay
+  stop-delta:
+    type: int
+    default: 2
+    description: Absolute raw wheel delta below which inertia stops
+  max-delta:
+    type: int
+    default: 64
+    description: Maximum absolute raw wheel delta accepted from one physical report

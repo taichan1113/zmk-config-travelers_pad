@@ -32,7 +32,7 @@ config TRAVELERS_PAD_IQS9150_POINTER
 config TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY
     int "IQS9150 function module initialization priority"
     default 51
-    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN || TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER || TRAVELERS_PAD_IQS9150_TAP_DRAG || TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN || TRAVELERS_PAD_IQS9150_MATRIX_INPUT
+    depends on TRAVELERS_PAD_IQS9150_POINTER || TRAVELERS_PAD_IQS9150_GRID_KSCAN || TRAVELERS_PAD_IQS9150_EDGE_DIAL_KSCAN || TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE || TRAVELERS_PAD_IQS9150_SCROLL_INERTIA || TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER || TRAVELERS_PAD_IQS9150_TAP_DRAG || TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN || TRAVELERS_PAD_IQS9150_MATRIX_INPUT
     help
       Must be later than the IQS9150 sensor driver's device priority (50).
 
@@ -60,6 +60,15 @@ config TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE
     help
       Continue a confirmed drag beyond a physical pad edge. Committed two-finger
       scroll is detected but remains output-disabled until its own stage.
+
+config TRAVELERS_PAD_IQS9150_SCROLL_INERTIA
+    bool "Travelers Pad two-finger scroll inertia"
+    default y
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_SCROLL_INERTIA_ENABLED
+    select INPUT
+    help
+      After a router-committed two-finger scroll is released, emit a decaying
+      canonical wheel continuation through the normal pointer listener chain.
 
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"

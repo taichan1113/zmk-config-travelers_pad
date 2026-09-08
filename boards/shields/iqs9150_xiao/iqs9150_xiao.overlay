@@ -218,6 +218,24 @@
         status = "okay";
     };
 
+    /* Scroll inertia observes canonical, axis-locked pointer wheel events and
+     * sends its decay back through the same pointer listener chain.
+     * スクロール慣性は標準ポインタの軸ロック済みホイール値を観測し、減衰値を同じ
+     * ポインタlistener chainへ戻す。 */
+    iqs9150_scroll_inertia: iqs9150_scroll_inertia {
+        compatible = "zmk,travelers-pad-scroll-inertia";
+        contact-input-device = <&iqs9150>;
+        wheel-input-device = <&iqs9150_pointer>;
+        wheel-output-device = <&iqs9150_pointer>;
+        start-delay-ms = <20>;
+        repeat-ms = <24>;
+        decay-numerator = <3>;
+        decay-denominator = <4>;
+        stop-delta = <2>;
+        max-delta = <64>;
+        status = "okay";
+    };
+
     /* Function module: one/two/three-finger tap maps to left/right/middle.
      * A nearby second tap with the same number of fingers starts a drag when
      * held. This consumes raw frames so it can retain tap history even when

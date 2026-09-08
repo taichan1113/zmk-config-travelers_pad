@@ -119,6 +119,7 @@ issues.
 | 2F scroll direction / 2本指スクロール方向 | `zip_scroll_transform` inversion flags / `zip_scroll_transform` の反転flag | `config/iqs9150_xiao.keymap` override of `&iqs9150_pointer_listener` | Keyboard only / キーボードのみ |
 | 2F scroll feel / 2本指スクロール感 | `zip_scroll_scaler` multiplier, axis lock minimum/ratio, maximum per-frame delta / `zip_scroll_scaler` 倍率、軸ロック最小量・比率、最大フレーム差分 | Multiplier: listener in keymap; tracking: `&iqs9150_pointer` / 倍率: keymapのlistener、追跡: `&iqs9150_pointer` | Pointer/2F scroll only / ポインタ・2本指のみ |
 | 2F acceleration / 2本指加速 | Not implemented as a setting yet / 現時点では設定未実装 | Future pointer-module setting / 将来のポインタモジュール設定 | 2F scroll only / 2本指のみ |
+| 2F inertia / 2本指慣性 | `start-delay-ms`, `repeat-ms`, decay ratio, `stop-delta`, `max-delta` / `start-delay-ms`、`repeat-ms`、減衰比、`stop-delta`、`max-delta` | `&iqs9150_scroll_inertia` in overlay / overlay内の`&iqs9150_scroll_inertia` | Router-committed, axis-locked 2F wheel only / router確定済み・軸ロック済み2本指ホイールのみ |
 | Tap and drag / タップ・ドラッグ | `tap-max-ms`, `tap-max-move`, `multifinger-settle-ms`, `double-tap-max-gap-ms`, `double-tap-max-distance`, `drag-start-move` | `&iqs9150_tap_drag` in overlay | Tap/drag only / タップ・ドラッグのみ |
 | 3/4F swipe / 3/4本指スワイプ | `swipe-min-move`, `swipe-max-ms` | `&iqs9150_gesture_kscan` in overlay | 3/4F only / 3/4本指のみ |
 | 5F Grasp/Release / 5本指Grasp/Release | `five-finger-radial-move`, `five-finger-stable-frames` | `&iqs9150_gesture_kscan` in overlay | 5F only / 5本指のみ |
@@ -150,7 +151,7 @@ issues.
 
 - User-visible pinch action / ユーザー可視のピンチ操作
 - User-visible rotation action / ユーザー可視の回転操作
-- Configurable 2F scroll acceleration or inertia / 設定可能な2本指スクロール加速・慣性
+- Configurable 2F scroll acceleration / 設定可能な2本指スクロール加速
 - Enabled and mapped 3×3 grid mode / 有効化・割当済みの3×3格子モード
 - Edge-hold continuation HID output / エッジホールド継続のHID出力
 

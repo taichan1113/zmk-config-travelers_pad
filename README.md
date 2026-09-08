@@ -5,14 +5,16 @@
 実機で IQS9150EV02 の初期化、ATI、Event Mode、相対ポインタ、2本指スクロール、1〜3本指の
 タップ／ドラッグ、3〜5本指ジェスチャー、エッジダイヤルを確認済みです。センサドライバは
 最大5点の接触座標を供給し、操作ポリシーは機能モジュールへ分離しています。ピンチ／回転の
-ホスト操作への割り当て、慣性、速度・加速チューニングは今後の項目です。
+ホスト操作への割り当てと速度・加速チューニングは今後の項目です。2本指スクロールの
+慣性は、通常のlistener chainを再利用する独立機能モジュールとして実装しています。
 
 Hardware verification covers IQS9150EV02 initialization, ATI, Event Mode,
 relative pointer motion, two-finger scroll, one-to-three-finger tap/drag,
 three-to-five-finger gestures, and the edge dial. The sensor driver provides
 up to five contact coordinates; interaction policy lives in function modules.
-Pinch/rotation host actions, inertia, and speed/acceleration tuning remain
-future work.
+Pinch/rotation host actions and speed/acceleration tuning remain future work.
+Two-finger scroll inertia is implemented as an independent function module
+that reuses the normal listener chain.
 
 This is a ZMK/Zephyr module for the IQS9150EV02 Travelers Pad.
 
@@ -35,7 +37,7 @@ scroll, acceleration, or gesture policy back into the driver.
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
 | `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
 | `function/iqs9150/multifinger_gesture/` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
-| `function/iqs9150_inertia.c` | 慣性 / inertia | 次段階、独立実装 / next, independent |
+| `function/iqs9150/scroll_inertia/` | 2本指スクロール慣性 / two-finger scroll inertia | 有効 / enabled |
 
 ## マルチタッチ座標 / Multi-touch coordinates
 
