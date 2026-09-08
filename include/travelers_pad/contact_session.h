@@ -32,4 +32,9 @@ struct travelers_pad_session_snapshot {
 	bool cancelled;
 };
 
+/* Stage-2 shared claim API. Only the session core owns this state; legacy
+ * recognizers use it while their raw subscriptions are migrated. */
+bool travelers_pad_session_claim(enum travelers_pad_owner owner);
+bool travelers_pad_session_tap_allowed(void);
+
 #endif

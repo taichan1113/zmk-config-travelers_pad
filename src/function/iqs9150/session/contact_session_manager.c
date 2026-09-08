@@ -20,7 +20,38 @@ struct session_data {
 	uint32_t next_session_id;
 	struct travelers_pad_session_snapshot snapshot;
 	bool reset_pending;
+	bool ending_tap_allowed;
 };
+
+static struct session_data *primary_session;
+
+bool travelers_pad_session_claim(enum travelers_pad_owner owner)
+{
+	struct travelers_pad_session_snapshot *s;
+	if (!primary_session || primary_session->snapshot.session_id == 0) {
+		return false;
+	}
+	s = &primary_session->snapshot;
+	if (s->owner != TRAVELERS_PAD_OWNER_NONE && s->owner != owner) {
+		return false;
+	}
+	s->owner = owner;
+	s->owner_generation++;
+	if (owner == TRAVELERS_PAD_OWNER_SCROLL) {
+		s->tap_allowed = false;
+	}
+	LOG_INF("session=%u owner=%u generation=%u", s->session_id, owner, s->owner_generation);
+	return true;
+}
+
+bool travelers_pad_session_tap_allowed(void)
+{
+	if (!primary_session) {
+		return true;
+	}
+	return primary_session->snapshot.contact_count == 0 ? primary_session->ending_tap_allowed :
+		primary_session->snapshot.tap_allowed;
+}
 
 static void session_process(const struct device *dev)
 {
@@ -32,6 +63,7 @@ static void session_process(const struct device *dev)
 			LOG_WRN("session=%u cancelled", s->session_id);
 		}
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = false, .cancelled = true};
+		data->ending_tap_allowed = false;
 		data->reset_pending = false;
 		return;
 	}
@@ -39,6 +71,7 @@ static void session_process(const struct device *dev)
 		s->session_id = ++data->next_session_id;
 		s->peak_contact_count = s->contact_count;
 		s->tap_allowed = true;
+		data->ending_tap_allowed = true;
 		LOG_INF("session=%u start contacts=%u", s->session_id, s->contact_count);
 	}
 	if (s->contact_count > s->peak_contact_count) {
@@ -47,6 +80,7 @@ static void session_process(const struct device *dev)
 	if (s->contact_count == 0 && s->session_id) {
 		LOG_INF("session=%u end peak=%u owner=%u", s->session_id, s->peak_contact_count,
 			s->owner);
+		data->ending_tap_allowed = s->tap_allowed;
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = true};
 	}
 }
@@ -67,9 +101,10 @@ static void session_input(const struct device *dev, struct input_event *evt)
 }
 
 #define SESSION_INST(n) \
-	static struct session_data session_data_##n = {.snapshot.tap_allowed = true}; \
+	static struct session_data session_data_##n = {.snapshot.tap_allowed = true, .ending_tap_allowed = true}; \
+	static int session_init_##n(const struct device *dev) { primary_session = dev->data; return 0; } \
 	static void session_input_##n(struct input_event *evt) { session_input(DEVICE_DT_INST_GET(n), evt); } \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)), session_input_##n); \
-	DEVICE_DT_INST_DEFINE(n, NULL, NULL, &session_data_##n, NULL, POST_KERNEL, \
+	DEVICE_DT_INST_DEFINE(n, session_init_##n, NULL, &session_data_##n, NULL, POST_KERNEL, \
 		CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, NULL);
 DT_INST_FOREACH_STATUS_OKAY(SESSION_INST)

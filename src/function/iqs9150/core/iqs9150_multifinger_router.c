@@ -20,6 +20,7 @@
 
 #include <travelers_pad/tap_drag.h>
 #include <travelers_pad/edge_dial.h>
+#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
@@ -297,6 +298,10 @@ static void router_process_frame(const struct device *dev)
 		}
 	}
 	if (primary_move >= cfg->scroll_classify_move) {
+		if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_SCROLL)) {
+			LOG_WRN("2F scroll claim rejected");
+			return;
+		}
 		data->state = ROUTER_SCROLL_TWO;
 		router_emit(dev, data, 2);
 		LOG_INF("2F route=scroll committed; Finger 1 is the scroll representative");

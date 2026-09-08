@@ -22,6 +22,7 @@
 
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/tap_drag.h>
+#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
@@ -78,6 +79,7 @@ struct tap_drag_data {
 	bool second_tap;
 	bool button_down;
 	bool sensor_reset;
+	bool scroll_suppressed;
 };
 
 static int absolute_int(int value)
@@ -261,6 +263,15 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 static void finish_contact(const struct device *dev, const struct tap_drag_config *cfg, int64_t now)
 {
 	struct tap_drag_data *data = dev->data;
+	if (data->scroll_suppressed) {
+		/* SCROLL is an exclusive session owner. Preserve a deferred click from
+		 * an earlier session, but never turn this release into a 2F tap. */
+		LOG_INF("%uF tap suppressed: scroll owns session", data->max_fingers);
+		data->scroll_suppressed = false;
+		data->second_tap = false;
+		drag_tracking = false;
+		return;
+	}
 	bool valid_tap = !data->moved && data->max_fingers >= 1 && data->max_fingers <= 3 &&
 			 now - data->started_ms <= cfg->tap_max_ms;
 
@@ -303,6 +314,11 @@ static void process_frame(const struct device *dev)
 	int64_t now = k_uptime_get();
 
 	if (data->fingers != 0) {
+		if (!travelers_pad_session_tap_allowed()) {
+			data->scroll_suppressed = true;
+			data->second_tap = false;
+			drag_tracking = false;
+		}
 		/* F-slot assignment can change between taps; centroid is invariant. */
 		update_contact_centroid(data);
 	}
