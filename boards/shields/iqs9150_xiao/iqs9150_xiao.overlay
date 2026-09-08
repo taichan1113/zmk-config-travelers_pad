@@ -218,6 +218,23 @@
         status = "okay";
     };
 
+    /* Listener-side 2F scroll acceleration. Keep this independent of the
+     * IQS9150 driver and pointer contact state, so keyboard configurations can
+     * replace or omit it without touching sensor code.
+     * listener側の2本指スクロール加速。IQS9150ドライバおよびポインタ接触状態から
+     * 独立させるため、キーボード設定はセンサーコードを変更せず置換・省略できる。 */
+    travelers_pad_scroll_acceleration: travelers_pad_scroll_acceleration {
+        compatible = "zmk,travelers-pad-scroll-acceleration";
+        #input-processor-cells = <0>;
+        fast-threshold = <12>;
+        fast-multiplier = <2>;
+        /* Kept available for a later tuning pass; disabled while direction
+         * inversion and inertia are validated independently.
+         * 後日の調整に備えて定義は保持する。方向反転と慣性を独立検証する間は
+         * 無効にする。 */
+        status = "disabled";
+    };
+
     /* Function module: one/two/three-finger tap maps to left/right/middle.
      * A nearby second tap with the same number of fingers starts a drag when
      * held. This consumes raw frames so it can retain tap history even when

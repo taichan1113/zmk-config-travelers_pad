@@ -1,0 +1,15 @@
+description: Travelers Pad speed-based two-finger scroll acceleration processor
+
+compatible: "zmk,travelers-pad-scroll-acceleration"
+
+include: ip_zero_param.yaml
+
+properties:
+  fast-threshold:
+    type: int
+    default: 12
+    description: Absolute wheel delta at or above which fast multiplier is applied
+  fast-multiplier:
+    type: int
+    default: 2
+    description: Multiplier applied to fast wheel deltas

@@ -61,6 +61,15 @@ config TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE
       Continue a confirmed drag beyond a physical pad edge. Committed two-finger
       scroll is detected but remains output-disabled until its own stage.
 
+config TRAVELERS_PAD_SCROLL_ACCELERATION
+    bool "Travelers Pad two-finger scroll acceleration processor"
+    default y
+    depends on DT_HAS_ZMK_TRAVELERS_PAD_SCROLL_ACCELERATION_ENABLED
+    help
+      Apply a configurable fast-speed multiplier only to canonical wheel events.
+      It is downstream from pointer contact tracking and before the standard
+      keyboard-owned wheel transform and scaler processors.
+
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
     default y
