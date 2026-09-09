@@ -83,6 +83,7 @@ struct tap_drag_data {
 	bool session_suppressed;
 	uint32_t shadow_frame_seq;
 	uint32_t drag_ownership_frame_seq;
+	bool drag_start_pending;
 };
 
 static int absolute_int(int value)
@@ -196,6 +197,29 @@ static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
 
 static void start_drag(struct tap_drag_data *data);
 
+static void tap_drag_resolve_action(void *context, const struct travelers_pad_owner_token *token,
+				    uint32_t ownership_frame_seq)
+{
+	struct tap_drag_data *data = context;
+
+	ARG_UNUSED(token);
+	if (!data->drag_start_pending || data->drag_ownership_frame_seq != ownership_frame_seq) {
+		return;
+	}
+	data->drag_start_pending = false;
+	if (!travelers_pad_arbiter_authorize_output(
+			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button")) {
+		drag_tracking = false;
+		data->drag_position_valid = false;
+		return;
+	}
+	report_button(data->dev, data->drag_fingers, true);
+	data->button_down = true;
+	drag_active = true;
+	LOG_INF("%uF double-tap drag button dispatched by arbiter", data->drag_fingers);
+}
+
 static void deferred_click_work(struct k_work *work)
 {
 	struct tap_drag_data *data = CONTAINER_OF(work, struct tap_drag_data,
@@ -222,7 +246,6 @@ static void start_drag(struct tap_drag_data *data)
 		.evidence = data->drag_fingers,
 	});
 	data->drag_ownership_frame_seq = data->shadow_frame_seq;
-	drag_active = true;
 	/* The movement that merely crosses the drag activation threshold must not
 	 * displace the grabbed object. The router has already suppressed ordinary
 	 * pointer output while this double-tap candidate is tracked, so rebase at
@@ -233,12 +256,8 @@ static void start_drag(struct tap_drag_data *data)
 	data->drag_previous_x = data->x;
 	data->drag_previous_y = data->y;
 	data->drag_position_valid = true;
-	(void)travelers_pad_arbiter_shadow_output(
-		data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-		TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button");
-	report_button(data->dev, data->drag_fingers, true);
-	data->button_down = true;
-	LOG_INF("%uF double-tap drag started", data->drag_fingers);
+	data->drag_start_pending = true;
+	LOG_INF("%uF double-tap drag awaiting arbiter dispatch", data->drag_fingers);
 }
 
 static bool matches_first_tap(const struct tap_drag_data *data, const struct tap_drag_config *cfg,
@@ -523,6 +542,8 @@ static int tap_drag_init(const struct device *dev)
 
 	k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG);
+	(void)travelers_pad_arbiter_bind_resolve_handler(
+		TRAVELERS_PAD_RECOGNIZER_TAP_DRAG, tap_drag_resolve_action, data);
 	LOG_INF("tap/drag active: tap=%ums move=%u settle=%ums double-gap=%ums",
 		cfg->tap_max_ms, cfg->tap_max_move, cfg->multifinger_settle_ms,
 		cfg->double_tap_max_gap_ms);

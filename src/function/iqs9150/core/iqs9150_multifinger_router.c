@@ -63,6 +63,7 @@ struct router_data {
 	bool sensor_reset;
 	uint32_t shadow_frame_seq;
 	uint32_t scroll_ownership_frame_seq;
+	bool scroll_start_pending;
 };
 
 static int32_t abs32(int32_t value)
@@ -99,6 +100,27 @@ static void router_cancel_pointer(const struct device *dev)
 	if (rc != 0) {
 		LOG_ERR("pointer cancellation report failed: %d", rc);
 	}
+}
+
+static void router_resolve_action(void *context, const struct travelers_pad_owner_token *token,
+				  uint32_t ownership_frame_seq)
+{
+	struct router_data *data = context;
+
+	ARG_UNUSED(token);
+	if (!data->scroll_start_pending || data->scroll_ownership_frame_seq != ownership_frame_seq) {
+		return;
+	}
+	data->scroll_start_pending = false;
+	if (!travelers_pad_arbiter_authorize_output(
+			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
+			"router-scroll-start")) {
+		data->state = ROUTER_IDLE;
+		return;
+	}
+	router_emit(data->dev, data, 2);
+	LOG_INF("2F route=scroll initial output dispatched by arbiter");
 }
 
 static void router_begin(struct router_data *data)
@@ -338,12 +360,8 @@ static void router_process_frame(const struct device *dev)
 						  TRAVELERS_PAD_OWNER_SCROLL);
 		data->scroll_ownership_frame_seq = data->shadow_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
-		(void)travelers_pad_arbiter_shadow_output(
-			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
-			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll");
-		router_emit(dev, data, 2);
-		LOG_INF("2F route=scroll committed; Finger 1 is the scroll representative");
+		data->scroll_start_pending = true;
+		LOG_INF("2F route=scroll committed; awaiting arbiter dispatch");
 	}
 }
 
@@ -379,8 +397,9 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 
 static int router_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_ROUTER);
+	(void)travelers_pad_arbiter_bind_resolve_handler(
+		TRAVELERS_PAD_RECOGNIZER_ROUTER, router_resolve_action, dev->data);
 	return 0;
 }
 

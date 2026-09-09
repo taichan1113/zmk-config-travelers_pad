@@ -14,6 +14,7 @@ LOG_MODULE_REGISTER(travelers_pad_tip_tap, LOG_LEVEL_INF);
 
 struct cfg { uint16_t max_ms, slop, separation; bool invert; };
 struct data {
+	const struct device *dev;
 	kscan_callback_t callback; uint16_t x[TRAVELERS_PAD_MAX_CONTACTS], y[TRAVELERS_PAD_MAX_CONTACTS];
 	int32_t id[TRAVELERS_PAD_MAX_CONTACTS]; bool valid[TRAVELERS_PAD_MAX_CONTACTS]; uint8_t slot, fingers, previous;
 	uint8_t anchor, second; int32_t anchor_id, second_id; uint16_t ax, ay, sx, sy; int64_t second_start;
@@ -24,7 +25,8 @@ struct data {
 	 * represents that whole anchored interaction, rather than each repeat.
 	 * anchorを維持したまま一時的な2本目の接触でTip-Tapを繰返せる。そのため
 	 * shadow proposalは各repeatではなく、anchorを含む一連の操作を表す。 */
-	bool candidate, fired, reset, shadow_tip_owned;
+	bool candidate, fired, reset, shadow_tip_owned, pending_action, pending_left;
+	uint32_t pending_frame_seq;
 };
 static uint16_t absi(int value) { return value < 0 ? -value : value; }
 static void reset(struct data *d) {
@@ -32,8 +34,28 @@ static void reset(struct data *d) {
 	d->fired = false;
 	d->shadow_tip_owned = false;
 	d->shadow_ownership_frame_seq = 0;
+	d->pending_action = false;
+	d->pending_frame_seq = 0;
 	d->anchor_id = -1;
 	d->second_id = -1;
+}
+
+static void tip_tap_resolve_action(void *context, const struct travelers_pad_owner_token *token,
+				   uint32_t ownership_frame_seq)
+{
+	struct data *d = context;
+
+	ARG_UNUSED(token);
+	if (!d->pending_action || d->pending_frame_seq != ownership_frame_seq) return;
+	d->pending_action = false;
+	if (!travelers_pad_arbiter_authorize_output(
+			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+			TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION, "tip-tap")) return;
+	if (d->callback) {
+		d->callback(d->dev, 0, d->pending_left ? 0 : 1, true);
+		d->callback(d->dev, 0, d->pending_left ? 0 : 1, false);
+	}
+	LOG_INF("Tip-Tap initial action dispatched by arbiter");
 }
 
 static bool claim_tip_tap(struct data *d)
@@ -89,12 +111,16 @@ static void process(const struct device *dev)
 		bool left=d->sx<d->ax; if (c->invert) left=!left; d->fired=true;
 		LOG_INF("Tip-Tap %s anchor=%d second=%d duration=%lld", left?"Left":"Right", d->anchor_id,d->second_id,now-d->second_start);
 		if (d->callback) {
-			(void)travelers_pad_arbiter_shadow_output(
-				d->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
-				TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-				"tip-tap");
-			d->callback(dev,0,left?0:1,true);
-			d->callback(dev,0,left?0:1,false);
+			if (d->shadow_ownership_frame_seq == d->shadow_frame_seq) {
+				d->pending_action=true; d->pending_left=left;
+				d->pending_frame_seq=d->shadow_ownership_frame_seq;
+			} else {
+				(void)travelers_pad_arbiter_shadow_output(
+					d->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+					TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+					"tip-tap");
+				d->callback(dev,0,left?0:1,true); d->callback(dev,0,left?0:1,false);
+			}
 		}
 	}
 	if (d->fingers == 0) {
@@ -107,8 +133,10 @@ static const struct kscan_driver_api api={.config=configure};
 
 static int tip_tap_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
+	((struct data *)dev->data)->dev = dev;
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_TIP_TAP);
+	(void)travelers_pad_arbiter_bind_resolve_handler(
+		TRAVELERS_PAD_RECOGNIZER_TIP_TAP, tip_tap_resolve_action, dev->data);
 	return 0;
 }
 

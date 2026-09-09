@@ -38,6 +38,7 @@ struct gesture_config {
 };
 
 struct gesture_data {
+	const struct device *dev;
 	kscan_callback_t callback;
 	uint16_t slot_x[TRAVELERS_PAD_MAX_CONTACTS];
 	uint16_t slot_y[TRAVELERS_PAD_MAX_CONTACTS];
@@ -65,6 +66,9 @@ struct gesture_data {
 	uint32_t shadow_frame_seq;
 	uint32_t shadow_ownership_frame_seq;
 	bool shadow_claimed;
+	bool pending_five_finger_action;
+	enum five_finger_candidate pending_five_finger_candidate;
+	uint32_t pending_five_finger_frame_seq;
 };
 
 static int absolute_int(int value) { return value < 0 ? -value : value; }
@@ -112,6 +116,35 @@ static const char *five_finger_candidate_name(enum five_finger_candidate candida
 
 static void emit_five_finger_gesture(const struct device *dev,
 				      enum five_finger_candidate candidate);
+
+static void multifinger_resolve_action(void *context,
+					const struct travelers_pad_owner_token *token,
+					uint32_t ownership_frame_seq)
+{
+	struct gesture_data *data = context;
+	uint16_t column;
+
+	ARG_UNUSED(token);
+	if (!data->pending_five_finger_action ||
+	    data->pending_five_finger_frame_seq != ownership_frame_seq) {
+		return;
+	}
+	data->pending_five_finger_action = false;
+	if (!travelers_pad_arbiter_authorize_output(
+			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+			TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+			"multifinger-geometry")) {
+		return;
+	}
+	if (data->callback == NULL) {
+		return;
+	}
+	column = data->pending_five_finger_candidate == FIVE_FINGER_GRASP ? 0 : 1;
+	data->callback(data->dev, 2, column, true);
+	data->callback(data->dev, 2, column, false);
+	LOG_INF("5F %s action dispatched by arbiter",
+		five_finger_candidate_name(data->pending_five_finger_candidate));
+}
 
 static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
 {
@@ -266,6 +299,16 @@ static void emit_five_finger_gesture(const struct device *dev,
 			five_finger_candidate_name(candidate));
 		return;
 	}
+	/* The 5F candidate claims and emits in the same logical input frame. Stage
+	 * its first KSCAN pair until that frame has a committed arbiter token.
+	 * 5本指candidateは同一論理input frameでclaimと出力を行う。その最初の
+	 * KSCAN pairは、そのframeのarbiter tokenがcommitされるまで保留する。 */
+	if (data->shadow_ownership_frame_seq == data->shadow_frame_seq) {
+		data->pending_five_finger_action = true;
+		data->pending_five_finger_candidate = candidate;
+		data->pending_five_finger_frame_seq = data->shadow_ownership_frame_seq;
+		return;
+	}
 	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
 	(void)travelers_pad_arbiter_shadow_output(
 		data->shadow_ownership_frame_seq,
@@ -288,6 +331,8 @@ static void reset_session(struct gesture_data *data)
 	data->five_finger_candidate = FIVE_FINGER_NONE;
 	data->shadow_ownership_frame_seq = 0;
 	data->shadow_claimed = false;
+	data->pending_five_finger_action = false;
+	data->pending_five_finger_frame_seq = 0;
 }
 
 static void gesture_process_frame(const struct device *dev)
@@ -393,8 +438,11 @@ static void gesture_handle_input(const struct device *dev, struct input_event *e
 
 static int gesture_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
+	((struct gesture_data *)dev->data)->dev = dev;
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE);
+	(void)travelers_pad_arbiter_bind_resolve_handler(
+		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE, multifinger_resolve_action,
+		dev->data);
 	return 0;
 }
 

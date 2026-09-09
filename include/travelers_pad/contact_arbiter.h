@@ -72,11 +72,26 @@ struct travelers_pad_owner_token {
 	bool valid;
 };
 
+/* A recognizer can defer the semantic action which first establishes its
+ * ownership until the resolver has issued a token.  This is needed because
+ * the five input listeners run asynchronously: at proposal time the winning
+ * token does not exist yet.  The callback runs exactly once for a newly
+ * committed token, before a terminal frame invalidates it.
+ * recognizerは、所有権を最初に確立するsemantic actionを、resolverがtokenを
+ * 発行するまで保留できる。5個のinput listenerは非同期なのでproposal時点には
+ * 勝者tokenがまだ存在しないためである。callbackは新規commit tokenごとに一度、
+ * terminal frameがtokenを無効化する前に実行される。 */
+typedef void (*travelers_pad_arbiter_resolve_handler_t)(
+	void *context, const struct travelers_pad_owner_token *token, uint32_t ownership_frame_seq);
+
 /* Recognizers register from their DT-backed init function. Therefore a node
  * with status = "disabled" has no registry entry and cannot alter ordering.
  * recognizerはDT-backed initから登録する。従ってstatus = "disabled"のnodeは
  * registryへ入らず、他機能の順序を変えない。 */
 bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer);
+bool travelers_pad_arbiter_bind_resolve_handler(
+	enum travelers_pad_recognizer_id recognizer,
+	travelers_pad_arbiter_resolve_handler_t handler, void *context);
 
 /* Called by the session manager around one synchronously forwarded frame. */
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot);
@@ -103,6 +118,18 @@ bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
 					 enum travelers_pad_owner requested_owner,
 					 uint32_t capability,
 					 const char *producer);
+
+/* Check a semantic action against an already-resolved token. Unlike the
+ * shadow preflight API this is authoritative and returns false on mismatch.
+ * It is used by resolver-dispatched first actions; subsequent-action gates
+ * migrate after their same-frame paths have been hardware verified.
+ * 解決済みtokenに対してsemantic actionを照合する。shadow preflight APIと異なり
+ * これはauthoritativeで、不一致ならfalseを返す。resolver-dispatchされた初回
+ * actionで使用し、継続actionのgate移行は同一frame経路を実機確認した後に行う。 */
+bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
+					    enum travelers_pad_recognizer_id recognizer,
+					    enum travelers_pad_owner requested_owner,
+					    uint32_t capability, const char *producer);
 
 /* The semantic gate is observational until the authoritative migration. It
  * reports invalid tokens but deliberately permits output in this phase.

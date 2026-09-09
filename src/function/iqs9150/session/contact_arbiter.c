@@ -56,6 +56,10 @@ struct arbiter_state {
 	struct arbiter_decision decisions[TRAVELERS_PAD_ARBITER_MAX_DECISIONS];
 	struct travelers_pad_owner_token token;
 	uint32_t registered_mask;
+	struct {
+		travelers_pad_arbiter_resolve_handler_t handler;
+		void *context;
+	} handlers[TRAVELERS_PAD_RECOGNIZER_COUNT];
 	uint8_t next_decision;
 };
 
@@ -122,6 +126,22 @@ bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
 	}
 	state.registered_mask |= bit;
 	LOG_INF("shadow recognizer=%u registered", recognizer);
+	return true;
+}
+
+bool travelers_pad_arbiter_bind_resolve_handler(
+	enum travelers_pad_recognizer_id recognizer,
+	travelers_pad_arbiter_resolve_handler_t handler, void *context)
+{
+	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT || handler == NULL ||
+	    (state.registered_mask & (1U << recognizer)) == 0U ||
+	    state.handlers[recognizer].handler != NULL) {
+		LOG_WRN("resolver handler rejected recognizer=%u", recognizer);
+		return false;
+	}
+	state.handlers[recognizer].handler = handler;
+	state.handlers[recognizer].context = context;
+	LOG_INF("resolver handler bound recognizer=%u", recognizer);
 	return true;
 }
 
@@ -317,6 +337,15 @@ static void resolve_frame(struct arbiter_frame *frame)
 				frame->snapshot.session_id, owner_name(frame->legacy_owner),
 				owner_name(state.token.owner));
 		}
+		/* A first semantic action was staged by the winning recognizer while this
+		 * frame was unresolved. Dispatch it only after the immutable decision is
+		 * in the ledger. / 未解決frame中に勝者recognizerが保留した初回semantic
+		 * actionを、不変decisionをledgerへ記録した後だけdispatchする。 */
+		if (state.handlers[winner->recognizer].handler != NULL) {
+			state.handlers[winner->recognizer].handler(
+				state.handlers[winner->recognizer].context, &state.token,
+				frame->snapshot.frame_seq);
+		}
 	}
 	if (frame->output_receipt_count != 0) {
 		validate_receipts(frame, winner == NULL ? TRAVELERS_PAD_RECOGNIZER_COUNT :
@@ -329,6 +358,30 @@ static void resolve_frame(struct arbiter_frame *frame)
 	if (frame->snapshot.contact_count == 0) {
 		state.token.valid = false;
 	}
+}
+
+bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
+					    enum travelers_pad_recognizer_id recognizer,
+					    enum travelers_pad_owner requested_owner,
+					    uint32_t capability, const char *producer)
+{
+	struct arbiter_decision *decision = decision_for(ownership_frame_seq);
+	struct arbiter_output_receipt receipt = {
+		.recognizer = recognizer,
+		.requested_owner = requested_owner,
+		.capability = capability,
+		.producer = producer,
+	};
+
+	if (decision == NULL ||
+	    !decision_allows(&decision->token, decision->recognizer, &receipt)) {
+		LOG_ERR("arbiter output rejected producer=%s ownership-frame=%u owner=%s caps=0x%x",
+			producer, ownership_frame_seq, owner_name(requested_owner), capability);
+		return false;
+	}
+	LOG_INF("arbiter output dispatched ownership-frame=%u winner=%s producer=%s",
+		ownership_frame_seq, owner_name(decision->token.owner), producer);
+	return true;
 }
 
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq)
