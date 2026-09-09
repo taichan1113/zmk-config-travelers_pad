@@ -22,6 +22,7 @@
 
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/tap_drag.h>
+#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_multifinger_gesture, LOG_LEVEL_INF);
 
@@ -52,6 +53,7 @@ struct gesture_data {
 	int64_t started_ms;
 	bool moved;
 	bool cancelled_by_tap_drag;
+	bool cancelled_by_owner;
 	uint8_t five_finger_stable_frames;
 	uint8_t five_finger_slot[5];
 	int32_t five_finger_tracking_id[5];
@@ -166,7 +168,8 @@ static void process_five_finger_geometry(const struct device *dev)
 			outward++;
 		}
 	}
-	if (data->five_finger_candidate == FIVE_FINGER_NONE && (inward >= 4 || outward >= 4)) {
+	if (data->five_finger_candidate == FIVE_FINGER_NONE && (inward >= 4 || outward >= 4) &&
+	    travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
 		data->five_finger_candidate = inward >= 4 ? FIVE_FINGER_GRASP : FIVE_FINGER_RELEASE;
 		LOG_INF("5F %s candidate: inward=%u outward=%u threshold=%u",
 			five_finger_candidate_name(data->five_finger_candidate), inward, outward,
@@ -235,6 +238,7 @@ static void reset_session(struct gesture_data *data)
 	data->max_fingers = 0;
 	data->moved = false;
 	data->cancelled_by_tap_drag = false;
+	data->cancelled_by_owner = false;
 	data->five_finger_stable_frames = 0;
 	data->five_finger_baseline_valid = false;
 	data->five_finger_candidate = FIVE_FINGER_NONE;
@@ -262,6 +266,7 @@ static void gesture_process_frame(const struct device *dev)
 		data->max_fingers = data->fingers;
 		data->moved = false;
 		data->cancelled_by_tap_drag = false;
+		data->cancelled_by_owner = false;
 	}
 	if (data->fingers != 0) {
 		bool fingers_increased = data->fingers > data->max_fingers;
@@ -276,9 +281,13 @@ static void gesture_process_frame(const struct device *dev)
 		if (travelers_pad_tap_drag_is_tracking()) {
 			data->cancelled_by_tap_drag = true;
 		}
-		if (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
-		    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move) {
-			data->moved = true;
+		if (!data->moved && (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
+		    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
+			if (travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
+				data->moved = true;
+			} else {
+				data->cancelled_by_owner = true;
+			}
 		}
 		if (data->max_fingers == 5 && !data->cancelled_by_tap_drag) {
 			process_five_finger_geometry(dev);
@@ -287,7 +296,8 @@ static void gesture_process_frame(const struct device *dev)
 		if (data->max_fingers == 5 && data->five_finger_candidate != FIVE_FINGER_NONE) {
 			LOG_INF("5F %s gesture complete",
 				five_finger_candidate_name(data->five_finger_candidate));
-		} else if (!data->cancelled_by_tap_drag && data->max_fingers >= 3 && data->max_fingers <= 4 &&
+		} else if (!data->cancelled_by_tap_drag && !data->cancelled_by_owner &&
+		    data->max_fingers >= 3 && data->max_fingers <= 4 &&
 		    data->moved && now - data->started_ms <= cfg->swipe_max_ms) {
 			emit_gesture(dev);
 		} else if (data->max_fingers >= 3 && data->max_fingers <= 4 && data->moved) {
