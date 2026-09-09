@@ -232,6 +232,7 @@ static void router_process_frame(const struct device *dev)
 			data->state = ROUTER_AWAIT_TWO;
 			LOG_INF("2F route=awaiting scroll-or-geometry classification");
 		} else {
+			travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE);
 			data->state = ROUTER_CLAIM_MULTIFINGER;
 			if (data->fingers == 5) {
 				LOG_INF("5F route=Grasp/Release claimed");
@@ -247,6 +248,9 @@ static void router_process_frame(const struct device *dev)
 		router_cancel_pointer(dev);
 		router_begin(data);
 		data->state = data->fingers == 2 ? ROUTER_AWAIT_TWO : ROUTER_CLAIM_MULTIFINGER;
+		if (data->fingers >= 3) {
+			travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE);
+		}
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO && data->fingers >= 3) {
@@ -260,6 +264,7 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_AWAIT_TWO && data->fingers >= 3) {
+		travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE);
 		data->state = ROUTER_CLAIM_MULTIFINGER;
 		if (data->fingers == 5) {
 			LOG_INF("5F route=Grasp/Release claimed");
@@ -291,6 +296,7 @@ static void router_process_frame(const struct device *dev)
 				       data->start_geometry_y * geometry_x);
 		if (distance_delta >= cfg->geometry_distance_threshold ||
 		    rotation_cross >= cfg->geometry_rotation_threshold) {
+			travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE);
 			data->state = ROUTER_CLAIM_GEOMETRY;
 			LOG_INF("2F route=geometry claimed distance-delta=%u rotation=%u", distance_delta,
 				rotation_cross);

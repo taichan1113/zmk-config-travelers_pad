@@ -37,7 +37,7 @@ bool travelers_pad_session_claim(enum travelers_pad_owner owner)
 	}
 	s->owner = owner;
 	s->owner_generation++;
-	if (owner == TRAVELERS_PAD_OWNER_SCROLL) {
+	if (owner != TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL) {
 		s->tap_allowed = false;
 	}
 	LOG_INF("session=%u owner=%u generation=%u", s->session_id, owner, s->owner_generation);

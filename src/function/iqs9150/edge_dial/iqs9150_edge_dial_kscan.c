@@ -25,6 +25,7 @@
 #include <zephyr/logging/log.h>
 
 #include <travelers_pad/edge_dial.h>
+#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_edge_dial, LOG_LEVEL_INF);
 
@@ -93,6 +94,11 @@ static const struct kscan_driver_api edge_dial_api = {
 static enum edge_dial_edge edge_dial_edge_for(const struct edge_dial_config *cfg, uint16_t x,
 						      uint16_t y)
 {
+	/* The driver uses 0xffff for an unavailable coordinate in a partial
+	 * contact frame. It is never a physical edge coordinate. */
+	if (x > cfg->surface_x || y > cfg->surface_y) {
+		return EDGE_DIAL_NONE;
+	}
 	if (x <= cfg->edge_size) {
 		return EDGE_DIAL_LEFT;
 	}
@@ -288,7 +294,8 @@ static void edge_dial_process_frame(const struct device *dev)
 
 	if (!data->active) {
 		data->edge = edge_dial_edge_for(cfg, data->x, data->y);
-		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge]) {
+		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge] &&
+		    travelers_pad_session_claim(TRAVELERS_PAD_OWNER_EDGE_DIAL)) {
 			data->active = true;
 			data->last_x = data->x;
 			data->last_y = data->y;
