@@ -66,7 +66,8 @@
                         &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
                         &kp LG(M)        &kp LS(LG(M))
                         &kp C_BRI_DN     &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
-                        &kp C_VOL_UP     &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left>;
+                        &kp C_VOL_UP     &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
+                        &kp F13          &kp F14>;
         };
     };
 };

@@ -79,6 +79,12 @@ config TRAVELERS_PAD_IQS9150_CONTACT_SESSION
       Establishes normalized contact session IDs and cancel boundaries while
       recognizers are migrated to the central arbiter.
 
+config TRAVELERS_PAD_IQS9150_TIP_TAP
+    bool "Travelers Pad two-finger Tip-Tap"
+    default y
+    depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TIP_TAP_KSCAN_ENABLED
+    select INPUT
+
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
     default y
