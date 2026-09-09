@@ -98,6 +98,12 @@ static void session_input(const struct device *dev, struct input_event *evt)
 		data->snapshot.timestamp_ms = k_uptime_get();
 		session_process(dev);
 	}
+	/* This is the sole subscription to the driver raw stream. Re-publish the
+	 * immutable normalized frame after session bookkeeping; recognizers migrate
+	 * to this device before their proposal APIs are introduced. */
+	if (input_report(dev, evt->type, evt->code, evt->value, evt->sync, K_NO_WAIT) != 0) {
+		LOG_ERR("session frame forward failed");
+	}
 }
 
 #define SESSION_INST(n) \

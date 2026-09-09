@@ -133,7 +133,7 @@
 
     iqs9150_edge_dial: iqs9150_edge_dial {
         compatible = "zmk,travelers-pad-iqs9150-edge-dial-kscan";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         rows = <1>;
         columns = <8>;
         surface-x = <2000>;
@@ -187,7 +187,7 @@
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-gesture-kscan";
         status = "okay";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         swipe-min-move = <180>;
         swipe-max-ms = <700>;
         five-finger-radial-move = <80>;
@@ -198,7 +198,7 @@
      * 生フレームはポインタ処理前にジェスチャー種別へ振り分ける。 */
     iqs9150_router: iqs9150_router {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
         geometry-rotation-threshold = <30000>;
@@ -224,7 +224,7 @@
      * ポインタlistener chainへ戻す。 */
     iqs9150_scroll_inertia: iqs9150_scroll_inertia {
         compatible = "zmk,travelers-pad-scroll-inertia";
-        contact-input-device = <&iqs9150>;
+        contact-input-device = <&iqs9150_session>;
         wheel-input-device = <&iqs9150_pointer>;
         wheel-output-device = <&iqs9150_pointer>;
         start-delay-ms = <20>;
@@ -257,7 +257,7 @@
          * In this integration profile its HID listener is enabled as well.
          * routerはこの機能のdouble-tap-drag所有状態を参照する。この結合試験では
          * HID listenerも有効にする。 */
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         tap-max-ms = <180>;
         tap-max-move = <75>;
         /* EV02 contact centroids can settle for several report periods
@@ -281,7 +281,7 @@
      * 出力する。2本指スクロールはこの段階では引き続き検出専用とする。 */
     iqs9150_edge_hold_continue: iqs9150_edge_hold_continue {
         compatible = "zmk,travelers-pad-iqs9150-edge-hold-continue";
-        drag-input-device = <&iqs9150>;
+        drag-input-device = <&iqs9150_session>;
         scroll-input-device = <&iqs9150_router>;
         scroll-motion-input-device = <&iqs9150_pointer>;
         scroll-output-device = <&iqs9150_pointer>;
@@ -307,7 +307,7 @@
     iqs9150_grid: iqs9150_grid {
         compatible = "zmk,travelers-pad-iqs9150-grid-kscan";
         status = "disabled";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         rows = <3>;
         columns = <3>;
         surface-x = <2000>;
@@ -375,7 +375,7 @@
 
     iqs9150_matrix_input: iqs9150_matrix_input {
         compatible = "zmk,travelers-pad-iqs9150-matrix-input";
-        input-device = <&iqs9150>;
+        input-device = <&iqs9150_session>;
         /* A deliberate grid tap needs to survive contact-coordinate settling.
          * The matrix starts only after this interval; short intentional flicks
          * remain possible after the contact has settled.
