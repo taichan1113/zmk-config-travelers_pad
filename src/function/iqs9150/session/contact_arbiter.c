@@ -1,14 +1,16 @@
 /*
  * Contact arbitration core / 接触仲裁core.
  *
- * Shadow stage: accept proposals emitted while the session manager forwards a
- * single synchronous input frame, resolve them independently of callback
- * order, and compare the result with the legacy owner. No semantic output is
+ * Shadow stage: accept proposals emitted for one logical input frame, resolve
+ * them independently of callback order, and compare the result with the
+ * legacy owner. Zephyr queues input callbacks, so resolution waits until every
+ * registered shadow recognizer acknowledges that frame. No semantic output is
  * gated yet, so this file cannot change the established device UX.
  *
- * shadow段階: session managerが一つの同期input frameをforwardする間に出た
- * proposalを収集し、callback順に依存せず解決してlegacy ownerと比較する。まだ
- * semantic outputをgateしないため、本ファイルは確立済みのUXを変更しない。
+ * shadow段階: 一つの論理input frameに対して出たproposalを収集し、callback順に
+ * 依存せず解決してlegacy ownerと比較する。Zephyr input callbackはqueue方式のため、
+ * 全registered shadow recognizerのframe通知を待つ。まだsemantic outputをgate
+ * しないため、本ファイルは確立済みのUXを変更しない。
  */
 
 #include <zephyr/logging/log.h>
@@ -19,14 +21,21 @@
 LOG_MODULE_REGISTER(travelers_pad_arbiter, LOG_LEVEL_INF);
 
 #define TRAVELERS_PAD_ARBITER_MAX_PROPOSALS 8
+#define TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES 16
+
+struct arbiter_frame {
+	struct travelers_pad_session_snapshot snapshot;
+	struct travelers_pad_arbiter_proposal proposals[TRAVELERS_PAD_ARBITER_MAX_PROPOSALS];
+	uint32_t observed_mask;
+	enum travelers_pad_owner legacy_owner;
+	uint8_t proposal_count;
+	bool active;
+};
 
 struct arbiter_state {
-	struct travelers_pad_session_snapshot frame;
-	struct travelers_pad_arbiter_proposal proposals[TRAVELERS_PAD_ARBITER_MAX_PROPOSALS];
+	struct arbiter_frame frames[TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES];
 	struct travelers_pad_owner_token token;
 	uint32_t registered_mask;
-	uint8_t proposal_count;
-	bool dispatching;
 };
 
 static struct arbiter_state state;
@@ -95,50 +104,99 @@ bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
 	return true;
 }
 
+static struct arbiter_frame *frame_for(uint32_t frame_seq)
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(state.frames); i++) {
+		if (state.frames[i].active && state.frames[i].snapshot.frame_seq == frame_seq) {
+			return &state.frames[i];
+		}
+	}
+	return NULL;
+}
+
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot)
 {
-	if (snapshot == NULL) {
+	struct arbiter_frame *frame = NULL;
+
+	if (snapshot == NULL || snapshot->session_id == 0) {
 		return;
 	}
-	state.frame = *snapshot;
-	state.proposal_count = 0;
-	state.dispatching = snapshot->session_id != 0 && !snapshot->cancelled;
-
-	/* A new contact session invalidates every old shadow token before any
-	 * downstream recognizer sees its first frame. */
-	if (state.token.valid && state.token.session_id != snapshot->session_id) {
-		state.token.valid = false;
+	for (uint8_t i = 0; i < ARRAY_SIZE(state.frames); i++) {
+		if (!state.frames[i].active) {
+			frame = &state.frames[i];
+			break;
+		}
 	}
+	if (frame == NULL) {
+		LOG_ERR("shadow frame queue overflow seq=%u", snapshot->frame_seq);
+		return;
+	}
+	*frame = (struct arbiter_frame){
+		.snapshot = *snapshot,
+		.legacy_owner = snapshot->owner,
+		.active = true,
+	};
+}
+
+static bool frame_accepts_recognizer(const struct arbiter_frame *frame,
+					  enum travelers_pad_recognizer_id recognizer)
+{
+	return frame != NULL && (state.registered_mask & (1U << recognizer)) != 0U;
+}
+
+uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recognizer)
+{
+	const struct arbiter_frame *next = NULL;
+	uint32_t bit;
+
+	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT) {
+		return 0;
+	}
+	bit = 1U << recognizer;
+	if ((state.registered_mask & bit) == 0U) {
+		return 0;
+	}
+	for (uint8_t i = 0; i < ARRAY_SIZE(state.frames); i++) {
+		const struct arbiter_frame *frame = &state.frames[i];
+
+		if (!frame->active || (frame->observed_mask & bit) != 0U) {
+			continue;
+		}
+		if (next == NULL || frame->snapshot.frame_seq < next->snapshot.frame_seq) {
+			next = frame;
+		}
+	}
+	return next == NULL ? 0 : next->snapshot.frame_seq;
 }
 
 bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *proposal)
 {
-	uint32_t bit;
+	struct arbiter_frame *frame;
 
-	if (proposal == NULL || !state.dispatching ||
+	if (proposal == NULL ||
 	    proposal->recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
 	    proposal->requested_owner == TRAVELERS_PAD_OWNER_NONE) {
 		return false;
 	}
-	bit = 1U << proposal->recognizer;
-	if ((state.registered_mask & bit) == 0U) {
+	frame = frame_for(proposal->frame_seq);
+	if (!frame_accepts_recognizer(frame, proposal->recognizer)) {
 		LOG_WRN("shadow proposal from unregistered recognizer=%u", proposal->recognizer);
 		return false;
 	}
-	if (state.proposal_count >= ARRAY_SIZE(state.proposals)) {
-		LOG_ERR("shadow proposal queue overflow session=%u", state.frame.session_id);
+	if (frame->proposal_count >= ARRAY_SIZE(frame->proposals)) {
+		LOG_ERR("shadow proposal queue overflow session=%u", frame->snapshot.session_id);
 		return false;
 	}
-	state.proposals[state.proposal_count++] = *proposal;
+	frame->proposals[frame->proposal_count++] = *proposal;
 	return true;
 }
 
-static const struct travelers_pad_arbiter_proposal *select_winner(void)
+static const struct travelers_pad_arbiter_proposal *select_winner(const struct arbiter_frame *frame)
 {
 	const struct travelers_pad_arbiter_proposal *winner = NULL;
 
-	for (uint8_t i = 0; i < state.proposal_count; i++) {
-		const struct travelers_pad_arbiter_proposal *proposal = &state.proposals[i];
+	for (uint8_t i = 0; i < frame->proposal_count; i++) {
+		const struct travelers_pad_arbiter_proposal *proposal = &frame->proposals[i];
 
 		if (proposal->intent != TRAVELERS_PAD_PROPOSAL_CLAIM) {
 			continue;
@@ -156,18 +214,21 @@ static const struct travelers_pad_arbiter_proposal *select_winner(void)
 	return winner;
 }
 
-void travelers_pad_arbiter_resolve_frame(enum travelers_pad_owner legacy_owner)
+static void resolve_frame(struct arbiter_frame *frame)
 {
 	const struct travelers_pad_arbiter_proposal *winner;
 	bool new_token = false;
 
-	if (!state.dispatching) {
-		return;
+	/* A new resolved session invalidates any completed session token. The
+	 * asynchronous queue can hold several frames, so this must happen at
+	 * resolution time rather than when the producer enqueues a frame. */
+	if (state.token.valid && state.token.session_id != frame->snapshot.session_id) {
+		state.token.valid = false;
 	}
-	winner = select_winner();
+	winner = select_winner(frame);
 	if (winner != NULL && !state.token.valid) {
 		state.token = (struct travelers_pad_owner_token){
-			.session_id = state.frame.session_id,
+			.session_id = frame->snapshot.session_id,
 			.owner_generation = 1,
 			.owner = winner->requested_owner,
 			.capabilities = winner->capabilities,
@@ -175,18 +236,15 @@ void travelers_pad_arbiter_resolve_frame(enum travelers_pad_owner legacy_owner)
 			.valid = true,
 		};
 		new_token = true;
-	} else if (state.token.valid && state.token.session_id != state.frame.session_id) {
-		/* Defensive fallback: begin_frame normally invalidates this path. */
-		state.token.valid = false;
 	}
 
 	if (new_token) {
 		LOG_INF("shadow session=%u frame=%u winner=%s recognizer=%u caps=0x%x",
-			state.frame.session_id, state.frame.frame_seq,
+			frame->snapshot.session_id, frame->snapshot.frame_seq,
 			owner_name(state.token.owner), winner->recognizer, state.token.capabilities);
-		if (legacy_owner != state.token.owner) {
+		if (frame->legacy_owner != state.token.owner) {
 			LOG_INF("shadow session=%u differs: legacy=%s shadow=%s",
-				state.frame.session_id, owner_name(legacy_owner),
+				frame->snapshot.session_id, owner_name(frame->legacy_owner),
 				owner_name(state.token.owner));
 		}
 	}
@@ -194,17 +252,41 @@ void travelers_pad_arbiter_resolve_frame(enum travelers_pad_owner legacy_owner)
 	/* A terminal frame may still carry a proposal or legacy action. Preserve the
 	 * result until this comparison is complete, then invalidate it so no later
 	 * work can mistake it for a live-session token. */
-	if (state.frame.contact_count == 0) {
+	if (frame->snapshot.contact_count == 0) {
 		state.token.valid = false;
 	}
-	state.dispatching = false;
+}
+
+void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq)
+{
+	struct arbiter_frame *frame = frame_for(frame_seq);
+
+	if (!frame_accepts_recognizer(frame, recognizer)) {
+		return;
+	}
+	frame->observed_mask |= 1U << recognizer;
+	if ((frame->observed_mask & state.registered_mask) != state.registered_mask) {
+		return;
+	}
+	resolve_frame(frame);
+	frame->active = false;
+}
+
+void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
+						enum travelers_pad_owner legacy_owner)
+{
+	struct arbiter_frame *frame = frame_for(frame_seq);
+
+	if (frame != NULL) {
+		frame->legacy_owner = legacy_owner;
+	}
 }
 
 bool travelers_pad_arbiter_shadow_gate(const char *producer,
 					const struct travelers_pad_owner_token *token,
 					uint32_t capability)
 {
-	bool valid = token != NULL && token->valid && token->session_id == state.frame.session_id &&
+	bool valid = token != NULL && token->valid &&
 		     (token->capabilities & capability) == capability;
 
 	if (!valid) {

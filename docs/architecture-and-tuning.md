@@ -46,12 +46,14 @@ flowchart TD
 
 `iqs9150_session` is the sole raw-frame subscriber and republishes normalized
 frames to each function. In the current shadow stage, `iqs9150_multifinger_router`
-and `iqs9150_tap_drag` also submit proposals to a resolver, but the existing
-shared-claim and semantic-output paths remain authoritative.
+and `iqs9150_tap_drag` also submit proposals to a resolver. The resolver waits
+for both queued-frame acknowledgements rather than relying on callback timing,
+but the existing shared-claim and semantic-output paths remain authoritative.
 
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを各機能へ再配信します。
 現在のshadow段階では `iqs9150_multifinger_router` と `iqs9150_tap_drag` がresolverへ
-proposalも送りますが、既存のshared claimとsemantic output経路を引き続き正とします。
+proposalも送ります。resolverはcallback時刻に依存せず、queue経由の両者のframe通知を
+待つが、既存のshared claimとsemantic output経路を引き続き正とします。
 
 ## Internal layout / 内部配置
 

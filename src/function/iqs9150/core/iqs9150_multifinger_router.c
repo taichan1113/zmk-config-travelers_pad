@@ -61,6 +61,7 @@ struct router_data {
 	int32_t start_geometry_y;
 	uint32_t start_distance_squared;
 	bool sensor_reset;
+	uint32_t shadow_frame_seq;
 };
 
 static int32_t abs32(int32_t value)
@@ -314,6 +315,7 @@ static void router_process_frame(const struct device *dev)
 		 * shadow専用: 現行shared claimが正として動く前に、同じ遷移を将来の
 		 * resolverへproposalとして表す。 */
 		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+			.frame_seq = data->shadow_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_ROUTER,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 			.requested_owner = TRAVELERS_PAD_OWNER_SCROLL,
@@ -325,6 +327,10 @@ static void router_process_frame(const struct device *dev)
 			LOG_WRN("2F scroll claim rejected");
 			return;
 		}
+		/* Record the legacy result with this recognizer's queued-frame ID, not
+		 * with mutable global session state that may already hold a later frame. */
+		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
+						  TRAVELERS_PAD_OWNER_SCROLL);
 		data->state = ROUTER_SCROLL_TWO;
 		router_emit(dev, data, 2);
 		LOG_INF("2F route=scroll committed; Finger 1 is the scroll representative");
@@ -353,7 +359,11 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 		}
 	}
 	if (evt->sync) {
+		data->shadow_frame_seq =
+			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_ROUTER);
 		router_process_frame(dev);
+		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_ROUTER,
+					       data->shadow_frame_seq);
 	}
 }
 

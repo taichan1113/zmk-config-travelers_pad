@@ -54,6 +54,7 @@ enum travelers_pad_token_kind {
 /* Evidence is recognizer-local and only used for trace diagnostics in the
  * shadow phase. It must never affect callback ordering. */
 struct travelers_pad_arbiter_proposal {
+	uint32_t frame_seq;
 	enum travelers_pad_recognizer_id recognizer;
 	enum travelers_pad_proposal_intent intent;
 	enum travelers_pad_owner requested_owner;
@@ -79,8 +80,15 @@ bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
 
 /* Called by the session manager around one synchronously forwarded frame. */
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot);
+/* Each recognizer receives session-manager frames in FIFO order. Obtain its
+ * earliest unacknowledged frame immediately before processing an input sync.
+ * 各recognizerはsession manager由来frameをFIFO順で受ける。input syncを処理する
+ * 直前に、最も古い未通知frameを得る。 */
+uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recognizer);
 bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *proposal);
-void travelers_pad_arbiter_resolve_frame(enum travelers_pad_owner legacy_owner);
+void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq);
+void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
+						enum travelers_pad_owner legacy_owner);
 
 /* The semantic gate is observational until the authoritative migration. It
  * reports invalid tokens but deliberately permits output in this phase.

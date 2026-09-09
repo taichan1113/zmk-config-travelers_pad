@@ -19,6 +19,7 @@ LOG_MODULE_REGISTER(travelers_pad_session, LOG_LEVEL_INF);
 
 struct session_data {
 	uint32_t next_session_id;
+	uint32_t next_frame_seq;
 	struct travelers_pad_session_snapshot snapshot;
 	/* The active snapshot is cleared on a terminal frame. Keep the immutable
 	 * terminal copy for the arbiter while downstream recognizers process that
@@ -119,14 +120,18 @@ static void session_input(const struct device *dev, struct input_event *evt)
 		data->reset_pending = true;
 	}
 	if (evt->sync) {
-		data->snapshot.frame_seq++;
+		/* frame_seq is global rather than per-session so it can identify a
+		 * forwarded frame after it crosses Zephyr's asynchronous input queue. */
+		data->snapshot.frame_seq = ++data->next_frame_seq;
 		data->snapshot.timestamp_ms = k_uptime_get();
 		session_process(dev);
-		/* input_report invokes the subscribed callbacks synchronously. Begin
-		 * collection immediately before the sync event is forwarded, then resolve
-		 * only after every recognizer had the same immutable frame.
-		 * input_reportはsubscriber callbackを同期呼出しする。sync eventの直前に
-		 * collectionを始め、全recognizerが同じ不変frameを得た後だけ解決する。 */
+		/* The configured input mode is queued, not synchronous. Store the logical
+		 * frame now; each shadow recognizer later obtains its next unacknowledged
+		 * frame in FIFO order while handling the forwarded sync event. No extra
+		 * input event is injected, so a full queue cannot drop contact data.
+		 * 設定されたinput modeは同期でなくqueue方式である。論理frameをここで保存し、
+		 * 各shadow recognizerはforwardされたsync event処理時にFIFO順で未通知frameを
+		 * 得る。余分なinput eventを挿入しないため、満杯queueでも接触dataを落とさない。 */
 		travelers_pad_arbiter_begin_frame(&data->dispatch_snapshot);
 	}
 	/* This is the sole subscription to the driver raw stream. Re-publish the
@@ -134,9 +139,6 @@ static void session_input(const struct device *dev, struct input_event *evt)
 	 * to this device before their proposal APIs are introduced. */
 	if (input_report(dev, evt->type, evt->code, evt->value, evt->sync, K_NO_WAIT) != 0) {
 		LOG_ERR("session frame forward failed");
-	}
-	if (evt->sync) {
-		travelers_pad_arbiter_resolve_frame(travelers_pad_session_owner());
 	}
 }
 

@@ -43,16 +43,18 @@ scroll, acceleration, or gesture policy back into the driver.
 ## 接触arbiter移行状況 / Contact-arbiter migration status
 
 現在、IQS9150 driverの正規化接触フレームは `iqs9150_session` だけが購読し、同じ
-frameを下流機能へ再配信します。このsession managerにはshadow arbiterがあり、同期frame内で
-recognizerのproposalを集め、callback登録順と無関係に仮のwinnerとowner tokenを生成します。
+frameを下流機能へ再配信します。このsession managerにはshadow arbiterがあり、論理frameの
+proposalを集め、queue経由の全recognizer通知を待って、callback登録順と無関係に仮のwinnerと
+owner tokenを生成します。
 ただしこの段階で出力を拒否することはありません。既存のshared claim、HID、KSCAN経路が
 引き続き正であり、UXを変えずにlegacy結果とshadow結果を比較します。
 
 At present, only `iqs9150_session` subscribes to normalized contact frames
 from the IQS9150 driver and republishes the same frame to downstream functions.
-Its shadow arbiter collects recognizer proposals within one synchronous frame
-and produces a hypothetical winner and owner token independently of callback
-registration order. It never rejects output in this stage: the existing shared
+Its shadow arbiter collects recognizer proposals for one logical frame and
+waits for every registered recognizer's queued-frame acknowledgement before
+producing a hypothetical winner and owner token. The result is independent of
+callback registration order. It never rejects output in this stage: the existing shared
 claim, HID, and KSCAN paths remain authoritative, so UX is unchanged while
 legacy and shadow results are compared.
 

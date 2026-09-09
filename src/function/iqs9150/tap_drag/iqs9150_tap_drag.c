@@ -81,6 +81,7 @@ struct tap_drag_data {
 	bool button_down;
 	bool sensor_reset;
 	bool scroll_suppressed;
+	uint32_t shadow_frame_seq;
 };
 
 static int absolute_int(int value)
@@ -211,6 +212,7 @@ static void start_drag(struct tap_drag_data *data, bool include_current_move)
 	/* Shadow only: the legacy router still observes drag_tracking directly and
 	 * this function still emits the established button/motion reports. */
 	(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+		.frame_seq = data->shadow_frame_seq,
 		.recognizer = TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 		.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 		.requested_owner = TRAVELERS_PAD_OWNER_DRAG,
@@ -484,7 +486,11 @@ static void tap_drag_handle_input(const struct device *dev, struct input_event *
 		}
 	}
 	if (evt->sync) {
+		data->shadow_frame_seq =
+			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG);
 		process_frame(dev);
+		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+					       data->shadow_frame_seq);
 	}
 }
 
