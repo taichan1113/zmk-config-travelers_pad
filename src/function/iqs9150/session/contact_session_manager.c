@@ -12,6 +12,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_session, LOG_LEVEL_INF);
@@ -19,6 +20,11 @@ LOG_MODULE_REGISTER(travelers_pad_session, LOG_LEVEL_INF);
 struct session_data {
 	uint32_t next_session_id;
 	struct travelers_pad_session_snapshot snapshot;
+	/* The active snapshot is cleared on a terminal frame. Keep the immutable
+	 * terminal copy for the arbiter while downstream recognizers process that
+	 * same frame. / terminal frameでactive snapshotを消しても、downstream
+	 * recognizerが同frameを処理する間は不変copyをarbiterへ渡す。 */
+	struct travelers_pad_session_snapshot dispatch_snapshot;
 	bool reset_pending;
 	bool ending_tap_allowed;
 	enum travelers_pad_owner ending_owner;
@@ -72,6 +78,10 @@ static void session_process(const struct device *dev)
 		if (s->contact_count || s->session_id) {
 			LOG_WRN("session=%u cancelled", s->session_id);
 		}
+		data->dispatch_snapshot = *s;
+		data->dispatch_snapshot.contact_count = 0;
+		data->dispatch_snapshot.tap_allowed = false;
+		data->dispatch_snapshot.cancelled = true;
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = false, .cancelled = true};
 		data->ending_tap_allowed = false;
 		data->ending_owner = TRAVELERS_PAD_OWNER_NONE;
@@ -93,8 +103,11 @@ static void session_process(const struct device *dev)
 			s->owner);
 		data->ending_tap_allowed = s->tap_allowed;
 		data->ending_owner = s->owner;
+		data->dispatch_snapshot = *s;
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = true};
+		return;
 	}
+	data->dispatch_snapshot = *s;
 }
 
 static void session_input(const struct device *dev, struct input_event *evt)
@@ -109,12 +122,21 @@ static void session_input(const struct device *dev, struct input_event *evt)
 		data->snapshot.frame_seq++;
 		data->snapshot.timestamp_ms = k_uptime_get();
 		session_process(dev);
+		/* input_report invokes the subscribed callbacks synchronously. Begin
+		 * collection immediately before the sync event is forwarded, then resolve
+		 * only after every recognizer had the same immutable frame.
+		 * input_reportはsubscriber callbackを同期呼出しする。sync eventの直前に
+		 * collectionを始め、全recognizerが同じ不変frameを得た後だけ解決する。 */
+		travelers_pad_arbiter_begin_frame(&data->dispatch_snapshot);
 	}
 	/* This is the sole subscription to the driver raw stream. Re-publish the
 	 * immutable normalized frame after session bookkeeping; recognizers migrate
 	 * to this device before their proposal APIs are introduced. */
 	if (input_report(dev, evt->type, evt->code, evt->value, evt->sync, K_NO_WAIT) != 0) {
 		LOG_ERR("session frame forward failed");
+	}
+	if (evt->sync) {
+		travelers_pad_arbiter_resolve_frame(travelers_pad_session_owner());
 	}
 }
 

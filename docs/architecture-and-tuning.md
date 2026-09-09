@@ -15,6 +15,8 @@ flowchart TD
     HW[IQS9150 EV02 hardware<br/>IQS9150 EV02ハードウェア]
     DRV[IQS9150 driver<br/>iqs9150_ev02_driver]
     RAW[Normalized contact frames<br/>正規化済み接触フレーム]
+    SESSION[Contact session manager<br/>接触session manager]
+    SHADOW[Shadow proposal/resolver/token<br/>shadow proposal/resolver/token]
     ROUTER[Multi-finger router<br/>多指ルーター]
     PTR[Pointer function<br/>ポインタ機能]
     TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
@@ -26,12 +28,14 @@ flowchart TD
     KEYMAP[Keyboard keymap / behaviors<br/>キーボードkeymap / Behavior]
     HOST[Host OS<br/>ホストOS]
 
-    HW --> DRV --> RAW
-    RAW --> ROUTER
-    RAW --> TAP
-    RAW --> MF
-    RAW --> EDGE
-    RAW -. disabled .-> GRID
+    HW --> DRV --> RAW --> SESSION
+    SESSION --> ROUTER
+    SESSION --> TAP
+    SESSION --> MF
+    SESSION --> EDGE
+    SESSION -. disabled .-> GRID
+    ROUTER -. shadow proposal .-> SHADOW
+    TAP -. shadow proposal .-> SHADOW
     ROUTER --> PTR --> HID --> HOST
     TAP --> HID
     MF --> COMP --> KEYMAP --> HOST
@@ -40,12 +44,14 @@ flowchart TD
     KEYMAP -->|&msc macro| HID
 ```
 
-`iqs9150_tap_drag` observes raw frames independently so that it can preserve
-tap history. The router checks its drag ownership state and suppresses pointer
-or scroll output during an active drag.
+`iqs9150_session` is the sole raw-frame subscriber and republishes normalized
+frames to each function. In the current shadow stage, `iqs9150_multifinger_router`
+and `iqs9150_tap_drag` also submit proposals to a resolver, but the existing
+shared-claim and semantic-output paths remain authoritative.
 
-`iqs9150_tap_drag` はタップ履歴を保つため、生フレームを独立して監視します。
-ルーターはドラッグ所有状態を参照し、ドラッグ中のポインタ・スクロール出力を抑止します。
+`iqs9150_session` は唯一の生frame購読者であり、正規化frameを各機能へ再配信します。
+現在のshadow段階では `iqs9150_multifinger_router` と `iqs9150_tap_drag` がresolverへ
+proposalも送りますが、既存のshared claimとsemantic output経路を引き続き正とします。
 
 ## Internal layout / 内部配置
 
@@ -75,9 +81,10 @@ src/
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
 | Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
-| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Enabled / 有効 |
+| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, shadow proposal collection and deterministic resolver / session ID、通常終了・cancel境界、shadow proposal収集と決定的resolver | Republished contact frames; shadow owner token / 再配信接触frame、shadow owner token | Shadow migration / shadow移行中 |
+| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Legacy-authoritative; router proposal enabled / legacyが正、router proposal有効 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
-| Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Enabled / 有効 |
+| Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Legacy-authoritative; drag proposal enabled / legacyが正、drag proposal有効 |
 | Multi-finger gesture / 多指ジェスチャー | `iqs9150_multifinger_gesture_kscan` | 3/4F directional swipe; 5F independent-coordinate Grasp/Release / 3/4本指方向スワイプ、5本指独立座標Grasp/Release | Virtual KSCAN | Enabled / 有効 |
 | Edge / エッジ | `iqs9150_edge_dial_kscan` | Claims a 1F contact started on an enabled edge; linear trace and local-circle continuation produce repeated virtual KSCAN steps / 有効辺から始まる1本指接触を取得し、直線・局所円継続を仮想KSCANステップ化 | Virtual KSCAN | Enabled / 有効 |
 | Grid / 格子 | `iqs9150_grid_kscan`, `iqs9150_matrix_input`, `zmk-input-matrix` | 3×3 grid tap/flick and optional edge cells / 3×3格子タップ・フリックと任意エッジセル | Virtual KSCAN | Disabled / 無効 |

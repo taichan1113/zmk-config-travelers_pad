@@ -21,6 +21,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/multitouch.h>
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/tap_drag.h>
 #include <travelers_pad/contact_session.h>
 
@@ -207,6 +208,16 @@ static void deferred_click_work(struct k_work *work)
 
 static void start_drag(struct tap_drag_data *data, bool include_current_move)
 {
+	/* Shadow only: the legacy router still observes drag_tracking directly and
+	 * this function still emits the established button/motion reports. */
+	(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+		.recognizer = TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+		.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
+		.requested_owner = TRAVELERS_PAD_OWNER_DRAG,
+		.capabilities = TRAVELERS_PAD_CAP_POINTER_DELTA | TRAVELERS_PAD_CAP_BUTTON,
+		.contact_count = data->fingers,
+		.evidence = data->drag_fingers,
+	});
 	drag_active = true;
 	data->drag_previous_x = include_current_move ? data->start_x : data->x;
 	data->drag_previous_y = include_current_move ? data->start_y : data->y;
@@ -483,6 +494,7 @@ static int tap_drag_init(const struct device *dev)
 	const struct tap_drag_config *cfg = dev->config;
 
 	k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG);
 	LOG_INF("tap/drag active: tap=%ums move=%u settle=%ums double-gap=%ums",
 		cfg->tap_max_ms, cfg->tap_max_move, cfg->multifinger_settle_ms,
 		cfg->double_tap_max_gap_ms);

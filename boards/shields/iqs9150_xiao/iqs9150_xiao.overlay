@@ -251,8 +251,12 @@
         status = "okay";
     };
 
-    /* Stage 1: passive session boundary observer. Legacy recognizers remain
-     * attached until each is migrated to the arbiter. */
+    /* Shadow-arbiter stage: the session manager is the sole raw subscriber,
+     * republishes normalized frames, and compares router/tap-drag proposals
+     * with legacy ownership. Existing semantic output remains authoritative.
+     * shadow arbiter段階: session managerだけが生入力を購読し、正規化frameを
+     * 再配信してrouter/tap-drag proposalをlegacy ownerと比較する。既存の
+     * semantic outputは引き続き正とする。 */
     iqs9150_session: iqs9150_session {
         compatible = "zmk,travelers-pad-contact-session-manager";
         input-device = <&iqs9150>;

@@ -33,11 +33,39 @@ scroll, acceleration, or gesture policy back into the driver.
 | --- | --- | --- |
 | `driver/iqs9150/iqs9150_ev02_driver.c` | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
 | `function/iqs9150/core/` | 相対ポインタ、2本指スクロール、多指操作の排他判定 / pointer, scroll, exclusive multi-finger routing | 有効 / enabled |
+| `function/iqs9150/session/` | 接触session境界、shadow proposal/resolver/token基盤 / contact-session boundary and shadow proposal/resolver/token foundation | shadow移行中。出力は既存経路が正 / shadow migration; legacy output remains authoritative |
 | `function/iqs9150/tap_drag/` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
 | `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
 | `function/iqs9150/multifinger_gesture/` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
 | `function/iqs9150/scroll_inertia/` | 2本指スクロール慣性 / two-finger scroll inertia | 有効 / enabled |
+
+## 接触arbiter移行状況 / Contact-arbiter migration status
+
+現在、IQS9150 driverの正規化接触フレームは `iqs9150_session` だけが購読し、同じ
+frameを下流機能へ再配信します。このsession managerにはshadow arbiterがあり、同期frame内で
+recognizerのproposalを集め、callback登録順と無関係に仮のwinnerとowner tokenを生成します。
+ただしこの段階で出力を拒否することはありません。既存のshared claim、HID、KSCAN経路が
+引き続き正であり、UXを変えずにlegacy結果とshadow結果を比較します。
+
+At present, only `iqs9150_session` subscribes to normalized contact frames
+from the IQS9150 driver and republishes the same frame to downstream functions.
+Its shadow arbiter collects recognizer proposals within one synchronous frame
+and produces a hypothetical winner and owner token independently of callback
+registration order. It never rejects output in this stage: the existing shared
+claim, HID, and KSCAN paths remain authoritative, so UX is unchanged while
+legacy and shadow results are compared.
+
+The first shadow-migrated recognizers are the two-finger router and tap/drag.
+The remaining primary recognizers—multi-finger gesture, edge dial, and
+Tip-Tap—will submit proposals before all five are switched to authoritative
+token-gated output together. Edge hold and inertia remain later auxiliary and
+post-session migrations respectively.
+
+最初にshadow移行したrecognizerは2本指routerとtap/dragです。残るprimary
+recognizer（多指gesture、edge dial、Tip-Tap）もproposal化し、5機能が揃った時点で
+token-gated outputへ一括移行します。edge holdとinertiaはそれぞれ後段のauxiliary、
+post-session移行とします。
 
 ## マルチタッチ座標 / Multi-touch coordinates
 

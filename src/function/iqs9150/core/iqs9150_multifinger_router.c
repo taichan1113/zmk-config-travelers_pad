@@ -19,6 +19,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/tap_drag.h>
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/edge_dial.h>
 #include <travelers_pad/contact_session.h>
 
@@ -308,6 +309,18 @@ static void router_process_frame(const struct device *dev)
 		}
 	}
 	if (primary_move >= cfg->scroll_classify_move) {
+		/* Shadow only: express the same transition to the future resolver before
+		 * the legacy shared claim performs the currently-authoritative action.
+		 * shadow専用: 現行shared claimが正として動く前に、同じ遷移を将来の
+		 * resolverへproposalとして表す。 */
+		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+			.recognizer = TRAVELERS_PAD_RECOGNIZER_ROUTER,
+			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
+			.requested_owner = TRAVELERS_PAD_OWNER_SCROLL,
+			.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
+			.contact_count = data->fingers,
+			.evidence = primary_move,
+		});
 		if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_SCROLL)) {
 			LOG_WRN("2F scroll claim rejected");
 			return;
@@ -344,6 +357,13 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 	}
 }
 
+static int router_init(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_ROUTER);
+	return 0;
+}
+
 #define ROUTER_INST(n)                                                                        \
 	static struct router_data router_data_##n = {.dev = DEVICE_DT_INST_GET(n)};                \
 	static const struct router_config router_config_##n = {                                    \
@@ -356,7 +376,7 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 	}                                                                                            \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)),                     \
 			      router_input_handler_##n);                                                   \
-	DEVICE_DT_INST_DEFINE(n, NULL, NULL, &router_data_##n, &router_config_##n, POST_KERNEL,   \
+	DEVICE_DT_INST_DEFINE(n, router_init, NULL, &router_data_##n, &router_config_##n, POST_KERNEL,   \
 			      CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(ROUTER_INST)

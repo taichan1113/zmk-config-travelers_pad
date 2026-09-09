@@ -76,8 +76,9 @@ config TRAVELERS_PAD_IQS9150_CONTACT_SESSION
     depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_CONTACT_SESSION_MANAGER_ENABLED
     select INPUT
     help
-      Establishes normalized contact session IDs and cancel boundaries while
-      recognizers are migrated to the central arbiter.
+      Establishes normalized contact session IDs, cancel boundaries, and the
+      shadow proposal/resolver/token core while recognizers are migrated to
+      the central arbiter. Shadow mode preserves the existing output path.
 
 config TRAVELERS_PAD_IQS9150_TIP_TAP
     bool "Travelers Pad two-finger Tip-Tap"
