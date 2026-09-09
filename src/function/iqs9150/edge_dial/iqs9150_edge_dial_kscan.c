@@ -24,6 +24,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/edge_dial.h>
 #include <travelers_pad/contact_session.h>
 
@@ -76,6 +77,8 @@ struct edge_dial_data {
 	int8_t circle_direction;
 	bool active;
 	int32_t accumulated_move;
+	uint32_t shadow_frame_seq;
+	bool shadow_claimed;
 };
 
 static int edge_dial_configure(const struct device *dev, kscan_callback_t callback)
@@ -289,6 +292,14 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->edge_direction = 0;
 		data->circle_direction = 0;
 		edge_dial_active = false;
+		/* Preserve the one shadow claim while a temporary extra contact is
+		 * present. The legacy dial may re-acquire after the contact count returns
+		 * to one, but it is still the same logical session. / 一時的に接触が増えても
+		 * shadow claimは維持する。接触数が1へ戻るとlegacy dialは再取得し得るが、
+		 * 論理sessionは同一だからである。 */
+		if (data->fingers == 0) {
+			data->shadow_claimed = false;
+		}
 		return;
 	}
 
@@ -296,6 +307,27 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->edge = edge_dial_edge_for(cfg, data->x, data->y);
 		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge] &&
 		    travelers_pad_session_claim(TRAVELERS_PAD_OWNER_EDGE_DIAL)) {
+			if (!data->shadow_claimed) {
+				/* Edge ownership is committed on acquisition, before the first
+				 * detent. Mirror exactly that first successful legacy claim to the
+				 * shadow resolver; subsequent detents and re-acquisition within the
+				 * same contact session share the same hypothetical token.
+				 * edge所有権は最初のdetentではなく取得時に確定する。その最初に成功した
+				 * legacy claimだけをshadow resolverへ写し、同一接触session内の以後の
+				 * detentおよび再取得は同じ仮想tokenを共有する。 */
+				(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+					.frame_seq = data->shadow_frame_seq,
+					.recognizer = TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
+					.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
+					.requested_owner = TRAVELERS_PAD_OWNER_EDGE_DIAL,
+					.capabilities = TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+					.contact_count = data->fingers,
+					.evidence = data->edge,
+				});
+				travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
+								  TRAVELERS_PAD_OWNER_EDGE_DIAL);
+				data->shadow_claimed = true;
+			}
 			data->active = true;
 			data->last_x = data->x;
 			data->last_y = data->y;
@@ -373,8 +405,19 @@ static void edge_dial_handle_input(const struct device *dev, struct input_event 
 		}
 	}
 	if (evt->sync) {
+		data->shadow_frame_seq =
+			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL);
 		edge_dial_process_frame(dev);
+		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
+					       data->shadow_frame_seq);
 	}
+}
+
+static int edge_dial_init(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL);
+	return 0;
 }
 
 #define EDGE_DIAL_INST(n)                                                                       \
@@ -401,7 +444,7 @@ static void edge_dial_handle_input(const struct device *dev, struct input_event 
 	}                                                                                          \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)),                     \
 			      edge_dial_input_handler_##n);                                            \
-	DEVICE_DT_INST_DEFINE(n, NULL, NULL, &edge_dial_data_##n, &edge_dial_config_##n,          \
+	DEVICE_DT_INST_DEFINE(n, edge_dial_init, NULL, &edge_dial_data_##n, &edge_dial_config_##n, \
 			      POST_KERNEL, CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY,       \
 			      &edge_dial_api);
 

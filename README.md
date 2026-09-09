@@ -58,20 +58,20 @@ callback registration order. It never rejects output in this stage: the existing
 claim, HID, and KSCAN paths remain authoritative, so UX is unchanged while
 legacy and shadow results are compared.
 
-The shadow-migrated recognizers are the two-finger router, tap/drag, Tip-Tap,
-and multi-finger gesture. Tip-Tap submits one claim for an anchored interaction;
-repeated taps while that anchor remains down share its hypothetical token.
-Three/four-finger swipes and five-finger Grasp/Release submit one gesture claim
-per contact session. Edge dial will submit proposals before all five are switched
-to authoritative token-gated output together. Edge hold and inertia remain later
-auxiliary and post-session migrations respectively.
+All five primary recognizers—the two-finger router, tap/drag, Tip-Tap,
+multi-finger gesture, and edge dial—now submit shadow proposals. Tip-Tap
+submits one claim for an anchored interaction; repeated taps while that anchor
+remains down share its hypothetical token. Three/four-finger swipes, five-finger
+Grasp/Release, and edge dial each submit one claim per contact session. Legacy
+output remains authoritative until all five move together to token-gated output.
+Edge hold and inertia remain later auxiliary and post-session migrations.
 
-shadow移行済みrecognizerは2本指router、tap/drag、Tip-Tap、多指gestureです。Tip-Tapは
-anchorを維持する一連の操作で一つのclaimだけを提出し、anchor維持中の繰返しtapは同じ仮想tokenを
-共有します。3/4本指swipeと5本指Grasp/Releaseは、接触sessionごとに一つのgesture claimを
-提出します。残るprimary recognizerであるedge dialもproposal化し、5機能が揃った時点で
-token-gated outputへ一括移行します。edge holdとinertiaはそれぞれ後段のauxiliary、
-post-session移行とします。
+5つのprimary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial）は
+すべてshadow proposalを提出します。Tip-Tapはanchorを維持する一連の操作で一つのclaimだけを
+提出し、anchor維持中の繰返しtapは同じ仮想tokenを共有します。3/4本指swipe、5本指
+Grasp/Release、edge dialは、それぞれ接触sessionごとに一つのclaimを提出します。5機能を
+token-gated outputへ一括移行するまでlegacy出力を正とします。edge holdとinertiaはそれぞれ
+後段のauxiliary、post-session移行とします。
 
 ## マルチタッチ座標 / Multi-touch coordinates
 
