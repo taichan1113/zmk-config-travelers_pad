@@ -281,7 +281,8 @@ static void gesture_process_frame(const struct device *dev)
 		if (travelers_pad_tap_drag_is_tracking()) {
 			data->cancelled_by_tap_drag = true;
 		}
-		if (!data->moved && (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
+		if (data->max_fingers >= 3 && !data->moved &&
+		    (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
 		    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
 			if (travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
 				data->moved = true;
