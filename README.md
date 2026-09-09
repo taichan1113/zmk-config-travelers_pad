@@ -66,12 +66,22 @@ Grasp/Release, and edge dial each submit one claim per contact session. Legacy
 output remains authoritative until all five move together to token-gated output.
 Edge hold and inertia remain later auxiliary and post-session migrations.
 
+Every exclusive semantic output is also attached to the frame that established
+its shadow ownership. This output-gate preflight reports any future token-gate
+rejection while still allowing the established output path. Once its integrated
+test is clean, these same gates can switch together to authoritative rejection
+without adding another routing path.
+
 5つのprimary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial）は
 すべてshadow proposalを提出します。Tip-Tapはanchorを維持する一連の操作で一つのclaimだけを
 提出し、anchor維持中の繰返しtapは同じ仮想tokenを共有します。3/4本指swipe、5本指
 Grasp/Release、edge dialは、それぞれ接触sessionごとに一つのclaimを提出します。5機能を
 token-gated outputへ一括移行するまでlegacy出力を正とします。edge holdとinertiaはそれぞれ
 後段のauxiliary、post-session移行とします。
+
+各排他的semantic出力は、そのshadow所有権を確立したframeにも紐づける。出力gate事前監査は、
+将来token gateが拒否する出力を記録するが、現時点では確立済みの出力経路を許可する。結合試験が
+合格すれば、別のrouting経路を増やさずに同じgateを一括でauthoritative rejectionへ切替できる。
 
 ## マルチタッチ座標 / Multi-touch coordinates
 

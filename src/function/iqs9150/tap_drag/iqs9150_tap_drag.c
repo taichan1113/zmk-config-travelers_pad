@@ -82,6 +82,7 @@ struct tap_drag_data {
 	bool sensor_reset;
 	bool session_suppressed;
 	uint32_t shadow_frame_seq;
+	uint32_t drag_ownership_frame_seq;
 };
 
 static int absolute_int(int value)
@@ -220,6 +221,7 @@ static void start_drag(struct tap_drag_data *data)
 		.contact_count = data->fingers,
 		.evidence = data->drag_fingers,
 	});
+	data->drag_ownership_frame_seq = data->shadow_frame_seq;
 	drag_active = true;
 	/* The movement that merely crosses the drag activation threshold must not
 	 * displace the grabbed object. The router has already suppressed ordinary
@@ -231,6 +233,9 @@ static void start_drag(struct tap_drag_data *data)
 	data->drag_previous_x = data->x;
 	data->drag_previous_y = data->y;
 	data->drag_position_valid = true;
+	(void)travelers_pad_arbiter_shadow_output(
+		data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+		TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button");
 	report_button(data->dev, data->drag_fingers, true);
 	data->button_down = true;
 	LOG_INF("%uF double-tap drag started", data->drag_fingers);
@@ -298,6 +303,9 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			 now - data->started_ms <= cfg->tap_max_ms;
 
 	if (data->button_down) {
+		(void)travelers_pad_arbiter_shadow_output(
+			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button");
 		report_button(dev, data->drag_fingers, false);
 		drag_active = false;
 		drag_tracking = false;
@@ -448,6 +456,11 @@ static void process_frame(const struct device *dev)
 		}
 		if (data->button_down && data->fingers == data->drag_fingers) {
 			if (data->drag_position_valid) {
+				(void)travelers_pad_arbiter_shadow_output(
+					data->drag_ownership_frame_seq,
+					TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+					TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_POINTER_DELTA,
+					"tap-drag-motion");
 				report_drag_motion(dev, (int16_t)((int)data->x - data->drag_previous_x),
 						    (int16_t)((int)data->y - data->drag_previous_y));
 			}

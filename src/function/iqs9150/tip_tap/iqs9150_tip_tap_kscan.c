@@ -18,6 +18,7 @@ struct data {
 	int32_t id[TRAVELERS_PAD_MAX_CONTACTS]; bool valid[TRAVELERS_PAD_MAX_CONTACTS]; uint8_t slot, fingers, previous;
 	uint8_t anchor, second; int32_t anchor_id, second_id; uint16_t ax, ay, sx, sy; int64_t second_start;
 	uint32_t shadow_frame_seq;
+	uint32_t shadow_ownership_frame_seq;
 	/* The anchor may remain on the pad while several temporary second contacts
 	 * produce repeated Tip-Tap actions. A single shadow proposal therefore
 	 * represents that whole anchored interaction, rather than each repeat.
@@ -30,6 +31,7 @@ static void reset(struct data *d) {
 	d->candidate = false;
 	d->fired = false;
 	d->shadow_tip_owned = false;
+	d->shadow_ownership_frame_seq = 0;
 	d->anchor_id = -1;
 	d->second_id = -1;
 }
@@ -57,6 +59,7 @@ static bool claim_tip_tap(struct data *d)
 		});
 		travelers_pad_arbiter_record_legacy_claim(d->shadow_frame_seq,
 						  TRAVELERS_PAD_OWNER_TIP_TAP);
+		d->shadow_ownership_frame_seq = d->shadow_frame_seq;
 		d->shadow_tip_owned = true;
 	}
 
@@ -85,7 +88,14 @@ static void process(const struct device *dev)
 	    absi((int)d->sx - d->ax) >= c->separation && claim_tip_tap(d)) {
 		bool left=d->sx<d->ax; if (c->invert) left=!left; d->fired=true;
 		LOG_INF("Tip-Tap %s anchor=%d second=%d duration=%lld", left?"Left":"Right", d->anchor_id,d->second_id,now-d->second_start);
-		if (d->callback) { d->callback(dev,0,left?0:1,true); d->callback(dev,0,left?0:1,false); }
+		if (d->callback) {
+			(void)travelers_pad_arbiter_shadow_output(
+				d->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+				TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+				"tip-tap");
+			d->callback(dev,0,left?0:1,true);
+			d->callback(dev,0,left?0:1,false);
+		}
 	}
 	if (d->fingers == 0) {
 		reset(d);

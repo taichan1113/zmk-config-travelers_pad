@@ -59,6 +59,11 @@ and edge dial submit one claim per contact session. The resolver waits for all
 queued-frame acknowledgements rather than relying on callback timing, but the
 existing shared-claim and semantic-output paths remain authoritative.
 
+Each exclusive output is recorded against the frame that established its shadow
+token. This output-gate preflight reports a token/owner/capability mismatch but
+does not yet reject the output. It is the final no-UX-change checkpoint before
+all five gates switch together to authoritative mode.
+
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを各機能へ再配信します。
 現在のshadow段階では、5つのprimary recognizerである `iqs9150_multifinger_router`、
 `iqs9150_tap_drag`、`iqs9150_tip_tap`、`iqs9150_multifinger_gesture_kscan`、
@@ -66,6 +71,10 @@ existing shared-claim and semantic-output paths remain authoritative.
 shadow tokenとして扱い、多指gestureとedge dialは接触sessionごとに一つのclaimを提出します。
 resolverはcallback時刻に依存せず、queue経由の全者のframe通知を待つが、既存のshared claimと
 semantic output経路を引き続き正とします。
+
+各排他的出力はshadow tokenを確立したframeへ記録する。この出力gate事前監査は
+token／owner／capability不一致を記録するが、まだ出力を拒否しない。5機能のgateを
+authoritative modeへ一括切替する前の、UXを変えない最後の確認段階である。
 
 ## Internal layout / 内部配置
 
@@ -95,7 +104,7 @@ src/
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
 | Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
-| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, shadow proposal collection and deterministic resolver / session ID、通常終了・cancel境界、shadow proposal収集と決定的resolver | Republished contact frames; shadow owner token / 再配信接触frame、shadow owner token | Shadow migration / shadow移行中 |
+| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, shadow proposal collection, deterministic resolver, and output-gate preflight / session ID、通常終了・cancel境界、shadow proposal収集、決定的resolver、出力gate事前監査 | Republished contact frames; shadow owner token / 再配信接触frame、shadow owner token | Shadow migration; output preflight / shadow移行中・出力事前監査 |
 | Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Legacy-authoritative; router proposal enabled / legacyが正、router proposal有効 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Legacy-authoritative; drag proposal enabled / legacyが正、drag proposal有効 |

@@ -63,6 +63,7 @@ struct gesture_data {
 	enum five_finger_candidate five_finger_candidate;
 	bool sensor_reset;
 	uint32_t shadow_frame_seq;
+	uint32_t shadow_ownership_frame_seq;
 	bool shadow_claimed;
 };
 
@@ -135,6 +136,7 @@ static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t eviden
 		});
 		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
 						  TRAVELERS_PAD_OWNER_MULTI_GESTURE);
+		data->shadow_ownership_frame_seq = data->shadow_frame_seq;
 		data->shadow_claimed = true;
 	}
 
@@ -244,6 +246,11 @@ static void emit_gesture(const struct device *dev)
 	}
 	LOG_INF("%uF swipe row=%u column=%u start=(%u,%u) end=(%u,%u)", data->max_fingers,
 		row, column, data->start_x, data->start_y, data->x, data->y);
+	(void)travelers_pad_arbiter_shadow_output(
+		data->shadow_ownership_frame_seq,
+		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+		"multifinger-swipe");
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
 }
@@ -260,6 +267,11 @@ static void emit_five_finger_gesture(const struct device *dev,
 		return;
 	}
 	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
+	(void)travelers_pad_arbiter_shadow_output(
+		data->shadow_ownership_frame_seq,
+		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+		"multifinger-geometry");
 	data->callback(dev, 2, column, true);
 	data->callback(dev, 2, column, false);
 }
@@ -274,6 +286,7 @@ static void reset_session(struct gesture_data *data)
 	data->five_finger_stable_frames = 0;
 	data->five_finger_baseline_valid = false;
 	data->five_finger_candidate = FIVE_FINGER_NONE;
+	data->shadow_ownership_frame_seq = 0;
 	data->shadow_claimed = false;
 }
 

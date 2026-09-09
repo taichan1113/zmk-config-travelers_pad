@@ -62,6 +62,7 @@ struct router_data {
 	uint32_t start_distance_squared;
 	bool sensor_reset;
 	uint32_t shadow_frame_seq;
+	uint32_t scroll_ownership_frame_seq;
 };
 
 static int32_t abs32(int32_t value)
@@ -285,6 +286,10 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO) {
+		(void)travelers_pad_arbiter_shadow_output(
+			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
+			"router-scroll");
 		router_emit(dev, data, data->fingers);
 		return;
 	}
@@ -331,7 +336,12 @@ static void router_process_frame(const struct device *dev)
 		 * with mutable global session state that may already hold a later frame. */
 		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
 						  TRAVELERS_PAD_OWNER_SCROLL);
+		data->scroll_ownership_frame_seq = data->shadow_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
+		(void)travelers_pad_arbiter_shadow_output(
+			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
+			"router-scroll");
 		router_emit(dev, data, 2);
 		LOG_INF("2F route=scroll committed; Finger 1 is the scroll representative");
 	}

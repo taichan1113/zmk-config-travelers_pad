@@ -90,6 +90,20 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
 void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
 						enum travelers_pad_owner legacy_owner);
 
+/* Attach a semantic output to the frame which established its ownership. If
+ * that frame has not resolved yet, the receipt is checked by the resolver;
+ * otherwise it is checked against the saved resolved decision. Shadow mode
+ * always permits output, but this is the exact call site that becomes
+ * authoritative in the next migration stage.
+ * semantic出力を、その所有権を確立したframeへ紐づける。対象frameが未解決なら
+ * resolverがreceiptを検査し、解決済みなら保存済み決定と照合する。shadow段階では
+ * 常に出力を許可するが、次の移行段階でこの呼出箇所をauthoritativeにする。 */
+bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
+					 enum travelers_pad_recognizer_id recognizer,
+					 enum travelers_pad_owner requested_owner,
+					 uint32_t capability,
+					 const char *producer);
+
 /* The semantic gate is observational until the authoritative migration. It
  * reports invalid tokens but deliberately permits output in this phase.
  * semantic gateはauthoritative移行まで観測専用である。不正tokenを記録するが、

@@ -78,6 +78,7 @@ struct edge_dial_data {
 	bool active;
 	int32_t accumulated_move;
 	uint32_t shadow_frame_seq;
+	uint32_t shadow_ownership_frame_seq;
 	bool shadow_claimed;
 };
 
@@ -199,6 +200,10 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 		LOG_WRN("edge dial ignored: KSCAN callback is not configured");
 		return;
 	}
+	(void)travelers_pad_arbiter_shadow_output(
+		data->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
+		TRAVELERS_PAD_OWNER_EDGE_DIAL, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+		"edge-dial-step");
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
 	edge_dial_active = true;
@@ -326,6 +331,7 @@ static void edge_dial_process_frame(const struct device *dev)
 				});
 				travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
 								  TRAVELERS_PAD_OWNER_EDGE_DIAL);
+				data->shadow_ownership_frame_seq = data->shadow_frame_seq;
 				data->shadow_claimed = true;
 			}
 			data->active = true;
