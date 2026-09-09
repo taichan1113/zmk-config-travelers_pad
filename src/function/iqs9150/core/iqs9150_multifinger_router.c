@@ -194,6 +194,16 @@ static void router_process_frame(const struct device *dev)
 	}
 
 	if (data->fingers == 0) {
+		enum travelers_pad_owner owner = travelers_pad_session_owner();
+
+		/* A terminal owner already emitted its semantic action. In particular,
+		 * Tip-Tap must not create the router's legacy synthetic 2F tap pair. */
+		if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE ||
+		    owner == TRAVELERS_PAD_OWNER_EDGE_DIAL || owner == TRAVELERS_PAD_OWNER_DRAG) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+			return;
+		}
 		if (data->state == ROUTER_PASS_ONE || data->state == ROUTER_SCROLL_TWO) {
 			router_emit(dev, data, 0);
 		} else if (data->state == ROUTER_AWAIT_TWO) {

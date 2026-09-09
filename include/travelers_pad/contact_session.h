@@ -36,5 +36,6 @@ struct travelers_pad_session_snapshot {
  * recognizers use it while their raw subscriptions are migrated. */
 bool travelers_pad_session_claim(enum travelers_pad_owner owner);
 bool travelers_pad_session_tap_allowed(void);
+enum travelers_pad_owner travelers_pad_session_owner(void);
 
 #endif

@@ -21,6 +21,7 @@ struct session_data {
 	struct travelers_pad_session_snapshot snapshot;
 	bool reset_pending;
 	bool ending_tap_allowed;
+	enum travelers_pad_owner ending_owner;
 };
 
 static struct session_data *primary_session;
@@ -53,6 +54,15 @@ bool travelers_pad_session_tap_allowed(void)
 		primary_session->snapshot.tap_allowed;
 }
 
+enum travelers_pad_owner travelers_pad_session_owner(void)
+{
+	if (!primary_session) {
+		return TRAVELERS_PAD_OWNER_NONE;
+	}
+	return primary_session->snapshot.contact_count == 0 ? primary_session->ending_owner :
+		primary_session->snapshot.owner;
+}
+
 static void session_process(const struct device *dev)
 {
 	struct session_data *data = dev->data;
@@ -64,6 +74,7 @@ static void session_process(const struct device *dev)
 		}
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = false, .cancelled = true};
 		data->ending_tap_allowed = false;
+		data->ending_owner = TRAVELERS_PAD_OWNER_NONE;
 		data->reset_pending = false;
 		return;
 	}
@@ -81,6 +92,7 @@ static void session_process(const struct device *dev)
 		LOG_INF("session=%u end peak=%u owner=%u", s->session_id, s->peak_contact_count,
 			s->owner);
 		data->ending_tap_allowed = s->tap_allowed;
+		data->ending_owner = s->owner;
 		*s = (struct travelers_pad_session_snapshot){.tap_allowed = true};
 	}
 }
