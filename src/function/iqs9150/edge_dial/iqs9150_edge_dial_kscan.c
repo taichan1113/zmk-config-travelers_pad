@@ -200,10 +200,12 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 		LOG_WRN("edge dial ignored: KSCAN callback is not configured");
 		return;
 	}
-	(void)travelers_pad_arbiter_shadow_output(
+	if (!travelers_pad_arbiter_authorize_output(
 		data->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 		TRAVELERS_PAD_OWNER_EDGE_DIAL, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"edge-dial-step");
+		"edge-dial-step")) {
+		return;
+	}
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
 	edge_dial_active = true;

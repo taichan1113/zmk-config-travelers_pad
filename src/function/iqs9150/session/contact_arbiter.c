@@ -38,6 +38,7 @@ struct arbiter_decision {
 	enum travelers_pad_recognizer_id recognizer;
 	bool valid;
 	bool output_verified;
+	bool authoritative_output_verified;
 };
 
 struct arbiter_frame {
@@ -379,8 +380,11 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 			producer, ownership_frame_seq, owner_name(requested_owner), capability);
 		return false;
 	}
-	LOG_INF("arbiter output dispatched ownership-frame=%u winner=%s producer=%s",
-		ownership_frame_seq, owner_name(decision->token.owner), producer);
+	if (!decision->authoritative_output_verified) {
+		decision->authoritative_output_verified = true;
+		LOG_INF("arbiter output authorized ownership-frame=%u winner=%s producer=%s",
+			ownership_frame_seq, owner_name(decision->token.owner), producer);
+	}
 	return true;
 }
 

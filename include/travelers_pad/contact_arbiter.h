@@ -121,11 +121,13 @@ bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
 
 /* Check a semantic action against an already-resolved token. Unlike the
  * shadow preflight API this is authoritative and returns false on mismatch.
- * It is used by resolver-dispatched first actions; subsequent-action gates
- * migrate after their same-frame paths have been hardware verified.
+ * It is used by resolver-dispatched first actions and primary recognizers'
+ * continuation actions. Releases remain fail-safe so a stale token cannot
+ * leave a host button held.
  * 解決済みtokenに対してsemantic actionを照合する。shadow preflight APIと異なり
  * これはauthoritativeで、不一致ならfalseを返す。resolver-dispatchされた初回
- * actionで使用し、継続actionのgate移行は同一frame経路を実機確認した後に行う。 */
+ * actionおよびprimary recognizerの継続actionで使用する。releaseはstale tokenで
+ * host側のボタンが押下状態に残らないよう、常に安全側で送る。 */
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 					    enum travelers_pad_recognizer_id recognizer,
 					    enum travelers_pad_owner requested_owner,

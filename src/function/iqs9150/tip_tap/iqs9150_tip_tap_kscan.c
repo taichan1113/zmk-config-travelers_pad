@@ -115,10 +115,12 @@ static void process(const struct device *dev)
 				d->pending_action=true; d->pending_left=left;
 				d->pending_frame_seq=d->shadow_ownership_frame_seq;
 			} else {
-				(void)travelers_pad_arbiter_shadow_output(
+				if (!travelers_pad_arbiter_authorize_output(
 					d->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
 					TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-					"tip-tap");
+					"tip-tap")) {
+					return;
+				}
 				d->callback(dev,0,left?0:1,true); d->callback(dev,0,left?0:1,false);
 			}
 		}

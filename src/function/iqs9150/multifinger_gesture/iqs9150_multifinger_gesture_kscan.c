@@ -279,11 +279,13 @@ static void emit_gesture(const struct device *dev)
 	}
 	LOG_INF("%uF swipe row=%u column=%u start=(%u,%u) end=(%u,%u)", data->max_fingers,
 		row, column, data->start_x, data->start_y, data->x, data->y);
-	(void)travelers_pad_arbiter_shadow_output(
+	if (!travelers_pad_arbiter_authorize_output(
 		data->shadow_ownership_frame_seq,
 		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"multifinger-swipe");
+		"multifinger-swipe")) {
+		return;
+	}
 	data->callback(dev, row, column, true);
 	data->callback(dev, row, column, false);
 }
@@ -310,11 +312,13 @@ static void emit_five_finger_gesture(const struct device *dev,
 		return;
 	}
 	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
-	(void)travelers_pad_arbiter_shadow_output(
+	if (!travelers_pad_arbiter_authorize_output(
 		data->shadow_ownership_frame_seq,
 		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"multifinger-geometry");
+		"multifinger-geometry")) {
+		return;
+	}
 	data->callback(dev, 2, column, true);
 	data->callback(dev, 2, column, false);
 }

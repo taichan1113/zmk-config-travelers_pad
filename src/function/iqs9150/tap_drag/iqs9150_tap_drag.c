@@ -475,13 +475,14 @@ static void process_frame(const struct device *dev)
 		}
 		if (data->button_down && data->fingers == data->drag_fingers) {
 			if (data->drag_position_valid) {
-				(void)travelers_pad_arbiter_shadow_output(
+				if (travelers_pad_arbiter_authorize_output(
 					data->drag_ownership_frame_seq,
 					TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 					TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_POINTER_DELTA,
-					"tap-drag-motion");
-				report_drag_motion(dev, (int16_t)((int)data->x - data->drag_previous_x),
-						    (int16_t)((int)data->y - data->drag_previous_y));
+					"tap-drag-motion")) {
+					report_drag_motion(dev, (int16_t)((int)data->x - data->drag_previous_x),
+							    (int16_t)((int)data->y - data->drag_previous_y));
+				}
 			}
 			data->drag_previous_x = data->x;
 			data->drag_previous_y = data->y;

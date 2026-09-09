@@ -308,10 +308,12 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO) {
-		(void)travelers_pad_arbiter_shadow_output(
+		if (!travelers_pad_arbiter_authorize_output(
 			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
 			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll");
+			"router-scroll")) {
+			return;
+		}
 		router_emit(dev, data, data->fingers);
 		return;
 	}
