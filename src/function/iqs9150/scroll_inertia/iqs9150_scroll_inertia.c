@@ -18,6 +18,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_scroll_inertia, LOG_LEVEL_INF);
 
@@ -122,11 +123,15 @@ static void inertia_handle_contact(const struct device *dev, struct input_event 
 			/* Any new physical contact cancels an older glide. */
 			stop_inertia(dev);
 			data->release_pending = false;
-		} else if (previous_fingers == 2) {
+		} else if (previous_fingers == 2 &&
+			   travelers_pad_session_owner() == TRAVELERS_PAD_OWNER_SCROLL) {
+			/* Two contacts alone are not a scroll. Tip-Tap and a stationary
+			 * two-finger click must not reuse an earlier wheel velocity. */
 			data->release_pending = true;
 		}
 	}
 	if (evt->sync && data->release_pending && data->contact_fingers == 0 &&
+	    travelers_pad_session_owner() == TRAVELERS_PAD_OWNER_SCROLL &&
 	    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
 		LOG_INF("scroll inertia started h=%d v=%d", data->horizontal_velocity,
 			data->vertical_velocity);
