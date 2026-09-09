@@ -193,7 +193,7 @@ static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
 	}
 }
 
-static void start_drag(struct tap_drag_data *data, bool include_current_move);
+static void start_drag(struct tap_drag_data *data);
 
 static void deferred_click_work(struct k_work *work)
 {
@@ -207,7 +207,7 @@ static void deferred_click_work(struct k_work *work)
 	}
 }
 
-static void start_drag(struct tap_drag_data *data, bool include_current_move)
+static void start_drag(struct tap_drag_data *data)
 {
 	/* Shadow only: the legacy router still observes drag_tracking directly and
 	 * this function still emits the established button/motion reports. */
@@ -221,8 +221,15 @@ static void start_drag(struct tap_drag_data *data, bool include_current_move)
 		.evidence = data->drag_fingers,
 	});
 	drag_active = true;
-	data->drag_previous_x = include_current_move ? data->start_x : data->x;
-	data->drag_previous_y = include_current_move ? data->start_y : data->y;
+	/* The movement that merely crosses the drag activation threshold must not
+	 * displace the grabbed object. The router has already suppressed ordinary
+	 * pointer output while this double-tap candidate is tracked, so rebase at
+	 * the activation frame and send only subsequent motion with the button held.
+	 * ドラッグ開始閾値を越えるためだけの移動で、掴んだ対象をずらしてはならない。
+	 * double-tap候補の追跡中はrouterが通常ポインタ出力を抑止済みなので、開始frameで
+	 * 基準を現在座標へ再設定し、以後の移動だけをボタン押下中に送信する。 */
+	data->drag_previous_x = data->x;
+	data->drag_previous_y = data->y;
 	data->drag_position_valid = true;
 	report_button(data->dev, data->drag_fingers, true);
 	data->button_down = true;
@@ -437,7 +444,7 @@ static void process_frame(const struct device *dev)
 		if (data->second_tap && !data->button_down &&
 		    (absolute_int((int)data->x - data->start_x) >= cfg->drag_start_move ||
 		     absolute_int((int)data->y - data->start_y) >= cfg->drag_start_move)) {
-			start_drag(data, true);
+			start_drag(data);
 		}
 		if (data->button_down && data->fingers == data->drag_fingers) {
 			if (data->drag_position_valid) {

@@ -199,30 +199,36 @@ when assigning the final action.
 1本指は左、2本指は右、3本指は中クリックに対応する。単発タップは、二回目の
 タップを判定できるよう `double-tap-max-gap-ms` の間だけ保留する。近接した位置で
 同じ本数の二回目タップが始まり、`drag-start-move` を超えて動かすと該当ボタンを
-即座に押下する。以後の移動はドラッグ、指を離すとドロップとなる。
+即座に押下する。閾値を越えたframeの累積移動はドラッグ開始判定だけに使い、以後の移動は
+タップ位置を基準とするドラッグとして送る。指を離すとドロップとなる。
 
 `iqs9150_tap_drag` watches raw contact frames independently of pointer and scrolling.
 One, two, and three fingers select left, right, and middle click. A single tap is deferred for
 `double-tap-max-gap-ms` so a nearby second tap with the same finger count can be recognized.
 The second tap is a pending double-tap: releasing it produces a double click, while movement beyond
-`drag-start-move` immediately presses the selected button and starts dragging. Small stationary
-movement followed by release still produces a double click. The timing and distance properties are
-all DTS-tunable.
+`drag-start-move` immediately presses the selected button and starts dragging. The accumulated
+activation-frame movement is consumed by recognition, so later drag motion remains anchored at the
+tap location. Small stationary movement followed by release still produces a double click. The
+timing and distance properties are all DTS-tunable.
 
 二回目のタップは保留状態となる。離せばダブルクリック、`drag-start-move` を超えて動かせば
-そのフレームで該当ボタンを押してドラッグを開始する。微小な揺れのまま離した場合も
+そのframeで該当ボタンを押してドラッグを開始する。開始閾値へ達するまでの累積移動は
+判定にのみ使用し、開始後の移動基準はタップ位置に再設定する。微小な揺れのまま離した場合も
 ダブルクリックとなる。時間・距離の値はDTSで調整できる。
 
-ドラッグ開始後の座標差分はタップ機能自身が直ちに相対ポインタ出力へ変換する。同時に
-多指ルーターはその接触ストリームを抑止するため、2本指ドラッグがスクロールへ化けず、
-開始位置からずれてドラッグを始めない。The tap function emits relative pointer deltas
-immediately after drag ownership starts, while the router suppresses that stream; therefore a
-two-finger drag cannot turn into scroll or begin from a later position.
+ドラッグ開始後の座標差分はタップ機能自身が相対ポインタ出力へ変換する。同時に多指ルーターは
+その接触ストリームを抑止するため、2本指ドラッグがスクロールへ化けず、開始判定時の累積移動で
+掴み位置がずれることもない。
 
-複数本指では、指のF-slot番号が接触ごとに入れ替わっても同じ場所を正しく判定できる
-よう、各接触点の重心を比較・移動座標に使う。For multiple fingers, the function uses the
-contact centroid for comparison and drag movement, so IQS9150 F-slot reordering between taps does
-not make the same physical area appear distant.
+After drag ownership starts, the tap function emits subsequent coordinate deltas as relative
+pointer output. The multi-finger router suppresses that contact stream, so a two-finger drag cannot
+turn into scroll and the activation movement cannot shift the grab location.
+
+複数本指では、指のF-slot番号が接触ごとに入れ替わっても同じ場所を正しく判定できるよう、
+各接触点の重心を比較・移動座標に使う。
+
+For multiple fingers, the function uses the contact centroid for comparison and drag movement, so
+IQS9150 F-slot reordering between taps does not make the same physical area appear distant.
 
 格子入力には外部モジュール `zmk-input-matrix` を採用する。これは絶対X/Y座標を、タップと
 上下左右フリックを含む標準仮想KSCAN格子へ変換する。`iqs9150_composite_kscan` は、この格子
