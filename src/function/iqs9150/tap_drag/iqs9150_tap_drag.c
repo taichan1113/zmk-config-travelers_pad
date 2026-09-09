@@ -80,7 +80,7 @@ struct tap_drag_data {
 	bool second_tap;
 	bool button_down;
 	bool sensor_reset;
-	bool scroll_suppressed;
+	bool session_suppressed;
 	uint32_t shadow_frame_seq;
 };
 
@@ -276,11 +276,13 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 static void finish_contact(const struct device *dev, const struct tap_drag_config *cfg, int64_t now)
 {
 	struct tap_drag_data *data = dev->data;
-	if (data->scroll_suppressed) {
-		/* SCROLL is an exclusive session owner. Preserve a deferred click from
-		 * an earlier session, but never turn this release into a 2F tap. */
-		LOG_INF("%uF tap suppressed: scroll owns session", data->max_fingers);
-		data->scroll_suppressed = false;
+	if (data->session_suppressed) {
+		/* An exclusive owner (scroll, edge dial, gesture, or Tip-Tap) must
+		 * preserve a deferred click from an earlier session, but must never turn
+		 * its own release into a 2F tap. */
+		LOG_INF("%uF tap suppressed: exclusive owner=%u", data->max_fingers,
+			travelers_pad_session_owner());
+		data->session_suppressed = false;
 		data->second_tap = false;
 		drag_tracking = false;
 		return;
@@ -328,7 +330,7 @@ static void process_frame(const struct device *dev)
 
 	if (data->fingers != 0) {
 		if (!travelers_pad_session_tap_allowed()) {
-			data->scroll_suppressed = true;
+			data->session_suppressed = true;
 			data->second_tap = false;
 			drag_tracking = false;
 		}
