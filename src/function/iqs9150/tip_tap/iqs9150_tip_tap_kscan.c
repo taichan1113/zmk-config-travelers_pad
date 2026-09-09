@@ -28,6 +28,9 @@ static void process(const struct device *dev)
 		for (uint8_t i=0;i<TRAVELERS_PAD_MAX_CONTACTS;i++) if (d->valid[i]) { d->anchor=i; d->anchor_id=d->id[i]; d->ax=d->x[i]; d->ay=d->y[i]; break; }
 	}
 	if (d->fingers == 2 && d->previous < 2 && d->anchor_id >= 0) {
+		/* The anchor stays down across a repeat. Re-arm only the temporary
+		 * second contact; the session remains exclusively TIP_TAP-owned. */
+		d->fired=false;
 		for (uint8_t i=0;i<TRAVELERS_PAD_MAX_CONTACTS;i++) if (d->valid[i] && i!=d->anchor) { d->second=i; d->second_id=d->id[i]; d->sx=d->x[i]; d->sy=d->y[i]; d->second_start=now; d->candidate=true; break; }
 	}
 	if (d->candidate && d->fingers == 2 && (!d->valid[d->anchor] || d->id[d->anchor]!=d->anchor_id ||
