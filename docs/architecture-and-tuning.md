@@ -20,6 +20,7 @@ flowchart TD
     ROUTER[Multi-finger router<br/>多指ルーター]
     PTR[Pointer function<br/>ポインタ機能]
     TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
+    TIP[Two-finger Tip-Tap<br/>2本指Tip-Tap]
     MF[3/4 swipe + 5F grasp/release<br/>3/4本指スワイプ + 5本指Grasp/Release]
     EDGE[Edge dial<br/>エッジダイヤル]
     GRID[Grid / matrix optional<br/>格子 / マトリクス 任意]
@@ -31,13 +32,16 @@ flowchart TD
     HW --> DRV --> RAW --> SESSION
     SESSION --> ROUTER
     SESSION --> TAP
+    SESSION --> TIP
     SESSION --> MF
     SESSION --> EDGE
     SESSION -. disabled .-> GRID
     ROUTER -. shadow proposal .-> SHADOW
     TAP -. shadow proposal .-> SHADOW
+    TIP -. shadow proposal .-> SHADOW
     ROUTER --> PTR --> HID --> HOST
     TAP --> HID
+    TIP --> COMP
     MF --> COMP --> KEYMAP --> HOST
     EDGE --> COMP
     GRID -. optional .-> COMP
@@ -45,15 +49,18 @@ flowchart TD
 ```
 
 `iqs9150_session` is the sole raw-frame subscriber and republishes normalized
-frames to each function. In the current shadow stage, `iqs9150_multifinger_router`
-and `iqs9150_tap_drag` also submit proposals to a resolver. The resolver waits
-for both queued-frame acknowledgements rather than relying on callback timing,
-but the existing shared-claim and semantic-output paths remain authoritative.
+frames to each function. In the current shadow stage, `iqs9150_multifinger_router`,
+`iqs9150_tap_drag`, and `iqs9150_tip_tap` also submit proposals to a resolver.
+Tip-Tap represents repeated actions under one held anchor as one shadow token.
+The resolver waits for all queued-frame acknowledgements rather than relying
+on callback timing, but the existing shared-claim and semantic-output paths
+remain authoritative.
 
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを各機能へ再配信します。
-現在のshadow段階では `iqs9150_multifinger_router` と `iqs9150_tap_drag` がresolverへ
-proposalも送ります。resolverはcallback時刻に依存せず、queue経由の両者のframe通知を
-待つが、既存のshared claimとsemantic output経路を引き続き正とします。
+現在のshadow段階では `iqs9150_multifinger_router`、`iqs9150_tap_drag`、
+`iqs9150_tip_tap` がresolverへproposalも送ります。Tip-Tapはanchor維持中の繰返しを
+一つのshadow tokenとして扱います。resolverはcallback時刻に依存せず、queue経由の全者の
+frame通知を待つが、既存のshared claimとsemantic output経路を引き続き正とします。
 
 ## Internal layout / 内部配置
 
@@ -87,6 +94,7 @@ src/
 | Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Legacy-authoritative; router proposal enabled / legacyが正、router proposal有効 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Legacy-authoritative; drag proposal enabled / legacyが正、drag proposal有効 |
+| Tip-Tap / Tip-Tap | `iqs9150_tip_tap` | Anchored 2F left/right virtual-key tap; repeats while the anchor stays down / anchorを維持した2本指左右の仮想キーtap、anchor維持中は繰返し可能 | Virtual KSCAN | Legacy-authoritative; one shadow claim per anchored interaction / legacyが正、anchor操作ごとに一つのshadow claim |
 | Multi-finger gesture / 多指ジェスチャー | `iqs9150_multifinger_gesture_kscan` | 3/4F directional swipe; 5F independent-coordinate Grasp/Release / 3/4本指方向スワイプ、5本指独立座標Grasp/Release | Virtual KSCAN | Enabled / 有効 |
 | Edge / エッジ | `iqs9150_edge_dial_kscan` | Claims a 1F contact started on an enabled edge; linear trace and local-circle continuation produce repeated virtual KSCAN steps / 有効辺から始まる1本指接触を取得し、直線・局所円継続を仮想KSCANステップ化 | Virtual KSCAN | Enabled / 有効 |
 | Grid / 格子 | `iqs9150_grid_kscan`, `iqs9150_matrix_input`, `zmk-input-matrix` | 3×3 grid tap/flick and optional edge cells / 3×3格子タップ・フリックと任意エッジセル | Virtual KSCAN | Disabled / 無効 |
