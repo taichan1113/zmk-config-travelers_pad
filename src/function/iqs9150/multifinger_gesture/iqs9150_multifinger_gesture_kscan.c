@@ -20,6 +20,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/tap_drag.h>
 #include <travelers_pad/contact_session.h>
@@ -61,6 +62,8 @@ struct gesture_data {
 	bool five_finger_baseline_valid;
 	enum five_finger_candidate five_finger_candidate;
 	bool sensor_reset;
+	uint32_t shadow_frame_seq;
+	bool shadow_claimed;
 };
 
 static int absolute_int(int value) { return value < 0 ? -value : value; }
@@ -108,6 +111,35 @@ static const char *five_finger_candidate_name(enum five_finger_candidate candida
 
 static void emit_five_finger_gesture(const struct device *dev,
 				      enum five_finger_candidate candidate);
+
+static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
+{
+	if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
+		return false;
+	}
+
+	if (!data->shadow_claimed) {
+		/* Shadow mode keeps the legacy claim as the authority. Submit exactly
+		 * the first successful gesture claim, regardless of whether 3/4F swipe
+		 * or 5F radial geometry supplied the evidence. / shadow段階ではlegacy
+		 * claimを正とする。3/4本指swipe／5本指radial geometryのいずれであっても、
+		 * 最初に成功したgesture claimだけをproposalとして提出する。 */
+		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+			.frame_seq = data->shadow_frame_seq,
+			.recognizer = TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
+			.requested_owner = TRAVELERS_PAD_OWNER_MULTI_GESTURE,
+			.capabilities = TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
+			.contact_count = data->fingers,
+			.evidence = evidence,
+		});
+		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
+						  TRAVELERS_PAD_OWNER_MULTI_GESTURE);
+		data->shadow_claimed = true;
+	}
+
+	return true;
+}
 
 static void capture_five_finger_baseline(struct gesture_data *data)
 {
@@ -169,7 +201,7 @@ static void process_five_finger_geometry(const struct device *dev)
 		}
 	}
 	if (data->five_finger_candidate == FIVE_FINGER_NONE && (inward >= 4 || outward >= 4) &&
-	    travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
+	    claim_multifinger_gesture(data, inward >= 4 ? inward : outward)) {
 		data->five_finger_candidate = inward >= 4 ? FIVE_FINGER_GRASP : FIVE_FINGER_RELEASE;
 		LOG_INF("5F %s candidate: inward=%u outward=%u threshold=%u",
 			five_finger_candidate_name(data->five_finger_candidate), inward, outward,
@@ -242,6 +274,7 @@ static void reset_session(struct gesture_data *data)
 	data->five_finger_stable_frames = 0;
 	data->five_finger_baseline_valid = false;
 	data->five_finger_candidate = FIVE_FINGER_NONE;
+	data->shadow_claimed = false;
 }
 
 static void gesture_process_frame(const struct device *dev)
@@ -284,7 +317,10 @@ static void gesture_process_frame(const struct device *dev)
 		if (data->max_fingers >= 3 && !data->moved &&
 		    (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
 		    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
-			if (travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
+			uint32_t move = absolute_int((int)data->x - data->start_x) +
+					absolute_int((int)data->y - data->start_y);
+
+			if (claim_multifinger_gesture(data, move)) {
 				data->moved = true;
 			} else {
 				data->cancelled_by_owner = true;
@@ -334,8 +370,19 @@ static void gesture_handle_input(const struct device *dev, struct input_event *e
 		}
 	}
 	if (evt->sync) {
+		data->shadow_frame_seq =
+			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE);
 		gesture_process_frame(dev);
+		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+					       data->shadow_frame_seq);
 	}
+}
+
+static int gesture_init(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE);
+	return 0;
 }
 
 #define GESTURE_INST(n)                                                                        \
@@ -352,7 +399,7 @@ static void gesture_handle_input(const struct device *dev, struct input_event *e
 	}                                                                                            \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)),                      \
 			      gesture_input_handler_##n);                                               \
-	DEVICE_DT_INST_DEFINE(n, NULL, NULL, &gesture_data_##n, &gesture_config_##n, POST_KERNEL,  \
+	DEVICE_DT_INST_DEFINE(n, gesture_init, NULL, &gesture_data_##n, &gesture_config_##n, POST_KERNEL,  \
 			      CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, &gesture_api);
 
 DT_INST_FOREACH_STATUS_OKAY(GESTURE_INST)
