@@ -289,7 +289,7 @@
         multifinger-settle-ms = <120>;
         double-tap-max-gap-ms = <250>;
         double-tap-max-distance = <120>;
-        drag-start-move = <20>;
+        drag-start-move = <8>;
         /* Edge-dial × tap/drag arbitration integration test. */
         status = "okay";
     };

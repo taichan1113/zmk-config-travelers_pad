@@ -28,7 +28,6 @@
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
 #define TRAVELERS_PAD_DRAG_MAX_FRAME_DELTA 256
-
 static bool drag_active;
 static bool drag_tracking;
 
@@ -79,11 +78,20 @@ struct tap_drag_data {
 	bool first_valid;
 	bool second_tap;
 	bool button_down;
+	/* The second tap owns the session but has not crossed drag_start_move yet.
+	 * Keep this separate from drag_active: edge continuation must start only
+	 * after real drag motion begins. / 二回目tapはsessionを所有するが、まだ
+	 * drag_start_moveを越えていない。drag_activeとは分け、edge continuationは
+	 * 実際のdrag移動開始後だけ動く。 */
+	bool drag_motion_active;
+	bool drag_claim_authorized;
 	bool sensor_reset;
 	bool session_suppressed;
 	uint32_t shadow_frame_seq;
 	uint32_t drag_ownership_frame_seq;
 	bool drag_start_pending;
+	uint32_t tap_generation;
+	uint32_t deferred_click_generation;
 };
 
 static int absolute_int(int value)
@@ -195,29 +203,31 @@ static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
 	}
 }
 
-static void start_drag(struct tap_drag_data *data);
+static void start_drag_motion(struct tap_drag_data *data);
+static void request_drag_claim(struct tap_drag_data *data);
 
 static void tap_drag_resolve_action(void *context, const struct travelers_pad_owner_token *token,
 				    uint32_t ownership_frame_seq)
 {
 	struct tap_drag_data *data = context;
 
-	ARG_UNUSED(token);
 	if (!data->drag_start_pending || data->drag_ownership_frame_seq != ownership_frame_seq) {
 		return;
 	}
 	data->drag_start_pending = false;
-	if (!travelers_pad_arbiter_authorize_output(
-			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button")) {
+	if (token == NULL || !token->valid || token->owner != TRAVELERS_PAD_OWNER_DRAG) {
 		drag_tracking = false;
 		data->drag_position_valid = false;
 		return;
 	}
-	report_button(data->dev, data->drag_fingers, true);
-	data->button_down = true;
-	drag_active = true;
-	LOG_INF("%uF double-tap drag button dispatched by arbiter", data->drag_fingers);
+	/* Do not send a click yet. A host performs a double-click action on the
+	 * second button-down, before it can observe whether the user moves. Hold
+	 * the HID output until drag intent is spatially confirmed.
+	 * ここではまだclickを送らない。hostはユーザーが移動したかを観測する前、二回目
+	 * button-down時点でdouble-click actionを実行する。drag意思が距離で確定するまで
+	 * HID出力を保留する。 */
+	data->drag_claim_authorized = true;
+	LOG_INF("%uF double-tap drag armed by arbiter; awaiting movement", data->drag_fingers);
 }
 
 static void deferred_click_work(struct k_work *work)
@@ -225,18 +235,19 @@ static void deferred_click_work(struct k_work *work)
 	struct tap_drag_data *data = CONTAINER_OF(work, struct tap_drag_data,
 						     deferred_click_work.work);
 
-	if (data->first_valid) {
+	if (data->first_valid && data->deferred_click_generation == data->tap_generation) {
 		LOG_INF("%uF single tap confirmed", data->first_fingers);
 		report_click(data->dev, data->first_fingers);
 		data->first_valid = false;
 	}
 }
 
-static void start_drag(struct tap_drag_data *data)
+static void request_drag_claim(struct tap_drag_data *data)
 {
-	/* Shadow only: the legacy router still observes drag_tracking directly and
-	 * this function still emits the established button/motion reports. */
-	(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+	/* Claim the candidate now, but keep HID silent until motion crosses the
+	 * drag threshold. / 二回目接触は今claimするが、移動がdrag閾値を越えるまで
+	 * HID出力は保留する。 */
+	if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 		.frame_seq = data->shadow_frame_seq,
 		.recognizer = TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 		.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
@@ -244,8 +255,17 @@ static void start_drag(struct tap_drag_data *data)
 		.capabilities = TRAVELERS_PAD_CAP_POINTER_DELTA | TRAVELERS_PAD_CAP_BUTTON,
 		.contact_count = data->fingers,
 		.evidence = data->drag_fingers,
-	});
+	})) {
+		LOG_WRN("%uF double-tap drag claim proposal rejected", data->drag_fingers);
+		return;
+	}
 	data->drag_ownership_frame_seq = data->shadow_frame_seq;
+	data->drag_start_pending = true;
+	LOG_INF("%uF double-tap drag claim awaiting arbiter dispatch", data->drag_fingers);
+}
+
+static void start_drag_motion(struct tap_drag_data *data)
+{
 	/* The movement that merely crosses the drag activation threshold must not
 	 * displace the grabbed object. The router has already suppressed ordinary
 	 * pointer output while this double-tap candidate is tracked, so rebase at
@@ -253,11 +273,22 @@ static void start_drag(struct tap_drag_data *data)
 	 * ドラッグ開始閾値を越えるためだけの移動で、掴んだ対象をずらしてはならない。
 	 * double-tap候補の追跡中はrouterが通常ポインタ出力を抑止済みなので、開始frameで
 	 * 基準を現在座標へ再設定し、以後の移動だけをボタン押下中に送信する。 */
+	if (!travelers_pad_arbiter_authorize_output(
+			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON,
+			"tap-drag-button")) {
+		data->drag_claim_authorized = false;
+		drag_tracking = false;
+		return;
+	}
+	report_button(data->dev, data->drag_fingers, true);
+	data->button_down = true;
 	data->drag_previous_x = data->x;
 	data->drag_previous_y = data->y;
 	data->drag_position_valid = true;
-	data->drag_start_pending = true;
-	LOG_INF("%uF double-tap drag awaiting arbiter dispatch", data->drag_fingers);
+	data->drag_motion_active = true;
+	drag_active = true;
+	LOG_INF("%uF double-tap drag motion started", data->drag_fingers);
 }
 
 static bool matches_first_tap(const struct tap_drag_data *data, const struct tap_drag_config *cfg,
@@ -269,14 +300,17 @@ static bool matches_first_tap(const struct tap_drag_data *data, const struct tap
 	       absolute_int((int)data->y - data->first_y) <= cfg->double_tap_max_distance;
 }
 
-static void start_double_tap_candidate(struct tap_drag_data *data, const struct tap_drag_config *cfg)
+static void start_double_tap_candidate(struct tap_drag_data *data)
 {
 	data->second_tap = true;
 	k_work_cancel_delayable(&data->deferred_click_work);
+	data->tap_generation++;
+	data->drag_claim_authorized = false;
 	data->first_valid = false;
 	data->drag_fingers = data->fingers;
 	drag_tracking = true;
-	LOG_INF("%uF double-tap candidate; waiting for movement or release", data->drag_fingers);
+	request_drag_claim(data);
+	LOG_INF("%uF double-tap candidate; drag claim requested", data->drag_fingers);
 }
 
 static void begin_contact(struct tap_drag_data *data, const struct tap_drag_config *cfg, int64_t now)
@@ -300,7 +334,7 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 			data->first_y, now - data->first_released_ms);
 	}
 	if (matches_first_tap(data, cfg, now)) {
-		start_double_tap_candidate(data, cfg);
+		start_double_tap_candidate(data);
 	}
 }
 
@@ -311,11 +345,18 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		/* An exclusive owner (scroll, edge dial, gesture, or Tip-Tap) must
 		 * preserve a deferred click from an earlier session, but must never turn
 		 * its own release into a 2F tap. */
+		if (data->button_down) {
+			report_button(dev, data->drag_fingers, false);
+			data->button_down = false;
+		}
+		drag_active = false;
 		LOG_INF("%uF tap suppressed: exclusive owner=%u", data->max_fingers,
 			travelers_pad_session_owner());
 		data->session_suppressed = false;
 		data->second_tap = false;
 		drag_tracking = false;
+		data->drag_start_pending = false;
+		data->drag_claim_authorized = false;
 		return;
 	}
 	bool valid_tap = !data->moved && data->max_fingers >= 1 && data->max_fingers <= 3 &&
@@ -328,14 +369,27 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		report_button(dev, data->drag_fingers, false);
 		drag_active = false;
 		drag_tracking = false;
-		LOG_INF("%uF drag dropped", data->drag_fingers);
+		LOG_INF("%uF drag released", data->drag_fingers);
 		data->button_down = false;
+		data->drag_motion_active = false;
 		data->drag_position_valid = false;
 	} else if (data->second_tap) {
-		if (!data->moved) {
-			LOG_INF("%uF double tap released without drag", data->max_fingers);
-			report_click(dev, data->max_fingers);
-			report_click(dev, data->max_fingers);
+		if (!data->moved && data->drag_claim_authorized) {
+			/* No meaningful movement occurred during the second contact, so it is
+			 * a double click. Neither click was sent before this release.
+			 * 二回目接触中に有意な移動がなかったためdouble clickとする。ここまで
+			 * いずれのclickも送っていない。 */
+			report_click(dev, data->drag_fingers);
+			report_click(dev, data->drag_fingers);
+			LOG_INF("%uF double-tap completed on release", data->drag_fingers);
+		} else {
+			/* Preserve the first tap only if a competing owner prevented this
+			 * candidate from becoming a drag or double click.
+			 * 競合ownerによりこの候補をdrag/double clickにできなかった場合は、
+			 * 一回目tapだけを保持する。 */
+			report_click(dev, data->drag_fingers);
+			LOG_INF("%uF double-tap not armed; delivering first tap only",
+				data->drag_fingers);
 		}
 		drag_tracking = false;
 	} else if (valid_tap) {
@@ -346,9 +400,11 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		data->first_x = data->start_x;
 		data->first_y = data->start_y;
 		data->first_fingers = data->max_fingers;
+		data->tap_generation++;
+		data->deferred_click_generation = data->tap_generation;
 		k_work_schedule(&data->deferred_click_work, K_MSEC(cfg->double_tap_max_gap_ms));
 	} else {
-		LOG_INF("%uF tap rejected: duration=%lld ms moved=%d max=%u", data->max_fingers,
+		LOG_INF("%uF tap rejected: duration=%lld ms moved=%d limit-ms=%u", data->max_fingers,
 			now - data->started_ms, data->moved, cfg->tap_max_ms);
 		data->first_valid = false;
 		k_work_cancel_delayable(&data->deferred_click_work);
@@ -364,6 +420,14 @@ static void process_frame(const struct device *dev)
 
 	if (data->fingers != 0) {
 		if (!travelers_pad_session_tap_allowed()) {
+			if (data->button_down) {
+				report_button(dev, data->drag_fingers, false);
+				data->button_down = false;
+			}
+			drag_active = false;
+			data->drag_motion_active = false;
+			data->drag_start_pending = false;
+			data->drag_claim_authorized = false;
 			data->session_suppressed = true;
 			data->second_tap = false;
 			drag_tracking = false;
@@ -414,6 +478,8 @@ static void process_frame(const struct device *dev)
 					data->fingers);
 				report_click(dev, data->drag_fingers);
 				data->second_tap = false;
+				data->drag_start_pending = false;
+				data->drag_claim_authorized = false;
 				drag_tracking = false;
 			}
 			if (established_contact_moved) {
@@ -440,7 +506,7 @@ static void process_frame(const struct device *dev)
 		 * report. This is essential for a simultaneous 2F/3F double tap. */
 		if (!data->second_tap && !data->button_down && data->max_fingers == data->fingers &&
 		    matches_first_tap(data, cfg, now)) {
-			start_double_tap_candidate(data, cfg);
+			start_double_tap_candidate(data);
 		}
 		if (data->fingers < data->max_fingers && !data->button_down) {
 			/* A multi-finger release is not electrically simultaneous: the EV02
@@ -468,12 +534,14 @@ static void process_frame(const struct device *dev)
 			   absolute_int((int)data->y - data->start_y) > cfg->tap_max_move) {
 			data->moved = true;
 		}
-		if (data->second_tap && !data->button_down &&
+		if (data->second_tap && !data->button_down && data->drag_claim_authorized &&
+		    !data->drag_motion_active &&
 		    (absolute_int((int)data->x - data->start_x) >= cfg->drag_start_move ||
 		     absolute_int((int)data->y - data->start_y) >= cfg->drag_start_move)) {
-			start_drag(data);
+			start_drag_motion(data);
 		}
-		if (data->button_down && data->fingers == data->drag_fingers) {
+		if (data->button_down && data->drag_motion_active &&
+		    data->fingers == data->drag_fingers) {
 			if (data->drag_position_valid) {
 				if (travelers_pad_arbiter_authorize_output(
 					data->drag_ownership_frame_seq,
@@ -487,7 +555,7 @@ static void process_frame(const struct device *dev)
 			data->drag_previous_x = data->x;
 			data->drag_previous_y = data->y;
 			data->drag_position_valid = true;
-		} else if (data->button_down) {
+		} else if (data->button_down && data->drag_motion_active) {
 			/* Do not convert a partial 2F/3F release into a centroid jump. The
 			 * next complete frame is used only to rebase drag motion. */
 			data->drag_position_valid = false;
@@ -559,7 +627,7 @@ static int tap_drag_init(const struct device *dev)
 		.multifinger_settle_ms = DT_INST_PROP_OR(n, multifinger_settle_ms, 45),              \
 		.double_tap_max_gap_ms = DT_INST_PROP_OR(n, double_tap_max_gap_ms, 250),             \
 		.double_tap_max_distance = DT_INST_PROP_OR(n, double_tap_max_distance, 120),          \
-		.drag_start_move = DT_INST_PROP_OR(n, drag_start_move, 20),                          \
+		.drag_start_move = DT_INST_PROP_OR(n, drag_start_move, 8),                           \
 	};                                                                                           \
 	static void tap_drag_input_handler_##n(struct input_event *evt)                            \
 	{                                                                                            \

@@ -33,7 +33,7 @@ scroll, acceleration, or gesture policy back into the driver.
 | --- | --- | --- |
 | `driver/iqs9150/iqs9150_ev02_driver.c` | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
 | `function/iqs9150/core/` | 相対ポインタ、2本指スクロール、多指操作の排他判定 / pointer, scroll, exclusive multi-finger routing | 有効 / enabled |
-| `function/iqs9150/session/` | 接触session境界、shadow proposal/resolver/token基盤 / contact-session boundary and shadow proposal/resolver/token foundation | shadow移行中。出力は既存経路が正 / shadow migration; legacy output remains authoritative |
+| `function/iqs9150/session/` | 接触session境界、proposal/resolver/token基盤 / contact-session boundary and proposal/resolver/token foundation | hybrid移行中。primary出力はtoken gate済み、所有権経路は旧shared claim併用 / hybrid migration; primary output is token-gated while legacy shared claims remain |
 | `function/iqs9150/tap_drag/` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
 | `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
@@ -43,28 +43,37 @@ scroll, acceleration, or gesture policy back into the driver.
 ## 接触arbiter移行状況 / Contact-arbiter migration status
 
 現在、IQS9150 driverの正規化接触フレームは `iqs9150_session` だけが購読し、同じ
-frameを下流機能へ再配信します。このsession managerにはshadow arbiterがあり、論理frameの
-proposalを集め、queue経由の全recognizer通知を待って、callback登録順と無関係に仮のwinnerと
+frameを下流機能へ再配信します。このsession managerにはcontact arbiterがあり、論理frameの
+proposalを集め、queue経由の全recognizer通知を待って、callback登録順と無関係にwinnerと
 owner tokenを生成します。
-ただしこの段階で出力を拒否することはありません。既存のshared claim、HID、KSCAN経路が
-引き続き正であり、UXを変えずにlegacy結果とshadow結果を比較します。
+
+primary recognizerの初回・継続semantic出力は、そのtokenに対する出力許可を通過してから
+HIDまたはKSCANへ送信します。一方、session managerのshared claim、tap許可、pointer cancel、
+およびrecognizer間の直接状態問い合わせは、まだ旧経路を併用しています。そのため現段階は
+完全な単一経路ではなくhybrid移行です。arbiter結果とlegacy結果の差分をログに残しながら、
+所有権経路を段階的に置換します。
 
 At present, only `iqs9150_session` subscribes to normalized contact frames
 from the IQS9150 driver and republishes the same frame to downstream functions.
-Its shadow arbiter collects recognizer proposals for one logical frame and
+Its contact arbiter collects recognizer proposals for one logical frame and
 waits for every registered recognizer's queued-frame acknowledgement before
-producing a hypothetical winner and owner token. The result is independent of
-callback registration order. It never rejects output in this stage: the existing shared
-claim, HID, and KSCAN paths remain authoritative, so UX is unchanged while
-legacy and shadow results are compared.
+producing a winner and owner token independent of callback registration order.
+
+Initial and continuation semantic outputs from primary recognizers are sent to
+HID or KSCAN only after the token authorizes them. The session manager's shared
+claim, tap permission, pointer cancellation, and direct recognizer-state
+queries still use legacy paths, however. This is therefore a hybrid migration,
+not yet a single authoritative processing path; logs retain legacy-versus-
+arbiter comparisons while ownership routing is replaced incrementally.
 
 All five primary recognizers—the two-finger router, tap/drag, Tip-Tap,
-multi-finger gesture, and edge dial—now submit shadow proposals. Tip-Tap
-submits one claim for an anchored interaction; repeated taps while that anchor
-remains down share its hypothetical token. Three/four-finger swipes, five-finger
-Grasp/Release, and edge dial each submit one claim per contact session. Legacy
-output remains authoritative until all five move together to token-gated output.
-Edge hold and inertia remain later auxiliary and post-session migrations.
+multi-finger gesture, and edge dial—now submit proposals. Tip-Tap submits one
+claim for an anchored interaction; repeated taps while that anchor remains down
+share its token. Three/four-finger swipes, five-finger Grasp/Release, and edge
+dial each submit one claim per contact session. Their primary output is
+token-gated, while the legacy ownership route is retained temporarily for
+compatibility. Edge hold and inertia remain later auxiliary and post-session
+migrations.
 
 Every exclusive semantic output is also attached to the frame that established
 its shadow ownership. This output-gate preflight reports any future token-gate
@@ -79,9 +88,9 @@ Grasp/Release、edge dialは、それぞれ接触sessionごとに一つのclaim�
 token-gated outputへ一括移行するまでlegacy出力を正とします。edge holdとinertiaはそれぞれ
 後段のauxiliary、post-session移行とします。
 
-各排他的semantic出力は、そのshadow所有権を確立したframeにも紐づける。出力gate事前監査は、
-将来token gateが拒否する出力を記録するが、現時点では確立済みの出力経路を許可する。結合試験が
-合格すれば、別のrouting経路を増やさずに同じgateを一括でauthoritative rejectionへ切替できる。
+各排他的semantic出力は、その所有権を確立したframeにも紐づける。primary出力はtoken gateで
+実際に許可され、旧経路のreleaseなどには事前監査も残す。残る作業は、shared claimをarbiterの
+commit/cancel/end通知へ置換し、別のrouting経路を増やさずに所有権までarbiterへ一本化することである。
 
 ## マルチタッチ座標 / Multi-touch coordinates
 

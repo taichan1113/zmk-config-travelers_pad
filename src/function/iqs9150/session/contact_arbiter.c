@@ -1,16 +1,16 @@
 /*
  * Contact arbitration core / 接触仲裁core.
  *
- * Shadow stage: accept proposals emitted for one logical input frame, resolve
+ * Hybrid stage: accept proposals emitted for one logical input frame, resolve
  * them independently of callback order, and compare the result with the
  * legacy owner. Zephyr queues input callbacks, so resolution waits until every
- * registered shadow recognizer acknowledges that frame. No semantic output is
- * gated yet, so this file cannot change the established device UX.
+ * registered recognizer acknowledges that frame. Primary semantic output is
+ * token-gated, while the session manager still retains legacy shared claims.
  *
- * shadow段階: 一つの論理input frameに対して出たproposalを収集し、callback順に
+ * hybrid段階: 一つの論理input frameに対して出たproposalを収集し、callback順に
  * 依存せず解決してlegacy ownerと比較する。Zephyr input callbackはqueue方式のため、
- * 全registered shadow recognizerのframe通知を待つ。まだsemantic outputをgate
- * しないため、本ファイルは確立済みのUXを変更しない。
+ * 全registered recognizerのframe通知を待つ。primary semantic outputはtoken gateし、
+ * session managerのshared claimはまだ旧経路として残す。
  */
 
 #include <zephyr/logging/log.h>
@@ -89,9 +89,11 @@ static const char *owner_name(enum travelers_pad_owner owner)
 
 /* This table declares policy, rather than accidentally inheriting the order in
  * which Zephyr input callbacks were linked. Higher values win a same-frame
- * conflict. It is shadow-only until all five primary recognizers migrate.
+ * conflict. It is authoritative for primary token-gated output while legacy
+ * session ownership is migrated separately.
  * この表はZephyr input callbackのリンク順ではなく方針を明示する。同一frameの
- * 競合では大きい値が勝つ。primary recognizer全移行まではshadow専用である。 */
+ * 競合では大きい値が勝つ。primary出力に対しては正であり、legacy session所有権は
+ * 別途移行する。 */
 static uint8_t owner_priority(enum travelers_pad_owner owner)
 {
 	switch (owner) {
