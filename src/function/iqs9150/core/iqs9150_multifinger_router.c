@@ -19,7 +19,6 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
-#include <travelers_pad/edge_dial.h>
 #include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
@@ -200,19 +199,25 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 
-	/* An enabled edge claims a one-finger session as soon as the contact is
-	 * acquired. Keep all its raw frames out of the pointer path until release;
-	 * this prevents the initial edge travel before the first detent from moving
-	 * the cursor. Two-or-more-finger contacts never activate the edge function.
-	 * 有効辺は1本指接触を取得した時点で所有する。解放まで生フレームをポインタ経路
-	 * から除外し、最初のステップ前の辺移動でカーソルが動くことを防ぐ。2本指以上の
-	 * 接触はエッジ機能を有効化しない。 */
-	if (travelers_pad_edge_dial_is_active()) {
+	/* An enabled edge publishes EDGE_DIAL ownership as soon as it acquires the
+	 * one-finger contact. Keep all frames belonging to that arbiter owner out of
+	 * the pointer path until release; this prevents initial edge travel before
+	 * the first detent from moving the cursor. The router deliberately does not
+	 * inspect edge dial's private active flag.
+	 * 有効辺は1本指接触の取得と同時にEDGE_DIAL ownerをarbiterへ公開する。その
+	 * ownerに属するframeを解放までポインタ経路から除外し、最初のstep前の辺移動で
+	 * カーソルが動くことを防ぐ。routerはedge dial固有のactive flagを参照しない。 */
+	if (arbiter_owner == TRAVELERS_PAD_OWNER_EDGE_DIAL) {
 		if (data->state != ROUTER_EDGE_DIAL) {
 			router_cancel_pointer(dev);
 			data->state = ROUTER_EDGE_DIAL;
 			data->max_fingers = 1;
-			LOG_INF("edge dial owns 1F contact stream");
+			LOG_INF("arbiter edge dial owns 1F contact stream");
+		}
+		if (data->fingers == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+			LOG_INF("arbiter edge dial contact released; router idle");
 		}
 		return;
 	}
