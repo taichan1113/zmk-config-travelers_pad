@@ -1,9 +1,12 @@
 /*
  * Contact-session manager / 接触セッション管理器.
  *
- * Stage 1 only observes the normalized raw frame stream and establishes the
- * canonical session boundary. Legacy recognizers remain connected while they
- * are migrated one by one in later stages.
+ * The session manager observes the normalized raw frame stream and establishes
+ * the canonical session boundary. Contact ownership is intentionally absent:
+ * the arbiter is the only ownership authority.
+ *
+ * session managerは正規化済み生frameを観測し、正規のsession境界を確立する。
+ * 接触所有権は意図的に保持せず、arbiterだけを唯一の所有権authorityとする。
  */
 #define DT_DRV_COMPAT zmk_travelers_pad_contact_session_manager
 
@@ -27,48 +30,7 @@ struct session_data {
 	 * recognizerが同frameを処理する間は不変copyをarbiterへ渡す。 */
 	struct travelers_pad_session_snapshot dispatch_snapshot;
 	bool reset_pending;
-	bool ending_tap_allowed;
-	enum travelers_pad_owner ending_owner;
 };
-
-static struct session_data *primary_session;
-
-bool travelers_pad_session_claim(enum travelers_pad_owner owner)
-{
-	struct travelers_pad_session_snapshot *s;
-	if (!primary_session || primary_session->snapshot.session_id == 0) {
-		return false;
-	}
-	s = &primary_session->snapshot;
-	if (s->owner != TRAVELERS_PAD_OWNER_NONE && s->owner != owner) {
-		return false;
-	}
-	s->owner = owner;
-	s->owner_generation++;
-	if (owner != TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL) {
-		s->tap_allowed = false;
-	}
-	LOG_INF("session=%u owner=%u generation=%u", s->session_id, owner, s->owner_generation);
-	return true;
-}
-
-bool travelers_pad_session_tap_allowed(void)
-{
-	if (!primary_session) {
-		return true;
-	}
-	return primary_session->snapshot.contact_count == 0 ? primary_session->ending_tap_allowed :
-		primary_session->snapshot.tap_allowed;
-}
-
-enum travelers_pad_owner travelers_pad_session_owner(void)
-{
-	if (!primary_session) {
-		return TRAVELERS_PAD_OWNER_NONE;
-	}
-	return primary_session->snapshot.contact_count == 0 ? primary_session->ending_owner :
-		primary_session->snapshot.owner;
-}
 
 static void session_process(const struct device *dev)
 {
@@ -81,31 +43,23 @@ static void session_process(const struct device *dev)
 		}
 		data->dispatch_snapshot = *s;
 		data->dispatch_snapshot.contact_count = 0;
-		data->dispatch_snapshot.tap_allowed = false;
 		data->dispatch_snapshot.cancelled = true;
-		*s = (struct travelers_pad_session_snapshot){.tap_allowed = false, .cancelled = true};
-		data->ending_tap_allowed = false;
-		data->ending_owner = TRAVELERS_PAD_OWNER_NONE;
+		*s = (struct travelers_pad_session_snapshot){.cancelled = true};
 		data->reset_pending = false;
 		return;
 	}
 	if (s->contact_count && s->session_id == 0) {
 		s->session_id = ++data->next_session_id;
 		s->peak_contact_count = s->contact_count;
-		s->tap_allowed = true;
-		data->ending_tap_allowed = true;
 		LOG_INF("session=%u start contacts=%u", s->session_id, s->contact_count);
 	}
 	if (s->contact_count > s->peak_contact_count) {
 		s->peak_contact_count = s->contact_count;
 	}
 	if (s->contact_count == 0 && s->session_id) {
-		LOG_INF("session=%u end peak=%u owner=%u", s->session_id, s->peak_contact_count,
-			s->owner);
-		data->ending_tap_allowed = s->tap_allowed;
-		data->ending_owner = s->owner;
+		LOG_INF("session=%u end peak=%u", s->session_id, s->peak_contact_count);
 		data->dispatch_snapshot = *s;
-		*s = (struct travelers_pad_session_snapshot){.tap_allowed = true};
+		*s = (struct travelers_pad_session_snapshot){};
 		return;
 	}
 	data->dispatch_snapshot = *s;
@@ -126,11 +80,11 @@ static void session_input(const struct device *dev, struct input_event *evt)
 		data->snapshot.timestamp_ms = k_uptime_get();
 		session_process(dev);
 		/* The configured input mode is queued, not synchronous. Store the logical
-		 * frame now; each shadow recognizer later obtains its next unacknowledged
+		 * frame now; each arbiter recognizer later obtains its next unacknowledged
 		 * frame in FIFO order while handling the forwarded sync event. No extra
 		 * input event is injected, so a full queue cannot drop contact data.
 		 * 設定されたinput modeは同期でなくqueue方式である。論理frameをここで保存し、
-		 * 各shadow recognizerはforwardされたsync event処理時にFIFO順で未通知frameを
+		 * 各arbiter recognizerはforwardされたsync event処理時にFIFO順で未通知frameを
 		 * 得る。余分なinput eventを挿入しないため、満杯queueでも接触dataを落とさない。 */
 		travelers_pad_arbiter_begin_frame(&data->dispatch_snapshot);
 	}
@@ -143,10 +97,9 @@ static void session_input(const struct device *dev, struct input_event *evt)
 }
 
 #define SESSION_INST(n) \
-	static struct session_data session_data_##n = {.snapshot.tap_allowed = true, .ending_tap_allowed = true}; \
-	static int session_init_##n(const struct device *dev) { primary_session = dev->data; return 0; } \
+	static struct session_data session_data_##n; \
 	static void session_input_##n(struct input_event *evt) { session_input(DEVICE_DT_INST_GET(n), evt); } \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)), session_input_##n); \
-	DEVICE_DT_INST_DEFINE(n, session_init_##n, NULL, &session_data_##n, NULL, POST_KERNEL, \
+	DEVICE_DT_INST_DEFINE(n, NULL, NULL, &session_data_##n, NULL, POST_KERNEL, \
 		CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, NULL);
 DT_INST_FOREACH_STATUS_OKAY(SESSION_INST)

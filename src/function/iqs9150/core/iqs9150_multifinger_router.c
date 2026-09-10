@@ -58,7 +58,7 @@ struct router_data {
 	int32_t start_geometry_y;
 	uint32_t start_distance_squared;
 	bool sensor_reset;
-	uint32_t shadow_frame_seq;
+	uint32_t arbiter_frame_seq;
 	uint32_t scroll_ownership_frame_seq;
 	bool scroll_start_pending;
 };
@@ -158,7 +158,7 @@ static void router_process_frame(const struct device *dev)
 	uint32_t rotation_cross;
 	uint32_t primary_move;
 	enum travelers_pad_owner arbiter_owner =
-		travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+		travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 
 	/* A double-tap hold registers a provisional DRAG claim before its movement
 	 * threshold is crossed. The arbiter exposes that claim to this routing path,
@@ -231,7 +231,7 @@ static void router_process_frame(const struct device *dev)
 
 	if (data->fingers == 0) {
 		/* A terminal owner already emitted its semantic action. In particular,
-		 * Tip-Tap must not create the router's legacy synthetic 2F tap pair. */
+		 * Tip-Tap must not create the router's synthetic 2F tap pair. */
 		if (arbiter_owner == TRAVELERS_PAD_OWNER_TIP_TAP ||
 		    arbiter_owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE ||
 		    arbiter_owner == TRAVELERS_PAD_OWNER_EDGE_DIAL ||
@@ -356,7 +356,7 @@ static void router_process_frame(const struct device *dev)
 		 * scroll分類後の所有権経路はarbiterだけとする。resolverは不変decisionが
 		 * 確定してから最初のrouted frameを出力し、以後も同じtokenで検査する。 */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
-			.frame_seq = data->shadow_frame_seq,
+			.frame_seq = data->arbiter_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_ROUTER,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 			.requested_owner = TRAVELERS_PAD_OWNER_SCROLL,
@@ -367,7 +367,7 @@ static void router_process_frame(const struct device *dev)
 			LOG_WRN("2F scroll proposal rejected");
 			return;
 		}
-		data->scroll_ownership_frame_seq = data->shadow_frame_seq;
+		data->scroll_ownership_frame_seq = data->arbiter_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
 		data->scroll_start_pending = true;
 		LOG_INF("2F route=scroll proposed; awaiting arbiter dispatch");
@@ -396,11 +396,11 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 		}
 	}
 	if (evt->sync) {
-		data->shadow_frame_seq =
+		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_ROUTER);
 		router_process_frame(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_ROUTER,
-					       data->shadow_frame_seq);
+					       data->arbiter_frame_seq);
 	}
 }
 

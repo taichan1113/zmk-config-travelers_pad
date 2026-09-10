@@ -17,22 +17,22 @@ struct data {
 	kscan_callback_t callback; uint16_t x[TRAVELERS_PAD_MAX_CONTACTS], y[TRAVELERS_PAD_MAX_CONTACTS];
 	int32_t id[TRAVELERS_PAD_MAX_CONTACTS]; bool valid[TRAVELERS_PAD_MAX_CONTACTS]; uint8_t slot, fingers, previous;
 	uint8_t anchor, second; int32_t anchor_id, second_id; uint16_t ax, ay, sx, sy; int64_t second_start;
-	uint32_t shadow_frame_seq;
-	uint32_t shadow_ownership_frame_seq;
+	uint32_t arbiter_frame_seq;
+	uint32_t ownership_frame_seq;
 	/* The anchor may remain on the pad while several temporary second contacts
-	 * produce repeated Tip-Tap actions. A single shadow proposal therefore
+	 * produce repeated Tip-Tap actions. A single arbiter proposal therefore
 	 * represents that whole anchored interaction, rather than each repeat.
 	 * anchorを維持したまま一時的な2本目の接触でTip-Tapを繰返せる。そのため
-	 * shadow proposalは各repeatではなく、anchorを含む一連の操作を表す。 */
-	bool candidate, fired, reset, shadow_tip_owned, pending_action, pending_left;
+	 * arbiter proposalは各repeatではなく、anchorを含む一連の操作を表す。 */
+	bool candidate, fired, reset, tip_owned, pending_action, pending_left;
 	uint32_t pending_frame_seq;
 };
 static uint16_t absi(int value) { return value < 0 ? -value : value; }
 static void reset(struct data *d) {
 	d->candidate = false;
 	d->fired = false;
-	d->shadow_tip_owned = false;
-	d->shadow_ownership_frame_seq = 0;
+	d->tip_owned = false;
+	d->ownership_frame_seq = 0;
 	d->pending_action = false;
 	d->pending_frame_seq = 0;
 	d->anchor_id = -1;
@@ -60,7 +60,7 @@ static void tip_tap_resolve_action(void *context, const struct travelers_pad_own
 static bool claim_tip_tap(struct data *d)
 {
 	enum travelers_pad_owner owner =
-		travelers_pad_arbiter_owner_for_frame(d->shadow_frame_seq);
+		travelers_pad_arbiter_owner_for_frame(d->arbiter_frame_seq);
 
 	/* The first completed Tip-Tap establishes the ownership for its anchored
 	 * interaction. A competing committed/provisional primary owner makes this
@@ -72,7 +72,7 @@ static bool claim_tip_tap(struct data *d)
 		return false;
 	}
 
-	if (!d->shadow_tip_owned) {
+	if (!d->tip_owned) {
 		/* Submit the first completed action on its exact source frame. The
 		 * resolver now owns the decision; later repeat actions retain this
 		 * ownership frame and must pass the same token gate.
@@ -80,7 +80,7 @@ static bool claim_tip_tap(struct data *d)
 		 * resolverが行い、以後のrepeat actionはこのownership frameを保持して
 		 * 同じtoken gateを通過する。 */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
-			.frame_seq = d->shadow_frame_seq,
+			.frame_seq = d->arbiter_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 			.requested_owner = TRAVELERS_PAD_OWNER_TIP_TAP,
@@ -91,8 +91,8 @@ static bool claim_tip_tap(struct data *d)
 			LOG_WRN("Tip-Tap claim proposal rejected");
 			return false;
 		}
-		d->shadow_ownership_frame_seq = d->shadow_frame_seq;
-		d->shadow_tip_owned = true;
+		d->ownership_frame_seq = d->arbiter_frame_seq;
+		d->tip_owned = true;
 	}
 
 	return true;
@@ -121,12 +121,12 @@ static void process(const struct device *dev)
 		bool left=d->sx<d->ax; if (c->invert) left=!left; d->fired=true;
 		LOG_INF("Tip-Tap %s anchor=%d second=%d duration=%lld", left?"Left":"Right", d->anchor_id,d->second_id,now-d->second_start);
 		if (d->callback) {
-			if (d->shadow_ownership_frame_seq == d->shadow_frame_seq) {
+			if (d->ownership_frame_seq == d->arbiter_frame_seq) {
 				d->pending_action=true; d->pending_left=left;
-				d->pending_frame_seq=d->shadow_ownership_frame_seq;
+				d->pending_frame_seq=d->ownership_frame_seq;
 			} else {
 				if (!travelers_pad_arbiter_authorize_output(
-					d->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+					d->ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
 					TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 					"tip-tap")) {
 					return;
@@ -155,7 +155,7 @@ static int tip_tap_init(const struct device *dev)
 #define INST(n) \
 	static struct data data_##n={.anchor_id=-1,.second_id=-1}; \
 	static const struct cfg cfg_##n={.max_ms=DT_INST_PROP_OR(n,second_contact_timeout_ms,180),.slop=DT_INST_PROP_OR(n,contact_slop,75),.separation=DT_INST_PROP_OR(n,minimum_horizontal_separation,160),.invert=DT_INST_PROP_OR(n,direction_inverted,false)}; \
-	static void input_##n(struct input_event *e) { struct data *d=&data_##n; if(e->type==INPUT_EV_ABS) { if(e->code==INPUT_ABS_MT_SLOT)d->slot=e->value; else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID && d->slot<TRAVELERS_PAD_MAX_CONTACTS){d->valid[d->slot]=e->value>=0;d->id[d->slot]=e->value;} else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_POSITION_X && d->slot<TRAVELERS_PAD_MAX_CONTACTS)d->x[d->slot]=e->value; else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_POSITION_Y && d->slot<TRAVELERS_PAD_MAX_CONTACTS)d->y[d->slot]=e->value; else if(e->code==INPUT_ABS_Z)d->fingers=e->value; else if(e->code==INPUT_ABS_RZ && e->value)d->reset=true;} if(e->sync) { d->shadow_frame_seq=travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_TIP_TAP); process(DEVICE_DT_INST_GET(n)); travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_TIP_TAP,d->shadow_frame_seq); } } \
+	static void input_##n(struct input_event *e) { struct data *d=&data_##n; if(e->type==INPUT_EV_ABS) { if(e->code==INPUT_ABS_MT_SLOT)d->slot=e->value; else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_TRACKING_ID && d->slot<TRAVELERS_PAD_MAX_CONTACTS){d->valid[d->slot]=e->value>=0;d->id[d->slot]=e->value;} else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_POSITION_X && d->slot<TRAVELERS_PAD_MAX_CONTACTS)d->x[d->slot]=e->value; else if(e->code==TRAVELERS_PAD_INPUT_ABS_MT_POSITION_Y && d->slot<TRAVELERS_PAD_MAX_CONTACTS)d->y[d->slot]=e->value; else if(e->code==INPUT_ABS_Z)d->fingers=e->value; else if(e->code==INPUT_ABS_RZ && e->value)d->reset=true;} if(e->sync) { d->arbiter_frame_seq=travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_TIP_TAP); process(DEVICE_DT_INST_GET(n)); travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_TIP_TAP,d->arbiter_frame_seq); } } \
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n,input_device)),input_##n); \
 	DEVICE_DT_INST_DEFINE(n,tip_tap_init,NULL,&data_##n,&cfg_##n,POST_KERNEL,CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY,&api);
 DT_INST_FOREACH_STATUS_OKAY(INST)

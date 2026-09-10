@@ -41,7 +41,7 @@ struct scroll_inertia_data {
 	int16_t vertical_velocity;
 	bool emitting;
 	bool release_pending;
-	uint32_t shadow_frame_seq;
+	uint32_t arbiter_frame_seq;
 	struct k_work_delayable work;
 };
 
@@ -139,7 +139,7 @@ static void inertia_handle_contact(const struct device *dev, struct input_event 
 		return;
 	}
 
-	owner = travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+	owner = travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 	if (data->release_pending && data->contact_fingers == 0) {
 		if (owner == TRAVELERS_PAD_OWNER_SCROLL &&
 		    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
@@ -203,13 +203,13 @@ static int inertia_init(const struct device *dev)
 	{                                                                                            \
 		struct scroll_inertia_data *data = &scroll_inertia_data_##n;                             \
 		if (evt->sync) {                                                                          \
-			data->shadow_frame_seq = travelers_pad_arbiter_next_frame(                              \
+			data->arbiter_frame_seq = travelers_pad_arbiter_next_frame(                              \
 				TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);                                            \
 		}                                                                                         \
 		inertia_handle_contact(DEVICE_DT_INST_GET(n), evt);                                      \
 		if (evt->sync) {                                                                          \
 			travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,                \
-				data->shadow_frame_seq);                                                            \
+				data->arbiter_frame_seq);                                                            \
 		}                                                                                         \
 	}                                                                                            \
 	static void scroll_inertia_wheel_handler_##n(struct input_event *evt)                        \

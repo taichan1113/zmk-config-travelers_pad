@@ -251,12 +251,12 @@
         status = "okay";
     };
 
-    /* Shadow-arbiter stage: the session manager is the sole raw subscriber,
-     * republishes normalized frames, and compares router/tap-drag proposals
-     * with legacy ownership. Existing semantic output remains authoritative.
-     * shadow arbiter段階: session managerだけが生入力を購読し、正規化frameを
-     * 再配信してrouter/tap-drag proposalをlegacy ownerと比較する。既存の
-     * semantic outputは引き続き正とする。 */
+    /* Contact arbiter: the session manager is the sole raw subscriber and
+     * republishes normalized frames. All primary ownership is resolved here;
+     * observer continuations are explicitly delegated by the live token.
+     * contact arbiter: session managerだけが生入力を購読して正規化frameを再配信
+     * する。全primaryの所有権はここで解決し、observerの継続出力はlive tokenから
+     * 明示的に委譲する。 */
     iqs9150_session: iqs9150_session {
         compatible = "zmk,travelers-pad-contact-session-manager";
         input-device = <&iqs9150>;
@@ -272,10 +272,10 @@
      * 生フレームを入力として使う。 */
     iqs9150_tap_drag: iqs9150_tap_drag {
         compatible = "zmk,travelers-pad-iqs9150-tap-drag";
-        /* The router observes this function's double-tap-drag ownership state.
-         * In this integration profile its HID listener is enabled as well.
-         * routerはこの機能のdouble-tap-drag所有状態を参照する。この結合試験では
-         * HID listenerも有効にする。 */
+        /* Ownership is exchanged only through the contact arbiter. Its HID
+         * listener is enabled in this integration profile.
+         * 所有権はcontact arbiterだけを介して扱う。この結合profileではHID listenerも
+         * 有効にする。 */
         input-device = <&iqs9150_session>;
         tap-max-ms = <180>;
         tap-max-move = <75>;

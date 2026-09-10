@@ -1,16 +1,14 @@
 /*
  * Travelers Pad contact-arbiter vocabulary.
  *
- * This API is intentionally separate from the legacy shared-claim API. During
- * the hybrid migration recognizers submit immutable proposals, the resolver
- * selects the arbiter owner, and compatibility users may still consult the
- * legacy session state. Primary semantic output already requires the issued
- * token; later stages remove the remaining compatibility ownership paths.
+ * Recognizers submit immutable proposals and the resolver selects the only
+ * contact owner. Primary semantic output requires the issued token, while
+ * auxiliary continuation output is delegated explicitly by that live token.
  *
  * Travelers Pad 接触arbiter用の共通語彙。
- * legacy shared-claim APIとは意図的に分離する。hybrid移行中はrecognizerが
- * 不変proposalを提出し、resolverがarbiter ownerを選ぶ。primary semantic出力は
- * すでに発行tokenを必須とし、後段で残る互換所有権経路を除去する。
+ * recognizerが不変proposalを提出し、resolverが唯一のcontact ownerを選ぶ。
+ * primary semantic出力には発行tokenを必須とし、補助継続出力もlive tokenから
+ * 明示的に委譲する。
  */
 #ifndef TRAVELERS_PAD_CONTACT_ARBITER_H_
 #define TRAVELERS_PAD_CONTACT_ARBITER_H_
@@ -19,6 +17,16 @@
 #include <stdint.h>
 
 #include <travelers_pad/contact_session.h>
+
+enum travelers_pad_owner {
+	TRAVELERS_PAD_OWNER_NONE,
+	TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL,
+	TRAVELERS_PAD_OWNER_DRAG,
+	TRAVELERS_PAD_OWNER_SCROLL,
+	TRAVELERS_PAD_OWNER_MULTI_GESTURE,
+	TRAVELERS_PAD_OWNER_EDGE_DIAL,
+	TRAVELERS_PAD_OWNER_TIP_TAP,
+};
 
 enum travelers_pad_recognizer_id {
 	TRAVELERS_PAD_RECOGNIZER_ROUTER,
@@ -64,8 +72,8 @@ enum travelers_pad_token_kind {
 	TRAVELERS_PAD_TOKEN_POST_SESSION,
 };
 
-/* Evidence is recognizer-local and only used for trace diagnostics in the
- * shadow phase. It must never affect callback ordering. */
+/* Evidence is recognizer-local trace data only. It must never affect callback
+ * ordering or the resolver policy. */
 struct travelers_pad_arbiter_proposal {
 	uint32_t frame_seq;
 	enum travelers_pad_recognizer_id recognizer;
@@ -115,9 +123,6 @@ void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapsh
 uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recognizer);
 bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *proposal);
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq);
-void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
-						enum travelers_pad_owner legacy_owner);
-
 /* Return the arbiter owner applicable while processing one forwarded frame.
  * A CLAIM is visible as a provisional owner before all queued recognizers
  * have acknowledged the frame. Once resolved it becomes the committed owner;
@@ -130,27 +135,26 @@ void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
  * recognizer固有の可変flagを直接参照せず、非互換な生経路を抑止できる。 */
 enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq);
 
-/* Attach a semantic output to the frame which established its ownership. If
- * that frame has not resolved yet, the receipt is checked by the resolver;
- * otherwise it is checked against the saved resolved decision. Shadow mode
- * always permits output, but this is the exact call site that becomes
- * authoritative in the next migration stage.
- * semantic出力を、その所有権を確立したframeへ紐づける。対象frameが未解決なら
- * resolverがreceiptを検査し、解決済みなら保存済み決定と照合する。shadow段階では
- * 常に出力を許可するが、次の移行段階でこの呼出箇所をauthoritativeにする。 */
-bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
+/* Record a terminal release against the frame that established its ownership.
+ * Releases are deliberately never blocked: a stale token must not leave a
+ * host button held. The record is diagnostic only and can expose an invalid
+ * release path without changing that fail-safe rule.
+ * terminal releaseを、その所有権を確立したframeへ記録する。stale tokenによって
+ * ホストのボタンが押下状態に残らないよう、releaseは意図的に止めない。この記録は
+ * 診断専用であり、安全側の規則を変えずに不正なrelease経路を検出する。 */
+bool travelers_pad_arbiter_note_terminal_output(uint32_t ownership_frame_seq,
 					 enum travelers_pad_recognizer_id recognizer,
 					 enum travelers_pad_owner requested_owner,
 					 uint32_t capability,
 					 const char *producer);
 
-/* Check a semantic action against an already-resolved token. Unlike the
- * shadow preflight API this is authoritative and returns false on mismatch.
+/* Check a semantic action against an already-resolved token. This is
+ * authoritative and returns false on mismatch.
  * It is used by resolver-dispatched first actions and primary recognizers'
  * continuation actions. Releases remain fail-safe so a stale token cannot
  * leave a host button held.
- * 解決済みtokenに対してsemantic actionを照合する。shadow preflight APIと異なり
- * これはauthoritativeで、不一致ならfalseを返す。resolver-dispatchされた初回
+ * 解決済みtokenに対してsemantic actionを照合する。これはauthoritativeで、不一致なら
+ * falseを返す。resolver-dispatchされた初回
  * actionおよびprimary recognizerの継続actionで使用する。releaseはstale tokenで
  * host側のボタンが押下状態に残らないよう、常に安全側で送る。 */
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
@@ -168,14 +172,5 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 bool travelers_pad_arbiter_authorize_auxiliary_output(
 	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
 	uint32_t capability, const char *producer);
-
-/* The semantic gate is observational until the authoritative migration. It
- * reports invalid tokens but deliberately permits output in this phase.
- * semantic gateはauthoritative移行まで観測専用である。不正tokenを記録するが、
- * 現段階では意図的に出力を許可する。 */
-bool travelers_pad_arbiter_shadow_gate(const char *producer,
-					const struct travelers_pad_owner_token *token,
-					uint32_t capability);
-const struct travelers_pad_owner_token *travelers_pad_arbiter_shadow_token(void);
 
 #endif

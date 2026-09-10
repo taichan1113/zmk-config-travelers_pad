@@ -33,7 +33,7 @@ scroll, acceleration, or gesture policy back into the driver.
 | --- | --- | --- |
 | `driver/iqs9150/iqs9150_ev02_driver.c` | IQS9150を生の接触フレームへ変換 / IQS9150 to raw contact frames | 有効 / enabled |
 | `function/iqs9150/core/` | 相対ポインタ、2本指スクロール、多指操作の排他判定 / pointer, scroll, exclusive multi-finger routing | 有効 / enabled |
-| `function/iqs9150/session/` | 接触session境界、proposal/resolver/token基盤 / contact-session boundary and proposal/resolver/token foundation | hybrid移行中。primary出力はtoken gate済み、所有権経路は旧shared claim併用 / hybrid migration; primary output is token-gated while legacy shared claims remain |
+| `function/iqs9150/session/` | 接触session境界、proposal/resolver/token基盤 / contact-session boundary and proposal/resolver/token foundation | 単一の所有権経路。primary出力と補助継続出力をtokenで制御 / single ownership path; tokens gate primary and delegated continuation output |
 | `function/iqs9150/tap_drag/` | 1〜3本指タップ、ダブルタップ＋移動開始ドラッグ / one-to-three-finger taps and double-tap-move drag | 有効 / enabled |
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
 | `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
@@ -42,60 +42,39 @@ scroll, acceleration, or gesture policy back into the driver.
 
 ## 接触arbiter移行状況 / Contact-arbiter migration status
 
-現在、IQS9150 driverの正規化接触フレームは `iqs9150_session` だけが購読し、同じ
-frameを下流機能へ再配信します。このsession managerにはcontact arbiterがあり、論理frameの
-proposalを集め、queue経由の全recognizer通知を待って、callback登録順と無関係にwinnerと
-owner tokenを生成します。
+IQS9150 driverの正規化接触フレームを購読するのは `iqs9150_session` だけです。session managerは
+不変のsession境界とframe連番を付け、同じframeを下流へ再配信します。contact arbiterは、5つの
+primary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial）のproposalを収集し、
+全recognizerのFIFO確認後に、callback登録順と無関係な唯一のwinnerとowner tokenを決定します。
 
-primary recognizerの初回・継続semantic出力は、そのtokenに対する出力許可を通過してから
-HIDまたはKSCANへ送信します。arbiterは暫定claim・確定owner・terminal ownerをframe単位で
-保持し、routerのdrag／edge dial抑止、terminal判定、多指gestureのdrag排他、およびtap/dragの
-他owner抑止はこの状態を参照します。session managerのshared claimは、inertiaなど未移行の補助
-consumer向けにまだ残ります。そのため現段階は完全な単一経路ではなくhybrid移行です。arbiter結果と
-legacy結果の差分をログに残しながら、所有権経路を段階的に置換します。
+primaryの初回・継続semantic出力は、確定tokenのcapability検査を通過してからHIDまたはKSCANへ
+送ります。暫定claimは未確定の間に互換性のない生経路を抑止するだけで、出力を許可しません。
+terminal frameでもownerを参照でき、button releaseはホスト側で押下状態が残らないよう安全側で必ず
+送信します。
 
-At present, only `iqs9150_session` subscribes to normalized contact frames
-from the IQS9150 driver and republishes the same frame to downstream functions.
-Its contact arbiter collects recognizer proposals for one logical frame and
-waits for every registered recognizer's queued-frame acknowledgement before
-producing a winner and owner token independent of callback registration order.
+`scroll_inertia` と `edge_hold_continue` はownerを獲得しないobserverです。前者は物理的な解放を
+scroll tokenへ対応付け、後者はdragまたはaxis-locked scrollのlive tokenからだけtimer出力を
+委譲されます。これにより、shared claim APIや認識器間のprivate mutable flagなしに、遅延出力を
+release・cancel・所有権移行後に停止できます。
 
-Initial and continuation semantic outputs from primary recognizers are sent to
-HID or KSCAN only after the token authorizes them. The arbiter retains a
-provisional claim, committed owner, and terminal owner per frame; the router
-uses that state for drag/edge-dial suppression and terminal routing; the
-multi-finger recognizer uses it for drag exclusion, and tap/drag uses it to
-exclude all competing primary owners. The session manager's shared claim still
-remains for unmigrated auxiliary consumers such as inertia. This is therefore
-a hybrid migration, not yet a single authoritative processing path; logs retain
-legacy-versus-arbiter comparisons while ownership routing is replaced
-incrementally.
+Only `iqs9150_session` subscribes to normalized IQS9150 contact frames. It
+adds immutable session/frame metadata and republishes each frame. The contact
+arbiter collects proposals from five primary recognizers—the two-finger router,
+tap/drag, Tip-Tap, multi-finger gesture, and edge dial—and, after every FIFO
+acknowledgement, selects one winner and owner token independently of callback
+registration order.
 
-All five primary recognizers—the two-finger router, tap/drag, Tip-Tap,
-multi-finger gesture, and edge dial—now submit proposals. Tip-Tap submits one
-claim for an anchored interaction; repeated taps while that anchor remains down
-share its token. Three/four-finger swipes, five-finger Grasp/Release, and edge
-dial each submit one claim per contact session. Their primary output is
-token-gated, while the legacy ownership route is retained temporarily for
-compatibility. Edge hold and inertia remain later auxiliary and post-session
-migrations.
+Initial and continuation primary output reaches HID or KSCAN only after the
+committed token authorizes its capability. A provisional claim merely suppresses
+an incompatible raw route while resolution is pending; it never authorizes
+output. The terminal frame retains owner visibility, while button releases are
+always sent as a fail-safe against a stuck host button.
 
-Every exclusive semantic output is also attached to the frame that established
-its shadow ownership. This output-gate preflight reports any future token-gate
-rejection while still allowing the established output path. Once its integrated
-test is clean, these same gates can switch together to authoritative rejection
-without adding another routing path.
-
-5つのprimary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial）は
-すべてshadow proposalを提出します。Tip-Tapはanchorを維持する一連の操作で一つのclaimだけを
-提出し、anchor維持中の繰返しtapは同じ仮想tokenを共有します。3/4本指swipe、5本指
-Grasp/Release、edge dialは、それぞれ接触sessionごとに一つのclaimを提出します。5機能を
-token-gated outputへ一括移行するまでlegacy出力を正とします。edge holdとinertiaはそれぞれ
-後段のauxiliary、post-session移行とします。
-
-各排他的semantic出力は、その所有権を確立したframeにも紐づける。primary出力はtoken gateで
-実際に許可され、旧経路のreleaseなどには事前監査も残す。残る作業は、shared claimをarbiterの
-commit/cancel/end通知へ置換し、別のrouting経路を増やさずに所有権までarbiterへ一本化することである。
+`scroll_inertia` and `edge_hold_continue` are observers, not owners. The former
+associates a physical release with a scroll token; the latter receives delayed
+timer-output delegation only from a live drag or axis-locked scroll token. This
+stops delayed output after release, cancellation, or ownership hand-off without
+a shared-claim API or recognizer-private mutable flags.
 
 ## マルチタッチ座標 / Multi-touch coordinates
 

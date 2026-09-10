@@ -22,20 +22,10 @@
 
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/contact_arbiter.h>
-#include <travelers_pad/tap_drag.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
 #define TRAVELERS_PAD_DRAG_MAX_FRAME_DELTA 256
-static bool drag_active;
-static bool drag_tracking;
-
-bool travelers_pad_tap_drag_is_active(void)
-{
-	return drag_active;
-}
-
-bool travelers_pad_tap_drag_is_tracking(void) { return drag_tracking; }
 
 struct tap_drag_config {
 	uint16_t tap_max_ms;
@@ -78,10 +68,10 @@ struct tap_drag_data {
 	bool second_tap;
 	bool button_down;
 	/* The second tap owns the session but has not crossed drag_start_move yet.
-	 * Keep this separate from drag_active: edge continuation must start only
-	 * after real drag motion begins. / 二回目tapはsessionを所有するが、まだ
-	 * drag_start_moveを越えていない。drag_activeとは分け、edge continuationは
-	 * 実際のdrag移動開始後だけ動く。 */
+	 * Keep this separate from button_down: edge continuation is delegated only
+	 * after the arbiter has committed the drag token. / 二回目tapはsessionを所有
+	 * するが、まだdrag_start_moveを越えていない。button_downとは分け、edge
+	 * continuationはarbiterがdrag tokenを確定後にだけ委譲する。 */
 	bool drag_motion_active;
 	bool drag_claim_authorized;
 	bool sensor_reset;
@@ -92,7 +82,7 @@ struct tap_drag_data {
 	 * 抑止の原因となったarbiter ownerを保持する。terminal frameはlive tokenが
 	 * 失効した後に処理され得るため、その時点で問い合わせるだけでは原因を失う。 */
 	enum travelers_pad_owner suppressed_owner;
-	uint32_t shadow_frame_seq;
+	uint32_t arbiter_frame_seq;
 	uint32_t drag_ownership_frame_seq;
 	bool drag_start_pending;
 	uint32_t tap_generation;
@@ -235,7 +225,6 @@ static void tap_drag_resolve_action(void *context, const struct travelers_pad_ow
 	}
 	data->drag_start_pending = false;
 	if (token == NULL || !token->valid || token->owner != TRAVELERS_PAD_OWNER_DRAG) {
-		drag_tracking = false;
 		data->drag_position_valid = false;
 		return;
 	}
@@ -267,7 +256,7 @@ static void request_drag_claim(struct tap_drag_data *data)
 	 * drag threshold. / 二回目接触は今claimするが、移動がdrag閾値を越えるまで
 	 * HID出力は保留する。 */
 	if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
-		.frame_seq = data->shadow_frame_seq,
+		.frame_seq = data->arbiter_frame_seq,
 		.recognizer = TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 		.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 		.requested_owner = TRAVELERS_PAD_OWNER_DRAG,
@@ -278,7 +267,7 @@ static void request_drag_claim(struct tap_drag_data *data)
 		LOG_WRN("%uF double-tap drag claim proposal rejected", data->drag_fingers);
 		return;
 	}
-	data->drag_ownership_frame_seq = data->shadow_frame_seq;
+	data->drag_ownership_frame_seq = data->arbiter_frame_seq;
 	data->drag_start_pending = true;
 	LOG_INF("%uF double-tap drag claim awaiting arbiter dispatch", data->drag_fingers);
 }
@@ -297,7 +286,6 @@ static void start_drag_motion(struct tap_drag_data *data)
 			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON,
 			"tap-drag-button")) {
 		data->drag_claim_authorized = false;
-		drag_tracking = false;
 		return;
 	}
 	report_button(data->dev, data->drag_fingers, true);
@@ -306,7 +294,6 @@ static void start_drag_motion(struct tap_drag_data *data)
 	data->drag_previous_y = data->y;
 	data->drag_position_valid = true;
 	data->drag_motion_active = true;
-	drag_active = true;
 	LOG_INF("%uF double-tap drag motion started", data->drag_fingers);
 }
 
@@ -327,7 +314,6 @@ static void start_double_tap_candidate(struct tap_drag_data *data)
 	data->drag_claim_authorized = false;
 	data->first_valid = false;
 	data->drag_fingers = data->fingers;
-	drag_tracking = true;
 	request_drag_claim(data);
 	LOG_INF("%uF double-tap candidate; drag claim requested", data->drag_fingers);
 }
@@ -368,13 +354,11 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			report_button(dev, data->drag_fingers, false);
 			data->button_down = false;
 		}
-		drag_active = false;
 		LOG_INF("%uF tap suppressed: arbiter owner=%u", data->max_fingers,
 			data->suppressed_owner);
 		data->session_suppressed = false;
 		data->suppressed_owner = TRAVELERS_PAD_OWNER_NONE;
 		data->second_tap = false;
-		drag_tracking = false;
 		data->drag_start_pending = false;
 		data->drag_claim_authorized = false;
 		return;
@@ -383,12 +367,10 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			 now - data->started_ms <= cfg->tap_max_ms;
 
 	if (data->button_down) {
-		(void)travelers_pad_arbiter_shadow_output(
+		(void)travelers_pad_arbiter_note_terminal_output(
 			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button");
 		report_button(dev, data->drag_fingers, false);
-		drag_active = false;
-		drag_tracking = false;
 		LOG_INF("%uF drag released", data->drag_fingers);
 		data->button_down = false;
 		data->drag_motion_active = false;
@@ -411,7 +393,6 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			LOG_INF("%uF double-tap not armed; delivering first tap only",
 				data->drag_fingers);
 		}
-		drag_tracking = false;
 	} else if (valid_tap) {
 		LOG_INF("%uF tap released centroid=(%u,%u), duration=%lld ms", data->max_fingers,
 			data->start_x, data->start_y, now - data->started_ms);
@@ -440,28 +421,23 @@ static void process_frame(const struct device *dev)
 
 	if (data->fingers != 0) {
 		enum travelers_pad_owner arbiter_owner =
-			travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+			travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 
-		/* The legacy session manager still records compatibility ownership for
-		 * auxiliary consumers, but it must not decide whether this primary
-		 * recognizer may classify the raw contact. Consult the arbiter owner on
-		 * this exact forwarded frame instead.
-		 * legacy session managerは補助consumer向けの互換ownerをまだ記録するが、
-		 * primary recognizerである本機能がraw contactを分類できるかは決めない。
-		 * この転送frame自身のarbiter ownerを参照する。 */
+		/* The arbiter is the only contact-owner authority. Consult the owner on
+		 * this forwarded frame instead of importing recognizer-private state.
+		 * arbiterだけがcontact owner authorityである。recognizer固有状態を直接
+		 * 参照せず、この転送frame自身のownerを確認する。 */
 		if (owner_excludes_tap_drag(arbiter_owner)) {
 			if (data->button_down) {
 				report_button(dev, data->drag_fingers, false);
 				data->button_down = false;
 			}
-			drag_active = false;
 			data->drag_motion_active = false;
 			data->drag_start_pending = false;
 			data->drag_claim_authorized = false;
 			data->session_suppressed = true;
 			data->suppressed_owner = arbiter_owner;
 			data->second_tap = false;
-			drag_tracking = false;
 		}
 		/* F-slot assignment can change between taps; centroid is invariant. */
 		update_contact_centroid(data);
@@ -472,8 +448,6 @@ static void process_frame(const struct device *dev)
 		if (data->button_down) {
 			report_button(dev, data->drag_fingers, false);
 		}
-		drag_active = false;
-		drag_tracking = false;
 		*data = (struct tap_drag_data){.dev = dev};
 		k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
 		LOG_WRN("tap/drag session cancelled after sensor reset");
@@ -511,7 +485,6 @@ static void process_frame(const struct device *dev)
 				data->second_tap = false;
 				data->drag_start_pending = false;
 				data->drag_claim_authorized = false;
-				drag_tracking = false;
 			}
 			if (established_contact_moved) {
 				/* Do not erase a real swipe merely because its final finger became
@@ -627,11 +600,11 @@ static void tap_drag_handle_input(const struct device *dev, struct input_event *
 		}
 	}
 	if (evt->sync) {
-		data->shadow_frame_seq =
+		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG);
 		process_frame(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-					       data->shadow_frame_seq);
+					       data->arbiter_frame_seq);
 	}
 }
 

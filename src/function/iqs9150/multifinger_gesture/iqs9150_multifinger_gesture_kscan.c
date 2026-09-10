@@ -61,9 +61,9 @@ struct gesture_data {
 	bool five_finger_baseline_valid;
 	enum five_finger_candidate five_finger_candidate;
 	bool sensor_reset;
-	uint32_t shadow_frame_seq;
-	uint32_t shadow_ownership_frame_seq;
-	bool shadow_claimed;
+	uint32_t arbiter_frame_seq;
+	uint32_t ownership_frame_seq;
+	bool claim_submitted;
 	bool pending_five_finger_action;
 	enum five_finger_candidate pending_five_finger_candidate;
 	uint32_t pending_five_finger_frame_seq;
@@ -147,29 +147,28 @@ static void multifinger_resolve_action(void *context,
 static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
 {
 	enum travelers_pad_owner owner =
-		travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+		travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 
 	/* The arbiter is authoritative for this primary recognizer. A prior
-	 * exclusive owner must prevent both a gesture output and a legacy shared
-	 * state mutation. MULTI_GESTURE is permitted here only for continuation of
-	 * the proposal already made by this recognizer.
-	 * このprimary recognizerではarbiterを正とする。先行する排他ownerは
-	 * gesture出力とlegacy shared stateの変更の双方を阻止する。MULTI_GESTUREは
-	 * このrecognizerが既に提出したproposalの継続時だけ許可する。 */
+	 * exclusive owner must prevent a competing gesture output. MULTI_GESTURE is
+	 * permitted here only for continuation of this recognizer's proposal.
+	 * このprimary recognizerではarbiterを正とする。先行する排他ownerは競合する
+	 * gesture出力を阻止する。MULTI_GESTUREはこのrecognizerのproposal継続時だけ
+	 * 許可する。 */
 	if (owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
 		return false;
 	}
 
-	if (!data->shadow_claimed) {
+	if (!data->claim_submitted) {
 		/* Submit exactly one claim for the session, regardless of whether 3/4F
 		 * swipe or 5F radial geometry supplied the evidence. The resolver's
-		 * deterministic decision—not a callback-local shared claim—now chooses
-		 * whether this recognizer owns the operation.
+		 * deterministic decision—not callback-local state—now chooses whether
+		 * this recognizer owns the operation.
 		 * 3/4本指swipe／5本指radial geometryのいずれでもsessionごとに一つだけ
-		 * claimを提出する。callback局所のshared claimではなく、resolverの決定的な
-		 * 判断がこのrecognizerの操作所有を決める。 */
+		 * claimを提出する。callback局所stateではなく、resolverの決定的な判断が
+		 * このrecognizerの操作所有を決める。 */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
-			.frame_seq = data->shadow_frame_seq,
+			.frame_seq = data->arbiter_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 			.requested_owner = TRAVELERS_PAD_OWNER_MULTI_GESTURE,
@@ -180,8 +179,8 @@ static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t eviden
 			LOG_WRN("%uF gesture claim proposal rejected", data->max_fingers);
 			return false;
 		}
-		data->shadow_ownership_frame_seq = data->shadow_frame_seq;
-		data->shadow_claimed = true;
+		data->ownership_frame_seq = data->arbiter_frame_seq;
+		data->claim_submitted = true;
 	}
 
 	return true;
@@ -291,7 +290,7 @@ static void emit_gesture(const struct device *dev)
 	LOG_INF("%uF swipe row=%u column=%u start=(%u,%u) end=(%u,%u)", data->max_fingers,
 		row, column, data->start_x, data->start_y, data->x, data->y);
 	if (!travelers_pad_arbiter_authorize_output(
-		data->shadow_ownership_frame_seq,
+		data->ownership_frame_seq,
 		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 		"multifinger-swipe")) {
@@ -316,15 +315,15 @@ static void emit_five_finger_gesture(const struct device *dev,
 	 * its first KSCAN pair until that frame has a committed arbiter token.
 	 * 5本指candidateは同一論理input frameでclaimと出力を行う。その最初の
 	 * KSCAN pairは、そのframeのarbiter tokenがcommitされるまで保留する。 */
-	if (data->shadow_ownership_frame_seq == data->shadow_frame_seq) {
+	if (data->ownership_frame_seq == data->arbiter_frame_seq) {
 		data->pending_five_finger_action = true;
 		data->pending_five_finger_candidate = candidate;
-		data->pending_five_finger_frame_seq = data->shadow_ownership_frame_seq;
+		data->pending_five_finger_frame_seq = data->ownership_frame_seq;
 		return;
 	}
 	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
 	if (!travelers_pad_arbiter_authorize_output(
-		data->shadow_ownership_frame_seq,
+		data->ownership_frame_seq,
 		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 		"multifinger-geometry")) {
@@ -344,8 +343,8 @@ static void reset_session(struct gesture_data *data)
 	data->five_finger_stable_frames = 0;
 	data->five_finger_baseline_valid = false;
 	data->five_finger_candidate = FIVE_FINGER_NONE;
-	data->shadow_ownership_frame_seq = 0;
-	data->shadow_claimed = false;
+	data->ownership_frame_seq = 0;
+	data->claim_submitted = false;
 	data->pending_five_finger_action = false;
 	data->pending_five_finger_frame_seq = 0;
 }
@@ -391,18 +390,18 @@ static void gesture_process_frame(const struct device *dev)
 		 * 確定または暫定のDRAG ownerは、この接触sessionを排他的に解釈する。
 		 * routerの抑止と同じowner sourceに従うため、tap/drag固有のtracking flag
 		 * ではなくarbiterを参照してgestureを取消す。 */
-		if (travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq) ==
+		if (travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq) ==
 	    TRAVELERS_PAD_OWNER_DRAG) {
 			if (!data->cancelled_by_drag_owner) {
 				LOG_INF("%uF gesture suppressed: arbiter drag owner", data->max_fingers);
 			}
 			data->cancelled_by_drag_owner = true;
 		}
-		/* A detected drag owner must prevent the gesture from even attempting a
-		 * legacy claim. This guard is intentionally separate from terminal output
-		 * suppression: the harmful side effect was the intermediate claim itself.
-		 * 検出済みのdrag ownerはgestureがlegacy claimを試みること自体を阻止する。
-		 * 終端出力の抑止とは別にする。問題は途中のclaim自体の副作用であった。 */
+		/* A detected drag owner must prevent the gesture from proposing a
+		 * competing owner. This guard is intentionally separate from terminal
+		 * output suppression because proposal creation is itself a side effect.
+		 * 検出済みのdrag ownerはgestureが競合ownerをproposalすること自体を阻止する。
+		 * 終端出力の抑止とは別にする。proposal生成自体が副作用となるためである。 */
 		if (data->max_fingers >= 3 && !data->moved && !data->cancelled_by_drag_owner &&
 	    (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
 	    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
@@ -459,11 +458,11 @@ static void gesture_handle_input(const struct device *dev, struct input_event *e
 		}
 	}
 	if (evt->sync) {
-		data->shadow_frame_seq =
+		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE);
 		gesture_process_frame(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
-					       data->shadow_frame_seq);
+					       data->arbiter_frame_seq);
 	}
 }
 

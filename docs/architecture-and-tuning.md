@@ -16,13 +16,15 @@ flowchart TD
     DRV[IQS9150 driver<br/>iqs9150_ev02_driver]
     RAW[Normalized contact frames<br/>正規化済み接触フレーム]
     SESSION[Contact session manager<br/>接触session manager]
-    SHADOW[Shadow proposal/resolver/token<br/>shadow proposal/resolver/token]
+    ARB[Contact arbiter<br/>contact arbiter]
     ROUTER[Multi-finger router<br/>多指ルーター]
     PTR[Pointer function<br/>ポインタ機能]
     TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
     TIP[Two-finger Tip-Tap<br/>2本指Tip-Tap]
     MF[3/4 swipe + 5F grasp/release<br/>3/4本指スワイプ + 5本指Grasp/Release]
     EDGE[Edge dial<br/>エッジダイヤル]
+    INERTIA[Scroll inertia observer<br/>スクロール慣性observer]
+    HOLD[Edge-hold observer<br/>エッジホールドobserver]
     GRID[Grid / matrix optional<br/>格子 / マトリクス 任意]
     HID[ZMK input listener → HID<br/>ZMK入力listener → HID]
     COMP[Composite KSCAN<br/>合成KSCAN]
@@ -35,14 +37,20 @@ flowchart TD
     SESSION --> TIP
     SESSION --> MF
     SESSION --> EDGE
+    SESSION --> INERTIA
+    SESSION --> HOLD
     SESSION -. disabled .-> GRID
-    ROUTER -. shadow proposal .-> SHADOW
-    TAP -. shadow proposal .-> SHADOW
-    TIP -. shadow proposal .-> SHADOW
-    MF -. shadow proposal .-> SHADOW
-    EDGE -. shadow proposal .-> SHADOW
+    ROUTER -. proposal / token .-> ARB
+    TAP -. proposal / token .-> ARB
+    TIP -. proposal / token .-> ARB
+    MF -. proposal / token .-> ARB
+    EDGE -. proposal / token .-> ARB
+    ARB -. delegated token .-> INERTIA
+    ARB -. delegated token .-> HOLD
     ROUTER --> PTR --> HID --> HOST
     TAP --> HID
+    INERTIA --> HID
+    HOLD --> HID
     TIP --> COMP
     MF --> COMP --> KEYMAP --> HOST
     EDGE --> COMP
@@ -51,30 +59,26 @@ flowchart TD
 ```
 
 `iqs9150_session` is the sole raw-frame subscriber and republishes normalized
-frames to each function. All five primary recognizers—`iqs9150_multifinger_router`,
-`iqs9150_tap_drag`, `iqs9150_tip_tap`, `iqs9150_multifinger_gesture_kscan`, and
-`iqs9150_edge_dial`—submit proposals to its shadow resolver. Tip-Tap represents
-repeated actions under one held anchor as one shadow token; multi-finger gesture
-and edge dial submit one claim per contact session. The resolver waits for all
-queued-frame acknowledgements rather than relying on callback timing, but the
-existing shared-claim and semantic-output paths remain authoritative.
+frames to every function. Its contact arbiter is the single authority for
+contact ownership: the five primary recognizers submit proposals, it waits for
+their queued-frame acknowledgements, then emits one deterministic owner token.
+Primary first and continuation output is capability-gated by that token.
 
-Each exclusive output is recorded against the frame that established its shadow
-token. This output-gate preflight reports a token/owner/capability mismatch but
-does not yet reject the output. It is the final no-UX-change checkpoint before
-all five gates switch together to authoritative mode.
+`iqs9150_scroll_inertia` and `iqs9150_edge_hold_continue` are passive
+observers. They never make an ownership claim: inertia starts only after a
+physical release belonging to a scroll token, and edge hold emits only while a
+live drag or scroll token delegates the required capability. Terminal button
+release is recorded diagnostically but remains fail-safe and unconditional.
 
-`iqs9150_session` は唯一の生frame購読者であり、正規化frameを各機能へ再配信します。
-現在のshadow段階では、5つのprimary recognizerである `iqs9150_multifinger_router`、
-`iqs9150_tap_drag`、`iqs9150_tip_tap`、`iqs9150_multifinger_gesture_kscan`、
-`iqs9150_edge_dial` がresolverへproposalを送ります。Tip-Tapはanchor維持中の繰返しを一つの
-shadow tokenとして扱い、多指gestureとedge dialは接触sessionごとに一つのclaimを提出します。
-resolverはcallback時刻に依存せず、queue経由の全者のframe通知を待つが、既存のshared claimと
-semantic output経路を引き続き正とします。
+`iqs9150_session` は唯一の生frame購読者であり、正規化frameを全機能へ再配信します。
+contact arbiterが接触所有権の唯一のauthorityである。5つのprimary recognizerがproposalを
+提出し、queue経由の全frame確認後に、決定的なowner tokenを一つ発行する。primaryの初回・
+継続出力は、このtokenのcapabilityでgateする。
 
-各排他的出力はshadow tokenを確立したframeへ記録する。この出力gate事前監査は
-token／owner／capability不一致を記録するが、まだ出力を拒否しない。5機能のgateを
-authoritative modeへ一括切替する前の、UXを変えない最後の確認段階である。
+`iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` は受動observerであり、所有権を
+claimしない。inertiaはscroll tokenに属する物理的release後だけ開始し、edge holdはliveな
+dragまたはscroll tokenから必要なcapabilityを委譲された間だけ出力する。terminal button releaseは
+診断用に記録するが、押下残りを避けるため安全側で常に送信する。
 
 ## Internal layout / 内部配置
 
@@ -104,13 +108,13 @@ src/
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
 | Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
-| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, shadow proposal collection, deterministic resolver, and output-gate preflight / session ID、通常終了・cancel境界、shadow proposal収集、決定的resolver、出力gate事前監査 | Republished contact frames; shadow owner token / 再配信接触frame、shadow owner token | Shadow migration; output preflight / shadow移行中・出力事前監査 |
-| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Legacy-authoritative; router proposal enabled / legacyが正、router proposal有効 |
+| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, proposal collection, deterministic resolver, and token authority / session ID、通常終了・cancel境界、proposal収集、決定的resolver、token authority | Republished contact frames; owner token / 再配信接触frame、owner token | Enabled; sole ownership path / 有効・単一所有権経路 |
+| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Arbiter-authoritative / arbiterが正 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
-| Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Legacy-authoritative; drag proposal enabled / legacyが正、drag proposal有効 |
-| Tip-Tap / Tip-Tap | `iqs9150_tip_tap` | Anchored 2F left/right virtual-key tap; repeats while the anchor stays down / anchorを維持した2本指左右の仮想キーtap、anchor維持中は繰返し可能 | Virtual KSCAN | Legacy-authoritative; one shadow claim per anchored interaction / legacyが正、anchor操作ごとに一つのshadow claim |
-| Multi-finger gesture / 多指ジェスチャー | `iqs9150_multifinger_gesture_kscan` | 3/4F directional swipe; 5F independent-coordinate Grasp/Release / 3/4本指方向スワイプ、5本指独立座標Grasp/Release | Virtual KSCAN | Legacy-authoritative; one shadow claim per contact session / legacyが正、接触sessionごとに一つのshadow claim |
-| Edge / エッジ | `iqs9150_edge_dial_kscan` | Claims a 1F contact started on an enabled edge; linear trace and local-circle continuation produce repeated virtual KSCAN steps / 有効辺から始まる1本指接触を取得し、直線・局所円継続を仮想KSCANステップ化 | Virtual KSCAN | Legacy-authoritative; one shadow claim per contact session / legacyが正、接触sessionごとに一つのshadow claim |
+| Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Token-gated / tokenでgate |
+| Tip-Tap / Tip-Tap | `iqs9150_tip_tap` | Anchored 2F left/right virtual-key tap; repeats while the anchor stays down / anchorを維持した2本指左右の仮想キーtap、anchor維持中は繰返し可能 | Virtual KSCAN | Token-gated; one token per anchored interaction / tokenでgate・anchor操作ごとに一つ |
+| Multi-finger gesture / 多指ジェスチャー | `iqs9150_multifinger_gesture_kscan` | 3/4F directional swipe; 5F independent-coordinate Grasp/Release / 3/4本指方向スワイプ、5本指独立座標Grasp/Release | Virtual KSCAN | Token-gated; one token per contact session / tokenでgate・接触sessionごとに一つ |
+| Edge / エッジ | `iqs9150_edge_dial_kscan` | Claims a 1F contact started on an enabled edge; linear trace and local-circle continuation produce repeated virtual KSCAN steps / 有効辺から始まる1本指接触を取得し、直線・局所円継続を仮想KSCANステップ化 | Virtual KSCAN | Token-gated; one token per contact session / tokenでgate・接触sessionごとに一つ |
 | Grid / 格子 | `iqs9150_grid_kscan`, `iqs9150_matrix_input`, `zmk-input-matrix` | 3×3 grid tap/flick and optional edge cells / 3×3格子タップ・フリックと任意エッジセル | Virtual KSCAN | Disabled / 無効 |
 | ZMK integration / ZMK統合 | Composite KSCAN, keymap, `&kp`, `&mkp`, `&msc` | Maps virtual KSCAN positions to host functions / 仮想KSCAN位置をホスト機能へ割当 | HID reports / HIDレポート | Enabled where mapped / 割当箇所のみ有効 |
 
@@ -184,7 +188,6 @@ issues.
 - User-visible rotation action / ユーザー可視の回転操作
 - Configurable 2F scroll acceleration / 設定可能な2本指スクロール加速
 - Enabled and mapped 3×3 grid mode / 有効化・割当済みの3×3格子モード
-- Edge-hold continuation HID output / エッジホールド継続のHID出力
 
 The router already claims two-finger geometry so it does not leak into pointer
 or scroll output. A future pinch/rotation module should consume that claimed

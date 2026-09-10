@@ -2,15 +2,16 @@
 
 ## Scope / 対象範囲
 
-This UF2 enables `IQS9150 → router → pointer` and the raw-frame `tap_drag`
-function with its HID listener. It validates ownership between pointer movement,
-two-finger scrolling, one/two/three-finger taps, and double-tap-hold drag.
-Grid/edge input and gesture KSCAN are disabled.
+This UF2 enables `IQS9150 → session → contact arbiter → router/pointer` and
+the session-frame `tap_drag` function with its HID listener. It validates the
+single ownership path between pointer movement, two-finger scrolling,
+one/two/three-finger taps, and double-tap-hold drag. Grid/edge input and
+gesture KSCAN are disabled.
 
-このUF2は `IQS9150 → router → pointer` と、生フレームを監視する `tap_drag` 機能および
-HID listenerを有効にする。ポインタ移動、2本指スクロール、1/2/3本指タップ、
-ダブルタップ＋ホールドドラッグ間の所有権を検証する。格子/辺入力とジェスチャーKSCANは
-無効である。
+このUF2は `IQS9150 → session → contact arbiter → router/pointer` と、session frameを
+監視する `tap_drag` 機能およびHID listenerを有効にする。単一所有権経路におけるポインタ移動、
+2本指スクロール、1/2/3本指タップ、ダブルタップ＋ホールドドラッグ間の所有権を検証する。
+格子/辺入力とジェスチャーKSCANは無効である。
 
 ## Test sequence / 試験手順
 

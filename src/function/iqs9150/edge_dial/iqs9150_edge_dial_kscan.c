@@ -68,9 +68,9 @@ struct edge_dial_data {
 	int8_t circle_direction;
 	bool active;
 	int32_t accumulated_move;
-	uint32_t shadow_frame_seq;
-	uint32_t shadow_ownership_frame_seq;
-	bool shadow_claimed;
+	uint32_t arbiter_frame_seq;
+	uint32_t ownership_frame_seq;
+	bool claim_submitted;
 };
 
 static int edge_dial_configure(const struct device *dev, kscan_callback_t callback)
@@ -192,7 +192,7 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 		return;
 	}
 	if (!travelers_pad_arbiter_authorize_output(
-		data->shadow_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
+		data->ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 		TRAVELERS_PAD_OWNER_EDGE_DIAL, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 		"edge-dial-step")) {
 		return;
@@ -288,13 +288,13 @@ static void edge_dial_process_frame(const struct device *dev)
 		data->mode = EDGE_DIAL_LINEAR;
 		data->edge_direction = 0;
 		data->circle_direction = 0;
-		/* Preserve the one shadow claim while a temporary extra contact is
-		 * present. The legacy dial may re-acquire after the contact count returns
+		/* Preserve the one arbiter claim while a temporary extra contact is
+		 * present. The dial may re-acquire after the contact count returns
 		 * to one, but it is still the same logical session. / 一時的に接触が増えても
-		 * shadow claimは維持する。接触数が1へ戻るとlegacy dialは再取得し得るが、
+		 * arbiter claimは維持する。接触数が1へ戻るとdialは再取得し得るが、
 		 * 論理sessionは同一だからである。 */
 		if (data->fingers == 0) {
-			data->shadow_claimed = false;
+			data->claim_submitted = false;
 		}
 		return;
 	}
@@ -304,7 +304,7 @@ static void edge_dial_process_frame(const struct device *dev)
 
 		data->edge = edge_dial_edge_for(cfg, data->x, data->y);
 		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge]) {
-			owner = travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+			owner = travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 			/* Edge dial has the highest primary priority, but it must not revive
 			 * after a previously committed incompatible owner. EDGE_DIAL itself is
 			 * allowed when a temporary extra contact disappeared and this same
@@ -315,7 +315,7 @@ static void edge_dial_process_frame(const struct device *dev)
 			if (owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_EDGE_DIAL) {
 				return;
 			}
-			if (!data->shadow_claimed) {
+			if (!data->claim_submitted) {
 				/* Edge ownership is requested on acquisition, before the first
 				 * detent. The arbiter resolves this first claim; subsequent detents
 				 * and re-acquisition in the same contact session share its token.
@@ -323,7 +323,7 @@ static void edge_dial_process_frame(const struct device *dev)
 				 * claimを解決し、同一contact sessionの以後のdetentと再取得はそのtokenを
 				 * 共有する。 */
 				if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
-					.frame_seq = data->shadow_frame_seq,
+					.frame_seq = data->arbiter_frame_seq,
 					.recognizer = TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 					.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
 					.requested_owner = TRAVELERS_PAD_OWNER_EDGE_DIAL,
@@ -334,8 +334,8 @@ static void edge_dial_process_frame(const struct device *dev)
 					LOG_WRN("edge dial claim proposal rejected edge=%u", data->edge);
 					return;
 				}
-				data->shadow_ownership_frame_seq = data->shadow_frame_seq;
-				data->shadow_claimed = true;
+				data->ownership_frame_seq = data->arbiter_frame_seq;
+				data->claim_submitted = true;
 			}
 			data->active = true;
 			data->last_x = data->x;
@@ -413,11 +413,11 @@ static void edge_dial_handle_input(const struct device *dev, struct input_event 
 		}
 	}
 	if (evt->sync) {
-		data->shadow_frame_seq =
+		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL);
 		edge_dial_process_frame(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
-					       data->shadow_frame_seq);
+					       data->arbiter_frame_seq);
 	}
 }
 

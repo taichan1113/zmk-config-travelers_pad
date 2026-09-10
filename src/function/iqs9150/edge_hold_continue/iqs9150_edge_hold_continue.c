@@ -69,7 +69,7 @@ struct edge_hold_data {
 	int16_t scroll_vertical;
 	int16_t scroll_direction_horizontal;
 	int16_t scroll_direction_vertical;
-	uint32_t shadow_frame_seq;
+	uint32_t arbiter_frame_seq;
 };
 
 static const char *edge_name(enum edge_hold_edge edge)
@@ -452,11 +452,11 @@ static void edge_hold_drag_input(const struct device *dev, struct input_event *e
 		}
 	}
 	if (evt->sync) {
-		data->shadow_frame_seq =
+		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD);
 		detect_drag_edge(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD,
-					       data->shadow_frame_seq);
+					       data->arbiter_frame_seq);
 	}
 }
 

@@ -1,16 +1,16 @@
 /*
  * Contact arbitration core / 接触仲裁core.
  *
- * Hybrid stage: accept proposals emitted for one logical input frame, resolve
- * them independently of callback order, and compare the result with the
- * legacy owner. Zephyr queues input callbacks, so resolution waits until every
- * registered recognizer acknowledges that frame. Primary semantic output is
- * token-gated, while the session manager still retains legacy shared claims.
+ * Accept proposals emitted for one logical input frame and resolve them
+ * independently of callback order. Zephyr queues input callbacks, so
+ * resolution waits until every registered recognizer acknowledges that frame.
+ * Primary semantic output is token-gated; the session manager owns only the
+ * immutable lifecycle boundary, never contact ownership.
  *
- * hybrid段階: 一つの論理input frameに対して出たproposalを収集し、callback順に
- * 依存せず解決してlegacy ownerと比較する。Zephyr input callbackはqueue方式のため、
- * 全registered recognizerのframe通知を待つ。primary semantic outputはtoken gateし、
- * session managerのshared claimはまだ旧経路として残す。
+ * 一つの論理input frameに対して出たproposalを収集し、callback順に依存せず解決する。
+ * Zephyr input callbackはqueue方式のため、全registered recognizerのframe通知を待つ。
+ * primary semantic outputはtoken gateし、session managerは不変lifecycle境界だけを
+ * 保持して接触所有権を持たない。
  */
 
 #include <zephyr/logging/log.h>
@@ -46,7 +46,6 @@ struct arbiter_frame {
 	struct travelers_pad_arbiter_proposal proposals[TRAVELERS_PAD_ARBITER_MAX_PROPOSALS];
 	struct arbiter_output_receipt output_receipts[TRAVELERS_PAD_ARBITER_MAX_OUTPUT_RECEIPTS];
 	uint32_t observed_mask;
-	enum travelers_pad_owner legacy_owner;
 	uint8_t proposal_count;
 	uint8_t output_receipt_count;
 	bool active;
@@ -106,11 +105,9 @@ static const char *owner_name(enum travelers_pad_owner owner)
 
 /* This table declares policy, rather than accidentally inheriting the order in
  * which Zephyr input callbacks were linked. Higher values win a same-frame
- * conflict. It is authoritative for primary token-gated output while legacy
- * session ownership is migrated separately.
+ * conflict. It is authoritative for all contact ownership and primary output.
  * この表はZephyr input callbackのリンク順ではなく方針を明示する。同一frameの
- * 競合では大きい値が勝つ。primary出力に対しては正であり、legacy session所有権は
- * 別途移行する。 */
+ * 競合では大きい値が勝つ。全接触所有権およびprimary出力に対して正である。 */
 static uint8_t owner_priority(enum travelers_pad_owner owner)
 {
 	switch (owner) {
@@ -141,11 +138,11 @@ bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
 	}
 	bit = 1U << recognizer;
 	if (state.registered_mask & bit) {
-		LOG_WRN("shadow recognizer=%u registered twice", recognizer);
+		LOG_WRN("arbiter recognizer=%u registered twice", recognizer);
 		return false;
 	}
 	state.registered_mask |= bit;
-	LOG_INF("shadow recognizer=%u registered", recognizer);
+	LOG_INF("arbiter recognizer=%u registered", recognizer);
 	return true;
 }
 
@@ -239,12 +236,11 @@ void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapsh
 		}
 	}
 	if (frame == NULL) {
-		LOG_ERR("shadow frame queue overflow seq=%u", snapshot->frame_seq);
+		LOG_ERR("arbiter frame queue overflow seq=%u", snapshot->frame_seq);
 		return;
 	}
 	*frame = (struct arbiter_frame){
 		.snapshot = *snapshot,
-		.legacy_owner = snapshot->owner,
 		.active = true,
 	};
 }
@@ -291,11 +287,11 @@ bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *p
 	}
 	frame = frame_for(proposal->frame_seq);
 	if (!frame_accepts_recognizer(frame, proposal->recognizer)) {
-		LOG_WRN("shadow proposal from unregistered recognizer=%u", proposal->recognizer);
+		LOG_WRN("arbiter proposal from unregistered recognizer=%u", proposal->recognizer);
 		return false;
 	}
 	if (frame->proposal_count >= ARRAY_SIZE(frame->proposals)) {
-		LOG_ERR("shadow proposal queue overflow session=%u", frame->snapshot.session_id);
+		LOG_ERR("arbiter proposal queue overflow session=%u", frame->snapshot.session_id);
 		return false;
 	}
 	frame->proposals[frame->proposal_count++] = *proposal;
@@ -344,13 +340,13 @@ static void validate_receipts(const struct arbiter_frame *frame,
 
 		if (!decision_allows(&state.token, winner, receipt)) {
 			accepted = false;
-			LOG_ERR("shadow output would reject producer=%s session=%u frame=%u owner=%s caps=0x%x",
+			LOG_ERR("terminal output record would reject producer=%s session=%u frame=%u owner=%s caps=0x%x",
 				receipt->producer, frame->snapshot.session_id, frame->snapshot.frame_seq,
 				owner_name(receipt->requested_owner), receipt->capability);
 		}
 	}
 	if (frame->output_receipt_count != 0) {
-		LOG_INF("shadow output preflight session=%u frame=%u winner=%s outputs=%u %s",
+		LOG_INF("terminal output record preflight session=%u frame=%u winner=%s outputs=%u %s",
 			frame->snapshot.session_id, frame->snapshot.frame_seq,
 			owner_name(state.token.owner), frame->output_receipt_count,
 			accepted ? "accepted" : "rejected");
@@ -397,14 +393,9 @@ static void resolve_frame(struct arbiter_frame *frame)
 	}
 
 	if (new_token) {
-		LOG_INF("shadow session=%u frame=%u winner=%s recognizer=%u caps=0x%x",
+		LOG_INF("arbiter session=%u frame=%u winner=%s recognizer=%u caps=0x%x",
 			frame->snapshot.session_id, frame->snapshot.frame_seq,
 			owner_name(state.token.owner), winner->recognizer, state.token.capabilities);
-		if (frame->legacy_owner != state.token.owner) {
-			LOG_INF("shadow session=%u differs: legacy=%s shadow=%s",
-				frame->snapshot.session_id, owner_name(frame->legacy_owner),
-				owner_name(state.token.owner));
-		}
 		/* A first semantic action was staged by the winning recognizer while this
 		 * frame was unresolved. Dispatch it only after the immutable decision is
 		 * in the ledger. / 未解決frame中に勝者recognizerが保留した初回semantic
@@ -420,8 +411,8 @@ static void resolve_frame(struct arbiter_frame *frame)
 						       winner->recognizer);
 	}
 
-	/* A terminal frame may still carry a proposal or legacy action. Preserve the
-	 * result until this comparison is complete, then invalidate it so no later
+	/* A terminal frame may still carry a proposal or terminal release record.
+	 * Preserve the result until validation is complete, then invalidate it so no later
 	 * work can mistake it for a live-session token. */
 	if (frame->snapshot.contact_count == 0) {
 		state.ending.session_id = frame->snapshot.session_id;
@@ -510,17 +501,7 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
 	frame->active = false;
 }
 
-void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
-						enum travelers_pad_owner legacy_owner)
-{
-	struct arbiter_frame *frame = frame_for(frame_seq);
-
-	if (frame != NULL) {
-		frame->legacy_owner = legacy_owner;
-	}
-}
-
-bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
+bool travelers_pad_arbiter_note_terminal_output(uint32_t ownership_frame_seq,
 					 enum travelers_pad_recognizer_id recognizer,
 					 enum travelers_pad_owner requested_owner,
 					 uint32_t capability,
@@ -537,7 +518,7 @@ bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
 
 	if (frame != NULL) {
 		if (frame->output_receipt_count >= ARRAY_SIZE(frame->output_receipts)) {
-			LOG_ERR("shadow output receipt overflow session=%u frame=%u",
+			LOG_ERR("terminal output record receipt overflow session=%u frame=%u",
 				frame->snapshot.session_id, ownership_frame_seq);
 			return true;
 		}
@@ -548,34 +529,15 @@ bool travelers_pad_arbiter_shadow_output(uint32_t ownership_frame_seq,
 	decision = decision_for(ownership_frame_seq);
 	if (decision == NULL ||
 	    !decision_allows(&decision->token, decision->recognizer, &receipt)) {
-		LOG_ERR("shadow output would reject producer=%s ownership-frame=%u owner=%s caps=0x%x",
+		LOG_ERR("terminal output record would reject producer=%s ownership-frame=%u owner=%s caps=0x%x",
 			producer, ownership_frame_seq, owner_name(requested_owner), capability);
 	} else if (!decision->output_verified) {
 		decision->output_verified = true;
-		LOG_INF("shadow output preflight ownership-frame=%u winner=%s producer=%s accepted",
+		LOG_INF("terminal output record preflight ownership-frame=%u winner=%s producer=%s accepted",
 			ownership_frame_seq, owner_name(decision->token.owner), producer);
 	}
-	/* Preflight only: output remains unchanged until all verified gates switch
-	 * together to authoritative mode. / 事前監査のみ: 検証済みgateを一括で
-	 * authoritative modeへ移すまでは出力を変更しない。 */
+	/* This is diagnostic only. Releases remain unconditional so a stale token
+	 * cannot leave a host button held. / これは診断専用である。stale tokenで
+	 * ホスト側のボタンが押下状態に残らないよう、releaseは常に送信する。 */
 	return true;
-}
-
-bool travelers_pad_arbiter_shadow_gate(const char *producer,
-					const struct travelers_pad_owner_token *token,
-					uint32_t capability)
-{
-	bool valid = token != NULL && token->valid &&
-		     (token->capabilities & capability) == capability;
-
-	if (!valid) {
-		LOG_WRN("shadow gate would reject producer=%s capability=0x%x", producer, capability);
-	}
-	/* Shadow mode intentionally never changes established output. */
-	return true;
-}
-
-const struct travelers_pad_owner_token *travelers_pad_arbiter_shadow_token(void)
-{
-	return state.token.valid ? &state.token : NULL;
 }
