@@ -23,7 +23,6 @@
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/tap_drag.h>
-#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
@@ -87,6 +86,12 @@ struct tap_drag_data {
 	bool drag_claim_authorized;
 	bool sensor_reset;
 	bool session_suppressed;
+	/* Store the arbiter owner that caused suppression. The terminal frame is
+	 * processed after the live token can have been retired, so reporting the
+	 * live query there could otherwise lose the reason for the suppression.
+	 * 抑止の原因となったarbiter ownerを保持する。terminal frameはlive tokenが
+	 * 失効した後に処理され得るため、その時点で問い合わせるだけでは原因を失う。 */
+	enum travelers_pad_owner suppressed_owner;
 	uint32_t shadow_frame_seq;
 	uint32_t drag_ownership_frame_seq;
 	bool drag_start_pending;
@@ -97,6 +102,20 @@ struct tap_drag_data {
 static int absolute_int(int value)
 {
 	return value < 0 ? -value : value;
+}
+
+static bool owner_excludes_tap_drag(enum travelers_pad_owner owner)
+{
+	/* DRAG is this recognizer's own ownership. A pointer-provisional owner has
+	 * no exclusive semantic action, while NONE means no recognizer has claimed
+	 * the contact. All other primary owners must keep their session out of
+	 * tap/drag classification.
+	 * DRAGはこのrecognizer自身の所有権である。POINTER_PROVISIONALは排他的な
+	 * semantic actionを持たず、NONEはまだclaimが無い。他のprimary ownerは
+	 * tap/drag分類からそのsessionを除外する。 */
+	return owner != TRAVELERS_PAD_OWNER_NONE &&
+	       owner != TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL &&
+	       owner != TRAVELERS_PAD_OWNER_DRAG;
 }
 
 static void update_contact_centroid(struct tap_drag_data *data)
@@ -350,9 +369,10 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			data->button_down = false;
 		}
 		drag_active = false;
-		LOG_INF("%uF tap suppressed: exclusive owner=%u", data->max_fingers,
-			travelers_pad_session_owner());
+		LOG_INF("%uF tap suppressed: arbiter owner=%u", data->max_fingers,
+			data->suppressed_owner);
 		data->session_suppressed = false;
+		data->suppressed_owner = TRAVELERS_PAD_OWNER_NONE;
 		data->second_tap = false;
 		drag_tracking = false;
 		data->drag_start_pending = false;
@@ -419,7 +439,17 @@ static void process_frame(const struct device *dev)
 	int64_t now = k_uptime_get();
 
 	if (data->fingers != 0) {
-		if (!travelers_pad_session_tap_allowed()) {
+		enum travelers_pad_owner arbiter_owner =
+			travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+
+		/* The legacy session manager still records compatibility ownership for
+		 * auxiliary consumers, but it must not decide whether this primary
+		 * recognizer may classify the raw contact. Consult the arbiter owner on
+		 * this exact forwarded frame instead.
+		 * legacy session managerは補助consumer向けの互換ownerをまだ記録するが、
+		 * primary recognizerである本機能がraw contactを分類できるかは決めない。
+		 * この転送frame自身のarbiter ownerを参照する。 */
+		if (owner_excludes_tap_drag(arbiter_owner)) {
 			if (data->button_down) {
 				report_button(dev, data->drag_fingers, false);
 				data->button_down = false;
@@ -429,6 +459,7 @@ static void process_frame(const struct device *dev)
 			data->drag_start_pending = false;
 			data->drag_claim_authorized = false;
 			data->session_suppressed = true;
+			data->suppressed_owner = arbiter_owner;
 			data->second_tap = false;
 			drag_tracking = false;
 		}
