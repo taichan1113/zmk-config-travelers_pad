@@ -22,7 +22,6 @@
 
 #include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/multitouch.h>
-#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_multifinger_gesture, LOG_LEVEL_INF);
 
@@ -147,29 +146,29 @@ static void multifinger_resolve_action(void *context,
 
 static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
 {
-	/* A drag claim is exclusive from its second contact onward. Do not let the
-	 * legacy compatibility path acquire MULTI_GESTURE after the arbiter has
-	 * already granted DRAG: that would not pass the token gate, but it would
-	 * still overwrite the legacy session owner and could affect another
-	 * recognizer during the remainder of the contact.
-	 * drag claimは二回目接触から排他的である。arbiterがDRAGをgrantした後は、
-	 * legacy互換経路でMULTI_GESTUREを取得させない。token gateは通過しないが、
-	 * legacy session ownerを書き換えて接触中の他recognizerへ影響するためである。 */
-	if (travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq) ==
-	    TRAVELERS_PAD_OWNER_DRAG) {
-		return false;
-	}
-	if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
+	enum travelers_pad_owner owner =
+		travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+
+	/* The arbiter is authoritative for this primary recognizer. A prior
+	 * exclusive owner must prevent both a gesture output and a legacy shared
+	 * state mutation. MULTI_GESTURE is permitted here only for continuation of
+	 * the proposal already made by this recognizer.
+	 * このprimary recognizerではarbiterを正とする。先行する排他ownerは
+	 * gesture出力とlegacy shared stateの変更の双方を阻止する。MULTI_GESTUREは
+	 * このrecognizerが既に提出したproposalの継続時だけ許可する。 */
+	if (owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
 		return false;
 	}
 
 	if (!data->shadow_claimed) {
-		/* Shadow mode keeps the legacy claim as the authority. Submit exactly
-		 * the first successful gesture claim, regardless of whether 3/4F swipe
-		 * or 5F radial geometry supplied the evidence. / shadow段階ではlegacy
-		 * claimを正とする。3/4本指swipe／5本指radial geometryのいずれであっても、
-		 * 最初に成功したgesture claimだけをproposalとして提出する。 */
-		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+		/* Submit exactly one claim for the session, regardless of whether 3/4F
+		 * swipe or 5F radial geometry supplied the evidence. The resolver's
+		 * deterministic decision—not a callback-local shared claim—now chooses
+		 * whether this recognizer owns the operation.
+		 * 3/4本指swipe／5本指radial geometryのいずれでもsessionごとに一つだけ
+		 * claimを提出する。callback局所のshared claimではなく、resolverの決定的な
+		 * 判断がこのrecognizerの操作所有を決める。 */
+		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 			.frame_seq = data->shadow_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
@@ -177,9 +176,10 @@ static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t eviden
 			.capabilities = TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 			.contact_count = data->fingers,
 			.evidence = evidence,
-		});
-		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
-						  TRAVELERS_PAD_OWNER_MULTI_GESTURE);
+		})) {
+			LOG_WRN("%uF gesture claim proposal rejected", data->max_fingers);
+			return false;
+		}
 		data->shadow_ownership_frame_seq = data->shadow_frame_seq;
 		data->shadow_claimed = true;
 	}
