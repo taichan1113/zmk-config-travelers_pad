@@ -7,7 +7,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <travelers_pad/contact_arbiter.h>
-#include <travelers_pad/contact_session.h>
 #include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tip_tap, LOG_LEVEL_INF);
@@ -60,17 +59,27 @@ static void tip_tap_resolve_action(void *context, const struct travelers_pad_own
 
 static bool claim_tip_tap(struct data *d)
 {
-	if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_TIP_TAP)) {
+	enum travelers_pad_owner owner =
+		travelers_pad_arbiter_owner_for_frame(d->shadow_frame_seq);
+
+	/* The first completed Tip-Tap establishes the ownership for its anchored
+	 * interaction. A competing committed/provisional primary owner makes this
+	 * candidate ineligible; TIP_TAP itself is allowed for its repeated actions.
+	 * 最初に完了したTip-Tapがanchor操作全体の所有権を確立する。競合する
+	 * committed/provisional primary ownerがあれば候補を無効にし、反復action
+	 * のためTIP_TAP自身だけを許可する。 */
+	if (owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_TIP_TAP) {
 		return false;
 	}
 
 	if (!d->shadow_tip_owned) {
-		/* The existing session claim stays authoritative in this shadow stage.
-		 * Express the first successful Tip-Tap to the resolver on precisely the
-		 * queued source frame which made it succeed. / 既存session claimは
-		 * shadow段階では正のままとし、最初に成功したTip-Tapだけを、その成功を
-		 * 生んだqueued source frameに対するresolver proposalとして表す。 */
-		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+		/* Submit the first completed action on its exact source frame. The
+		 * resolver now owns the decision; later repeat actions retain this
+		 * ownership frame and must pass the same token gate.
+		 * 最初に完了したactionを、その正確なsource frameへ提出する。決定は
+		 * resolverが行い、以後のrepeat actionはこのownership frameを保持して
+		 * 同じtoken gateを通過する。 */
+		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 			.frame_seq = d->shadow_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
@@ -78,9 +87,10 @@ static bool claim_tip_tap(struct data *d)
 			.capabilities = TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 			.contact_count = d->fingers,
 			.evidence = 1,
-		});
-		travelers_pad_arbiter_record_legacy_claim(d->shadow_frame_seq,
-						  TRAVELERS_PAD_OWNER_TIP_TAP);
+		})) {
+			LOG_WRN("Tip-Tap claim proposal rejected");
+			return false;
+		}
 		d->shadow_ownership_frame_seq = d->shadow_frame_seq;
 		d->shadow_tip_owned = true;
 	}
