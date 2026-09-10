@@ -25,7 +25,6 @@
 #include <zephyr/logging/log.h>
 
 #include <travelers_pad/contact_arbiter.h>
-#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_edge_dial, LOG_LEVEL_INF);
 
@@ -301,18 +300,29 @@ static void edge_dial_process_frame(const struct device *dev)
 	}
 
 	if (!data->active) {
+		enum travelers_pad_owner owner;
+
 		data->edge = edge_dial_edge_for(cfg, data->x, data->y);
-		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge] &&
-		    travelers_pad_session_claim(TRAVELERS_PAD_OWNER_EDGE_DIAL)) {
+		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge]) {
+			owner = travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+			/* Edge dial has the highest primary priority, but it must not revive
+			 * after a previously committed incompatible owner. EDGE_DIAL itself is
+			 * allowed when a temporary extra contact disappeared and this same
+			 * logical session is being re-acquired.
+			 * edge dialはprimary中で最高priorityだが、先にcommit済みの非互換owner
+			 * の後に復帰してはならない。一時的な追加接触が消えて同じlogical sessionを
+			 * 再取得する時だけ、EDGE_DIAL自身を許可する。 */
+			if (owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_EDGE_DIAL) {
+				return;
+			}
 			if (!data->shadow_claimed) {
-				/* Edge ownership is committed on acquisition, before the first
-				 * detent. Mirror exactly that first successful legacy claim to the
-				 * shadow resolver; subsequent detents and re-acquisition within the
-				 * same contact session share the same hypothetical token.
-				 * edge所有権は最初のdetentではなく取得時に確定する。その最初に成功した
-				 * legacy claimだけをshadow resolverへ写し、同一接触session内の以後の
-				 * detentおよび再取得は同じ仮想tokenを共有する。 */
-				(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+				/* Edge ownership is requested on acquisition, before the first
+				 * detent. The arbiter resolves this first claim; subsequent detents
+				 * and re-acquisition in the same contact session share its token.
+				 * edge所有権は最初のdetentではなく取得時に要求する。arbiterがこの最初の
+				 * claimを解決し、同一contact sessionの以後のdetentと再取得はそのtokenを
+				 * 共有する。 */
+				if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 					.frame_seq = data->shadow_frame_seq,
 					.recognizer = TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 					.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
@@ -320,9 +330,10 @@ static void edge_dial_process_frame(const struct device *dev)
 					.capabilities = TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
 					.contact_count = data->fingers,
 					.evidence = data->edge,
-				});
-				travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
-								  TRAVELERS_PAD_OWNER_EDGE_DIAL);
+				})) {
+					LOG_WRN("edge dial claim proposal rejected edge=%u", data->edge);
+					return;
+				}
 				data->shadow_ownership_frame_seq = data->shadow_frame_seq;
 				data->shadow_claimed = true;
 			}
