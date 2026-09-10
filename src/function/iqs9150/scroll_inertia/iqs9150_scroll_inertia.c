@@ -2,13 +2,15 @@
  * Travelers Pad two-finger scroll inertia.
  *
  * Canonical pointer wheel values exist only after the router has committed a
- * two-finger session. This function observes those values, but uses the raw
- * contact stream for physical release so router-internal cancellation frames
- * (such as pinch/rotation ownership) cannot start inertia.
+ * two-finger session. This function observes those values, and receives the
+ * raw contact stream as an arbiter observer so a physical release can be
+ * associated with the committed scroll token. Router-internal cancellation
+ * frames (such as pinch/rotation ownership) therefore cannot start inertia.
  *
  * 標準ポインタのホイール値はrouterが2本指セッションを確定した後だけに存在する。
- * 本機能はその値を観測するが、物理的な解放は生接触ストリームで確認する。これにより
- * ピンチ／回転取得などrouter内部のキャンセルフレームで慣性を開始しない。
+ * 本機能はその値を観測し、arbiter observerとして生接触ストリームを受け取る。
+ * 物理的な解放を確定scroll tokenと対応付けることで、ピンチ／回転取得などrouter内部の
+ * キャンセルフレームで慣性を開始しない。
  */
 
 #define DT_DRV_COMPAT zmk_travelers_pad_scroll_inertia
@@ -18,7 +20,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <travelers_pad/contact_session.h>
+#include <travelers_pad/contact_arbiter.h>
 
 LOG_MODULE_REGISTER(travelers_pad_scroll_inertia, LOG_LEVEL_INF);
 
@@ -39,6 +41,7 @@ struct scroll_inertia_data {
 	int16_t vertical_velocity;
 	bool emitting;
 	bool release_pending;
+	uint32_t shadow_frame_seq;
 	struct k_work_delayable work;
 };
 
@@ -115,6 +118,8 @@ static void inertia_handle_contact(const struct device *dev, struct input_event 
 {
 	struct scroll_inertia_data *data = dev->data;
 	const struct scroll_inertia_config *cfg = dev->config;
+	enum travelers_pad_owner owner;
+
 	if (evt->type == INPUT_EV_ABS && evt->code == INPUT_ABS_Z) {
 		uint8_t previous_fingers = data->contact_fingers;
 
@@ -123,19 +128,30 @@ static void inertia_handle_contact(const struct device *dev, struct input_event 
 			/* Any new physical contact cancels an older glide. */
 			stop_inertia(dev);
 			data->release_pending = false;
-		} else if (previous_fingers == 2 &&
-			   travelers_pad_session_owner() == TRAVELERS_PAD_OWNER_SCROLL) {
+		} else if (previous_fingers == 2) {
 			/* Two contacts alone are not a scroll. Tip-Tap and a stationary
-			 * two-finger click must not reuse an earlier wheel velocity. */
+			 * two-finger click must not reuse an earlier wheel velocity. The
+			 * arbiter owner is checked at the eventual terminal frame. */
 			data->release_pending = true;
 		}
 	}
-	if (evt->sync && data->release_pending && data->contact_fingers == 0 &&
-	    travelers_pad_session_owner() == TRAVELERS_PAD_OWNER_SCROLL &&
-	    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
-		LOG_INF("scroll inertia started h=%d v=%d", data->horizontal_velocity,
-			data->vertical_velocity);
-		k_work_schedule(&data->work, K_MSEC(cfg->start_delay_ms));
+	if (!evt->sync) {
+		return;
+	}
+
+	owner = travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
+	if (data->release_pending && data->contact_fingers == 0) {
+		if (owner == TRAVELERS_PAD_OWNER_SCROLL &&
+		    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
+			LOG_INF("scroll inertia started h=%d v=%d", data->horizontal_velocity,
+				data->vertical_velocity);
+			k_work_schedule(&data->work, K_MSEC(cfg->start_delay_ms));
+		} else if (owner != TRAVELERS_PAD_OWNER_SCROLL) {
+			/* The raw contact stream may look like a two-finger release for a
+			 * click, Tip-Tap, geometry, or higher-priority action. */
+			data->horizontal_velocity = 0;
+			data->vertical_velocity = 0;
+		}
 		data->release_pending = false;
 	}
 }
@@ -165,6 +181,7 @@ static int inertia_init(const struct device *dev)
 	struct scroll_inertia_data *data = dev->data;
 
 	k_work_init_delayable(&data->work, inertia_work_handler);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);
 	LOG_INF("scroll inertia active: delay=%ums period=%ums decay=%u/%u stop=%u",
 		cfg->start_delay_ms, cfg->repeat_ms, cfg->decay_numerator, cfg->decay_denominator,
 		cfg->stop_delta);
@@ -184,7 +201,16 @@ static int inertia_init(const struct device *dev)
 	};                                                                                           \
 	static void scroll_inertia_contact_handler_##n(struct input_event *evt)                      \
 	{                                                                                            \
+		struct scroll_inertia_data *data = &scroll_inertia_data_##n;                             \
+		if (evt->sync) {                                                                          \
+			data->shadow_frame_seq = travelers_pad_arbiter_next_frame(                              \
+				TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);                                            \
+		}                                                                                         \
 		inertia_handle_contact(DEVICE_DT_INST_GET(n), evt);                                      \
+		if (evt->sync) {                                                                          \
+			travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,                \
+				data->shadow_frame_seq);                                                            \
+		}                                                                                         \
 	}                                                                                            \
 	static void scroll_inertia_wheel_handler_##n(struct input_event *evt)                        \
 	{                                                                                            \

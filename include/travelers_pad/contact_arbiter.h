@@ -26,6 +26,10 @@ enum travelers_pad_recognizer_id {
 	TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 	TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 	TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+	/* Auxiliary observer: proposes no owner and receives frames only so
+	 * inertia can associate a physical release with the arbiter token. The
+	 * preceding five IDs remain the primary recognizers. */
+	TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,
 	TRAVELERS_PAD_RECOGNIZER_COUNT,
 };
 

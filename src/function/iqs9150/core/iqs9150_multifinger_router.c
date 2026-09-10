@@ -19,7 +19,6 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
-#include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
@@ -351,11 +350,12 @@ static void router_process_frame(const struct device *dev)
 		}
 	}
 	if (primary_move >= cfg->scroll_classify_move) {
-		/* Shadow only: express the same transition to the future resolver before
-		 * the legacy shared claim performs the currently-authoritative action.
-		 * shadow専用: 現行shared claimが正として動く前に、同じ遷移を将来の
-		 * resolverへproposalとして表す。 */
-		(void)travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
+		/* The arbiter is now the sole owner path for a classified scroll. Its
+		 * resolver dispatches the first routed frame only after the immutable
+		 * decision exists; later frames are checked against that same token.
+		 * scroll分類後の所有権経路はarbiterだけとする。resolverは不変decisionが
+		 * 確定してから最初のrouted frameを出力し、以後も同じtokenで検査する。 */
+		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 			.frame_seq = data->shadow_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_ROUTER,
 			.intent = TRAVELERS_PAD_PROPOSAL_CLAIM,
@@ -363,19 +363,14 @@ static void router_process_frame(const struct device *dev)
 			.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
 			.contact_count = data->fingers,
 			.evidence = primary_move,
-		});
-		if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_SCROLL)) {
-			LOG_WRN("2F scroll claim rejected");
+		})) {
+			LOG_WRN("2F scroll proposal rejected");
 			return;
 		}
-		/* Record the legacy result with this recognizer's queued-frame ID, not
-		 * with mutable global session state that may already hold a later frame. */
-		travelers_pad_arbiter_record_legacy_claim(data->shadow_frame_seq,
-						  TRAVELERS_PAD_OWNER_SCROLL);
 		data->scroll_ownership_frame_seq = data->shadow_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
 		data->scroll_start_pending = true;
-		LOG_INF("2F route=scroll committed; awaiting arbiter dispatch");
+		LOG_INF("2F route=scroll proposed; awaiting arbiter dispatch");
 	}
 }
 
