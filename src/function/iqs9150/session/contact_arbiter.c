@@ -481,6 +481,20 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 	return true;
 }
 
+bool travelers_pad_arbiter_authorize_auxiliary_output(
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer)
+{
+	ARG_UNUSED(producer);
+
+	/* Auxiliary output has no independent owner. The only authorization is the
+	 * live primary token, so a delayed timer cannot continue after release,
+	 * cancellation, or a higher-priority ownership hand-off. */
+	return auxiliary < TRAVELERS_PAD_AUXILIARY_COUNT && state.token.valid &&
+	       state.token.owner == required_owner &&
+	       (state.token.capabilities & capability) == capability;
+}
+
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq)
 {
 	struct arbiter_frame *frame = frame_for(frame_seq);

@@ -30,7 +30,16 @@ enum travelers_pad_recognizer_id {
 	 * inertia can associate a physical release with the arbiter token. The
 	 * preceding five IDs remain the primary recognizers. */
 	TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,
+	/* Auxiliary observer: detects edge-hold continuation candidates from raw
+	 * contacts. It has no claim of its own; delayed output is delegated by the
+	 * current drag or scroll owner token. */
+	TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD,
 	TRAVELERS_PAD_RECOGNIZER_COUNT,
+};
+
+enum travelers_pad_auxiliary_id {
+	TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
+	TRAVELERS_PAD_AUXILIARY_COUNT,
 };
 
 enum travelers_pad_proposal_intent {
@@ -148,6 +157,17 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 					    enum travelers_pad_recognizer_id recognizer,
 					    enum travelers_pad_owner requested_owner,
 					    uint32_t capability, const char *producer);
+
+/* An auxiliary function may extend an already-committed primary action, but
+ * may not establish ownership itself. This validates its delayed output
+ * against the live token. It is intentionally quiet on a mismatch because
+ * timers may wake after a normal release or ownership hand-off.
+ * 補助機能は確定済みprimary操作を継続できるが、自身で所有権は確立できない。
+ * 遅延出力をlive tokenに対して検証する。通常の解放・所有権移行後にもtimerが
+ * 起き得るため、不一致は意図的に静かに扱う。 */
+bool travelers_pad_arbiter_authorize_auxiliary_output(
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer);
 
 /* The semantic gate is observational until the authoritative migration. It
  * reports invalid tokens but deliberately permits output in this phase.

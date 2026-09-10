@@ -1,11 +1,13 @@
 /*
  * Travelers Pad IQS9150 edge-hold continuation detector.
  *
- * Confirmed drag and router-committed two-finger scroll can continue beyond
- * the physical pad edge. Scroll direction is latched from the pointer
- * function's already axis-locked canonical wheel output.
+ * A committed drag and router-committed two-finger scroll can continue beyond
+ * the physical pad edge. Raw coordinates detect an edge candidate, but each
+ * delayed output is authorized by the live arbiter owner token. Scroll
+ * direction is latched from the pointer function's axis-locked wheel output.
  *
  * 確定済みドラッグとrouter確定済み2本指スクロールはパッド端の外まで継続する。
+ * 生座標で辺候補を検出するが、遅延出力ごとにlive arbiter owner tokenで許可する。
  * スクロール方向は、ポインタ機能がすでに軸ロックして出力した標準ホイール値から
  * ラッチする。
  */
@@ -18,8 +20,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/multitouch.h>
-#include <travelers_pad/tap_drag.h>
 
 LOG_MODULE_REGISTER(travelers_pad_edge_hold, LOG_LEVEL_INF);
 
@@ -59,12 +61,15 @@ struct edge_hold_data {
 	uint8_t scroll_fingers;
 	enum edge_hold_edge drag_edge;
 	enum edge_hold_edge scroll_edge;
+	bool drag_repeat_armed;
+	bool scroll_repeat_armed;
 	struct k_work_delayable drag_repeat_work;
 	struct k_work_delayable scroll_repeat_work;
 	int16_t scroll_horizontal;
 	int16_t scroll_vertical;
 	int16_t scroll_direction_horizontal;
 	int16_t scroll_direction_vertical;
+	uint32_t shadow_frame_seq;
 };
 
 static const char *edge_name(enum edge_hold_edge edge)
@@ -139,6 +144,7 @@ static void stop_drag_repeat(const struct device *dev)
 	struct edge_hold_data *data = dev->data;
 
 	k_work_cancel_delayable(&data->drag_repeat_work);
+	data->drag_repeat_armed = false;
 }
 
 static void drag_repeat_work_handler(struct k_work *work)
@@ -150,11 +156,15 @@ static void drag_repeat_work_handler(struct k_work *work)
 	int16_t dy = 0;
 	int rc;
 
-	/* The tap/drag module owns button state. This module only adds motion while
-	 * that established drag remains valid.
-	 * ボタン状態はtap/dragモジュールが所有する。本モジュールは確定ドラッグが
-	 * 有効な間だけ移動を追加する。 */
-	if (!travelers_pad_tap_drag_is_active() || data->drag_edge == EDGE_HOLD_NONE) {
+	/* The tap/drag module owns the button. This module only adds motion while
+	 * the arbiter still holds the matching drag token.
+	 * ボタン状態はtap/dragモジュールが所有する。本モジュールはarbiterが同じ
+	 * drag tokenを保持する間だけ移動を追加する。 */
+	if (data->drag_fingers == 0 || data->drag_edge == EDGE_HOLD_NONE ||
+	    !travelers_pad_arbiter_authorize_auxiliary_output(
+		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+		TRAVELERS_PAD_CAP_POINTER_DELTA, "edge-hold-drag")) {
+		data->drag_repeat_armed = false;
 		return;
 	}
 
@@ -191,7 +201,11 @@ static void start_drag_repeat(const struct device *dev)
 	const struct edge_hold_config *cfg = dev->config;
 	struct edge_hold_data *data = dev->data;
 
+	if (data->drag_repeat_armed) {
+		return;
+	}
 	k_work_cancel_delayable(&data->drag_repeat_work);
+	data->drag_repeat_armed = true;
 	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_start_delay_ms));
 	LOG_INF("drag continuation started edge=%s delay=%ums period=%ums delta=%d",
 		edge_name(data->drag_edge), cfg->drag_start_delay_ms, cfg->drag_repeat_ms,
@@ -203,6 +217,7 @@ static void stop_scroll_repeat(const struct device *dev)
 	struct edge_hold_data *data = dev->data;
 
 	k_work_cancel_delayable(&data->scroll_repeat_work);
+	data->scroll_repeat_armed = false;
 	data->scroll_horizontal = 0;
 	data->scroll_vertical = 0;
 }
@@ -216,6 +231,13 @@ static void scroll_repeat_work_handler(struct k_work *work)
 
 	if (data->scroll_fingers != 2 || data->scroll_edge == EDGE_HOLD_NONE ||
 	    (data->scroll_horizontal == 0 && data->scroll_vertical == 0)) {
+		data->scroll_repeat_armed = false;
+		return;
+	}
+	if (!travelers_pad_arbiter_authorize_auxiliary_output(
+		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_SCROLL,
+		TRAVELERS_PAD_CAP_SCROLL_DELTA, "edge-hold-scroll")) {
+		data->scroll_repeat_armed = false;
 		return;
 	}
 
@@ -238,7 +260,7 @@ static void start_scroll_repeat(const struct device *dev, int16_t horizontal, in
 	struct edge_hold_data *data = dev->data;
 
 	if ((horizontal == 0 && vertical == 0) || data->scroll_edge == EDGE_HOLD_NONE ||
-	    data->scroll_fingers != 2) {
+	    data->scroll_fingers != 2 || data->scroll_repeat_armed) {
 		return;
 	}
 
@@ -251,6 +273,7 @@ static void start_scroll_repeat(const struct device *dev, int16_t horizontal, in
 	data->scroll_vertical = vertical == 0 ? 0 :
 				(vertical > 0 ? cfg->scroll_repeat_delta : -cfg->scroll_repeat_delta);
 	k_work_cancel_delayable(&data->scroll_repeat_work);
+	data->scroll_repeat_armed = true;
 	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_start_delay_ms));
 	LOG_INF("scroll continuation started edge=%s delay=%ums period=%ums delta=%d axis=%s",
 		edge_name(data->scroll_edge), cfg->scroll_start_delay_ms, cfg->scroll_repeat_ms,
@@ -265,22 +288,31 @@ static void detect_drag_edge(const struct device *dev)
 	uint16_t y;
 	enum edge_hold_edge edge = EDGE_HOLD_NONE;
 
-	if (travelers_pad_tap_drag_is_active() && data->drag_fingers != 0 &&
-	    drag_centroid(data, &x, &y)) {
+	/* Edge position is only a candidate. The delayed work handler checks the
+	 * arbiter token, which also avoids depending on callback order on the first
+	 * double-tap-drag movement frame.
+	 * 辺位置は候補にすぎない。遅延work handlerがarbiter tokenを確認するため、
+	 * double-tap-drag最初の移動frameでcallback順に依存しない。 */
+	if (data->drag_fingers != 0 && drag_centroid(data, &x, &y)) {
 		edge = edge_at(cfg, x, y);
 	}
 	if (edge != data->drag_edge) {
 		stop_drag_repeat(dev);
 		if (edge != EDGE_HOLD_NONE) {
-			LOG_INF("drag continuation eligible edge=%s centroid=(%u,%u) fingers=%u",
+			LOG_INF("drag continuation candidate edge=%s centroid=(%u,%u) fingers=%u",
 				edge_name(edge), x, y, data->drag_fingers);
 		} else if (data->drag_edge != EDGE_HOLD_NONE) {
 			LOG_INF("drag continuation disarmed edge=%s", edge_name(data->drag_edge));
 		}
 		data->drag_edge = edge;
-		if (edge != EDGE_HOLD_NONE) {
-			start_drag_repeat(dev);
-		}
+	}
+	/* The owner may have been committed after this detector first saw the edge.
+	 * Retry arm-on-entry without requiring the finger to leave and re-enter. */
+	if (data->drag_edge != EDGE_HOLD_NONE && !data->drag_repeat_armed &&
+	    travelers_pad_arbiter_authorize_auxiliary_output(
+		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+		TRAVELERS_PAD_CAP_POINTER_DELTA, "edge-hold-drag-arm")) {
+		start_drag_repeat(dev);
 	}
 }
 
@@ -420,7 +452,11 @@ static void edge_hold_drag_input(const struct device *dev, struct input_event *e
 		}
 	}
 	if (evt->sync) {
+		data->shadow_frame_seq =
+			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD);
 		detect_drag_edge(dev);
+		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD,
+					       data->shadow_frame_seq);
 	}
 }
 
@@ -460,6 +496,7 @@ static int edge_hold_init(const struct device *dev)
 			     drag_repeat_work_handler);
 	k_work_init_delayable(&((struct edge_hold_data *)dev->data)->scroll_repeat_work,
 			     scroll_repeat_work_handler);
+	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD);
 	LOG_INF("edge hold active: surface=%ux%u edge=%u; drag delay=%ums period=%ums delta=%d; "
 		"scroll delay=%ums period=%ums delta=%d", cfg->surface_x, cfg->surface_y, cfg->edge_size,
 		cfg->drag_start_delay_ms, cfg->drag_repeat_ms, cfg->drag_repeat_delta,
