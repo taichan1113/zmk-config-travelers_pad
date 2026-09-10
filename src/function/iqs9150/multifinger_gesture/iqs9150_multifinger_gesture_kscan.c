@@ -22,7 +22,6 @@
 
 #include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/multitouch.h>
-#include <travelers_pad/tap_drag.h>
 #include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_multifinger_gesture, LOG_LEVEL_INF);
@@ -54,7 +53,7 @@ struct gesture_data {
 	uint8_t max_fingers;
 	int64_t started_ms;
 	bool moved;
-	bool cancelled_by_tap_drag;
+	bool cancelled_by_drag_owner;
 	bool cancelled_by_owner;
 	uint8_t five_finger_stable_frames;
 	uint8_t five_finger_slot[5];
@@ -148,6 +147,18 @@ static void multifinger_resolve_action(void *context,
 
 static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
 {
+	/* A drag claim is exclusive from its second contact onward. Do not let the
+	 * legacy compatibility path acquire MULTI_GESTURE after the arbiter has
+	 * already granted DRAG: that would not pass the token gate, but it would
+	 * still overwrite the legacy session owner and could affect another
+	 * recognizer during the remainder of the contact.
+	 * drag claimは二回目接触から排他的である。arbiterがDRAGをgrantした後は、
+	 * legacy互換経路でMULTI_GESTUREを取得させない。token gateは通過しないが、
+	 * legacy session ownerを書き換えて接触中の他recognizerへ影響するためである。 */
+	if (travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq) ==
+	    TRAVELERS_PAD_OWNER_DRAG) {
+		return false;
+	}
 	if (!travelers_pad_session_claim(TRAVELERS_PAD_OWNER_MULTI_GESTURE)) {
 		return false;
 	}
@@ -328,7 +339,7 @@ static void reset_session(struct gesture_data *data)
 	data->previous_fingers = 0;
 	data->max_fingers = 0;
 	data->moved = false;
-	data->cancelled_by_tap_drag = false;
+	data->cancelled_by_drag_owner = false;
 	data->cancelled_by_owner = false;
 	data->five_finger_stable_frames = 0;
 	data->five_finger_baseline_valid = false;
@@ -360,7 +371,7 @@ static void gesture_process_frame(const struct device *dev)
 		data->started_ms = now;
 		data->max_fingers = data->fingers;
 		data->moved = false;
-		data->cancelled_by_tap_drag = false;
+		data->cancelled_by_drag_owner = false;
 		data->cancelled_by_owner = false;
 	}
 	if (data->fingers != 0) {
@@ -373,12 +384,28 @@ static void gesture_process_frame(const struct device *dev)
 			data->start_x = data->x;
 			data->start_y = data->y;
 		}
-		if (travelers_pad_tap_drag_is_tracking()) {
-			data->cancelled_by_tap_drag = true;
+		/* A confirmed or provisional DRAG owner exclusively interprets this
+		 * contact session. Consult the arbiter rather than tap/drag's private
+		 * tracking flag, so gesture cancellation follows the same owner source as
+		 * router suppression.
+		 * 確定または暫定のDRAG ownerは、この接触sessionを排他的に解釈する。
+		 * routerの抑止と同じowner sourceに従うため、tap/drag固有のtracking flag
+		 * ではなくarbiterを参照してgestureを取消す。 */
+		if (travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq) ==
+	    TRAVELERS_PAD_OWNER_DRAG) {
+			if (!data->cancelled_by_drag_owner) {
+				LOG_INF("%uF gesture suppressed: arbiter drag owner", data->max_fingers);
+			}
+			data->cancelled_by_drag_owner = true;
 		}
-		if (data->max_fingers >= 3 && !data->moved &&
-		    (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
-		    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
+		/* A detected drag owner must prevent the gesture from even attempting a
+		 * legacy claim. This guard is intentionally separate from terminal output
+		 * suppression: the harmful side effect was the intermediate claim itself.
+		 * 検出済みのdrag ownerはgestureがlegacy claimを試みること自体を阻止する。
+		 * 終端出力の抑止とは別にする。問題は途中のclaim自体の副作用であった。 */
+		if (data->max_fingers >= 3 && !data->moved && !data->cancelled_by_drag_owner &&
+	    (absolute_int((int)data->x - data->start_x) >= cfg->swipe_min_move ||
+	    absolute_int((int)data->y - data->start_y) >= cfg->swipe_min_move)) {
 			uint32_t move = absolute_int((int)data->x - data->start_x) +
 					absolute_int((int)data->y - data->start_y);
 
@@ -388,20 +415,20 @@ static void gesture_process_frame(const struct device *dev)
 				data->cancelled_by_owner = true;
 			}
 		}
-		if (data->max_fingers == 5 && !data->cancelled_by_tap_drag) {
+		if (data->max_fingers == 5 && !data->cancelled_by_drag_owner) {
 			process_five_finger_geometry(dev);
 		}
 	} else if (data->previous_fingers != 0) {
 		if (data->max_fingers == 5 && data->five_finger_candidate != FIVE_FINGER_NONE) {
 			LOG_INF("5F %s gesture complete",
 				five_finger_candidate_name(data->five_finger_candidate));
-		} else if (!data->cancelled_by_tap_drag && !data->cancelled_by_owner &&
+		} else if (!data->cancelled_by_drag_owner && !data->cancelled_by_owner &&
 		    data->max_fingers >= 3 && data->max_fingers <= 4 &&
 		    data->moved && now - data->started_ms <= cfg->swipe_max_ms) {
 			emit_gesture(dev);
 		} else if (data->max_fingers >= 3 && data->max_fingers <= 4 && data->moved) {
-			LOG_INF("%uF swipe ignored: duration=%lld ms tap-drag=%u", data->max_fingers,
-			now - data->started_ms, data->cancelled_by_tap_drag);
+			LOG_INF("%uF swipe ignored: duration=%lld ms drag-owner=%u", data->max_fingers,
+			now - data->started_ms, data->cancelled_by_drag_owner);
 		}
 		reset_session(data);
 	}
