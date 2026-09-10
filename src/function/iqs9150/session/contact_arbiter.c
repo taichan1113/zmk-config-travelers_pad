@@ -52,10 +52,27 @@ struct arbiter_frame {
 	bool active;
 };
 
+/* A claim must be visible before the queued listener fan-out has completed:
+ * the router uses it only to suppress an incompatible raw stream. It is not a
+ * grant and cannot authorize semantic output. The resolver replaces it with a
+ * committed token after every recognizer has observed the frame.
+ * claimはqueued listener fan-out完了前にも見える必要がある。routerはこれを
+ * 非互換な生ストリームの抑止だけに使う。これはgrantではなくsemantic出力を許可
+ * できない。全recognizerがframeを観測後、resolverが確定tokenへ置換する。 */
+struct arbiter_provisional_owner {
+	struct travelers_pad_owner_token token;
+	enum travelers_pad_recognizer_id recognizer;
+};
+
 struct arbiter_state {
 	struct arbiter_frame frames[TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES];
 	struct arbiter_decision decisions[TRAVELERS_PAD_ARBITER_MAX_DECISIONS];
 	struct travelers_pad_owner_token token;
+	struct arbiter_provisional_owner provisional;
+	struct {
+		uint32_t session_id;
+		enum travelers_pad_owner owner;
+	} ending;
 	uint32_t registered_mask;
 	struct {
 		travelers_pad_arbiter_resolve_handler_t handler;
@@ -168,6 +185,46 @@ static struct arbiter_decision *decision_for(uint32_t frame_seq)
 	return NULL;
 }
 
+static bool proposal_wins_over(enum travelers_pad_owner candidate_owner,
+			       enum travelers_pad_recognizer_id candidate_recognizer,
+			       enum travelers_pad_owner current_owner,
+			       enum travelers_pad_recognizer_id current_recognizer)
+{
+	return owner_priority(candidate_owner) > owner_priority(current_owner) ||
+	       (owner_priority(candidate_owner) == owner_priority(current_owner) &&
+		candidate_recognizer < current_recognizer);
+}
+
+static void note_provisional_claim(const struct arbiter_frame *frame,
+				   const struct travelers_pad_arbiter_proposal *proposal)
+{
+	struct arbiter_provisional_owner *provisional = &state.provisional;
+
+	if (proposal->intent != TRAVELERS_PAD_PROPOSAL_CLAIM ||
+	    (state.token.valid && state.token.session_id == frame->snapshot.session_id)) {
+		return;
+	}
+	if (provisional->token.valid && provisional->token.session_id == frame->snapshot.session_id &&
+	    !proposal_wins_over(proposal->requested_owner, proposal->recognizer,
+				provisional->token.owner, provisional->recognizer)) {
+		return;
+	}
+	*provisional = (struct arbiter_provisional_owner){
+		.token = {
+			.session_id = frame->snapshot.session_id,
+			.owner_generation = 0,
+			.owner = proposal->requested_owner,
+			.capabilities = proposal->capabilities,
+			.kind = TRAVELERS_PAD_TOKEN_PROVISIONAL,
+			.valid = true,
+		},
+		.recognizer = proposal->recognizer,
+	};
+	LOG_INF("arbiter provisional session=%u frame=%u owner=%s recognizer=%u",
+		frame->snapshot.session_id, frame->snapshot.frame_seq,
+		owner_name(proposal->requested_owner), proposal->recognizer);
+}
+
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot)
 {
 	struct arbiter_frame *frame = NULL;
@@ -242,6 +299,7 @@ bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *p
 		return false;
 	}
 	frame->proposals[frame->proposal_count++] = *proposal;
+	note_provisional_claim(frame, proposal);
 	return true;
 }
 
@@ -255,11 +313,10 @@ static const struct travelers_pad_arbiter_proposal *select_winner(const struct a
 		if (proposal->intent != TRAVELERS_PAD_PROPOSAL_CLAIM) {
 			continue;
 		}
-		if (winner == NULL || owner_priority(proposal->requested_owner) >
-				      owner_priority(winner->requested_owner) ||
-		    (owner_priority(proposal->requested_owner) ==
-			     owner_priority(winner->requested_owner) &&
-		     proposal->recognizer < winner->recognizer)) {
+		if (winner == NULL || proposal_wins_over(proposal->requested_owner,
+							 proposal->recognizer,
+							 winner->requested_owner,
+							 winner->recognizer)) {
 			/* The final recognizer-ID comparison is deterministic only. Primary
 			 * claims are intentionally assigned distinct policy priorities. */
 			winner = proposal;
@@ -311,6 +368,10 @@ static void resolve_frame(struct arbiter_frame *frame)
 	if (state.token.valid && state.token.session_id != frame->snapshot.session_id) {
 		state.token.valid = false;
 	}
+	if (state.provisional.token.valid &&
+	    state.provisional.token.session_id != frame->snapshot.session_id) {
+		state.provisional.token.valid = false;
+	}
 	winner = select_winner(frame);
 	if (winner != NULL && !state.token.valid) {
 		state.token = (struct travelers_pad_owner_token){
@@ -329,6 +390,10 @@ static void resolve_frame(struct arbiter_frame *frame)
 				.valid = true,
 			};
 		new_token = true;
+		if (state.provisional.token.valid &&
+		    state.provisional.token.session_id == frame->snapshot.session_id) {
+			state.provisional.token.valid = false;
+		}
 	}
 
 	if (new_token) {
@@ -359,8 +424,34 @@ static void resolve_frame(struct arbiter_frame *frame)
 	 * result until this comparison is complete, then invalidate it so no later
 	 * work can mistake it for a live-session token. */
 	if (frame->snapshot.contact_count == 0) {
+		state.ending.session_id = frame->snapshot.session_id;
+		state.ending.owner = state.token.valid ? state.token.owner :
+			(state.provisional.token.valid ? state.provisional.token.owner :
+			 TRAVELERS_PAD_OWNER_NONE);
 		state.token.valid = false;
+		state.provisional.token.valid = false;
 	}
+}
+
+enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq)
+{
+	const struct arbiter_frame *frame = frame_for(frame_seq);
+	uint32_t session_id;
+
+	if (frame == NULL) {
+		return TRAVELERS_PAD_OWNER_NONE;
+	}
+	session_id = frame->snapshot.session_id;
+	if (state.token.valid && state.token.session_id == session_id) {
+		return state.token.owner;
+	}
+	if (state.provisional.token.valid && state.provisional.token.session_id == session_id) {
+		return state.provisional.token.owner;
+	}
+	if (frame->snapshot.contact_count == 0 && state.ending.session_id == session_id) {
+		return state.ending.owner;
+	}
+	return TRAVELERS_PAD_OWNER_NONE;
 }
 
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,

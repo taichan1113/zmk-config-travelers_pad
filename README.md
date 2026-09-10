@@ -48,8 +48,9 @@ proposalを集め、queue経由の全recognizer通知を待って、callback登�
 owner tokenを生成します。
 
 primary recognizerの初回・継続semantic出力は、そのtokenに対する出力許可を通過してから
-HIDまたはKSCANへ送信します。一方、session managerのshared claim、tap許可、pointer cancel、
-およびrecognizer間の直接状態問い合わせは、まだ旧経路を併用しています。そのため現段階は
+HIDまたはKSCANへ送信します。arbiterは暫定claim・確定owner・terminal ownerをframe単位で
+保持し、routerのdrag抑止およびterminal判定はこの状態を参照します。一方、session managerの
+shared claim、tap許可、edge dialの即時抑止などはまだ旧経路を併用しています。そのため現段階は
 完全な単一経路ではなくhybrid移行です。arbiter結果とlegacy結果の差分をログに残しながら、
 所有権経路を段階的に置換します。
 
@@ -60,11 +61,13 @@ waits for every registered recognizer's queued-frame acknowledgement before
 producing a winner and owner token independent of callback registration order.
 
 Initial and continuation semantic outputs from primary recognizers are sent to
-HID or KSCAN only after the token authorizes them. The session manager's shared
-claim, tap permission, pointer cancellation, and direct recognizer-state
-queries still use legacy paths, however. This is therefore a hybrid migration,
-not yet a single authoritative processing path; logs retain legacy-versus-
-arbiter comparisons while ownership routing is replaced incrementally.
+HID or KSCAN only after the token authorizes them. The arbiter retains a
+provisional claim, committed owner, and terminal owner per frame; the router
+now uses that state for drag suppression and terminal routing. The session
+manager's shared claim, tap permission, and edge dial's immediate suppression
+still use legacy paths, however. This is therefore a hybrid migration, not yet
+a single authoritative processing path; logs retain legacy-versus-arbiter
+comparisons while ownership routing is replaced incrementally.
 
 All five primary recognizers—the two-finger router, tap/drag, Tip-Tap,
 multi-finger gesture, and edge dial—now submit proposals. Tip-Tap submits one

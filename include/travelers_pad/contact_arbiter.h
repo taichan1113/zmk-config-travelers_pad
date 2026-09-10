@@ -2,15 +2,15 @@
  * Travelers Pad contact-arbiter vocabulary.
  *
  * This API is intentionally separate from the legacy shared-claim API. During
- * shadow migration recognizers submit immutable proposals, the resolver
- * selects a hypothetical owner, and the legacy output path remains
- * authoritative. A later stage makes the issued token mandatory at the
- * semantic output gate.
+ * the hybrid migration recognizers submit immutable proposals, the resolver
+ * selects the arbiter owner, and compatibility users may still consult the
+ * legacy session state. Primary semantic output already requires the issued
+ * token; later stages remove the remaining compatibility ownership paths.
  *
  * Travelers Pad 接触arbiter用の共通語彙。
- * legacy shared-claim APIとは意図的に分離する。shadow移行中はrecognizerが
- * 不変proposalを提出し、resolverが仮のownerを選ぶが、既存出力経路を正とする。
- * 後段で発行tokenをsemantic output gateの必須条件にする。
+ * legacy shared-claim APIとは意図的に分離する。hybrid移行中はrecognizerが
+ * 不変proposalを提出し、resolverがarbiter ownerを選ぶ。primary semantic出力は
+ * すでに発行tokenを必須とし、後段で残る互換所有権経路を除去する。
  */
 #ifndef TRAVELERS_PAD_CONTACT_ARBITER_H_
 #define TRAVELERS_PAD_CONTACT_ARBITER_H_
@@ -104,6 +104,18 @@ bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *p
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq);
 void travelers_pad_arbiter_record_legacy_claim(uint32_t frame_seq,
 						enum travelers_pad_owner legacy_owner);
+
+/* Return the arbiter owner applicable while processing one forwarded frame.
+ * A CLAIM is visible as a provisional owner before all queued recognizers
+ * have acknowledged the frame. Once resolved it becomes the committed owner;
+ * the same owner remains visible for that frame's terminal release. This lets
+ * a routing consumer suppress an incompatible raw path without importing a
+ * recognizer-private mutable flag.
+ * 転送済みframeを処理中に適用されるarbiter ownerを返す。CLAIMは、queue内の
+ * 全recognizerがframeを確認する前は暫定ownerとして見える。解決後は確定ownerとなり、
+ * 同じownerはそのsessionのterminal releaseでも見える。これによりrouting側は
+ * recognizer固有の可変flagを直接参照せず、非互換な生経路を抑止できる。 */
+enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq);
 
 /* Attach a semantic output to the frame which established its ownership. If
  * that frame has not resolved yet, the receipt is checked by the resolver;

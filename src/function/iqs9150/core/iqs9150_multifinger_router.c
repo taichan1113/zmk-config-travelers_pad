@@ -18,7 +18,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
-#include <travelers_pad/tap_drag.h>
 #include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/edge_dial.h>
 #include <travelers_pad/contact_session.h>
@@ -160,15 +159,23 @@ static void router_process_frame(const struct device *dev)
 	uint32_t distance_delta;
 	uint32_t rotation_cross;
 	uint32_t primary_move;
+	enum travelers_pad_owner arbiter_owner =
+		travelers_pad_arbiter_owner_for_frame(data->shadow_frame_seq);
 
-	/* The tap/drag function owns movement after a confirmed double-tap hold.
-	 * It emits relative movement with the button held, so never reinterpret the
-	 * same raw frames as pointer motion or two-finger scrolling here. */
-	if (travelers_pad_tap_drag_is_tracking()) {
+	/* A double-tap hold registers a provisional DRAG claim before its movement
+	 * threshold is crossed. The arbiter exposes that claim to this routing path,
+	 * so pointer suppression no longer depends on tap/drag's private flag. A
+	 * provisional claim can never send semantic output; it only prevents the
+	 * router from reinterpreting the same raw frames as pointer or scroll.
+	 * ダブルタップholdは移動閾値を越える前に暫定DRAG claimを登録する。arbiterが
+	 * そのclaimをrouting経路へ公開するので、pointer抑止はtap/drag固有flagへ依存
+	 * しない。暫定claim自身はsemantic出力を行えず、同じ生frameをpointer/scrollへ
+	 * 再解釈しないためだけに使用する。 */
+	if (arbiter_owner == TRAVELERS_PAD_OWNER_DRAG) {
 		if (data->state != ROUTER_TAP_DRAG) {
 			router_cancel_pointer(dev);
 			data->state = ROUTER_TAP_DRAG;
-			LOG_INF("tap/drag owns %uF contact stream", data->fingers);
+			LOG_INF("arbiter drag owns %uF contact stream", data->fingers);
 		}
 		if (data->fingers == 0) {
 			data->state = ROUTER_IDLE;
@@ -219,12 +226,12 @@ static void router_process_frame(const struct device *dev)
 	}
 
 	if (data->fingers == 0) {
-		enum travelers_pad_owner owner = travelers_pad_session_owner();
-
 		/* A terminal owner already emitted its semantic action. In particular,
 		 * Tip-Tap must not create the router's legacy synthetic 2F tap pair. */
-		if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE ||
-		    owner == TRAVELERS_PAD_OWNER_EDGE_DIAL || owner == TRAVELERS_PAD_OWNER_DRAG) {
+		if (arbiter_owner == TRAVELERS_PAD_OWNER_TIP_TAP ||
+		    arbiter_owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE ||
+		    arbiter_owner == TRAVELERS_PAD_OWNER_EDGE_DIAL ||
+		    arbiter_owner == TRAVELERS_PAD_OWNER_DRAG) {
 			data->state = ROUTER_IDLE;
 			data->max_fingers = 0;
 			return;
