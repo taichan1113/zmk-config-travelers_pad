@@ -1,4 +1,13 @@
-# トラックパッド処理経路・アーキテクチャ設計レビュー依頼
+# Archived architecture-review prompt / 旧アーキテクチャレビュー依頼
+
+> Historical design input captured before the contact-arbiter migration. It is
+> retained for decision history and is not a description of the current path.
+> The authoritative current diagram and responsibilities are in
+> [architecture-and-tuning.md](architecture-and-tuning.md).
+>
+> これはcontact-arbiter移行前の設計検討資料である。意思決定の履歴として残すが、
+> 現在の処理経路を表す文書ではない。現在の正式な図と責務は
+> [architecture-and-tuning.md](architecture-and-tuning.md) を参照する。
 
 以下のZMK + IQS9150EV02トラックパッドについて、**接触フレームの処理経路、所有権、およびモジュール責務**を再設計してください。
 

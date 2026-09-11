@@ -1,12 +1,12 @@
 /*
  * Travelers Pad IQS9150 multi-finger router.
  *
- * Raw contact data is classified before it reaches the ordinary pointer
- * function. This makes gesture ownership explicit: pinch/rotation and 3--5
- * finger sessions never leak into two-finger scroll output.
+ * Normalized session contact data is classified before it reaches the ordinary
+ * pointer function. This makes gesture ownership explicit: pinch/rotation and
+ * 3--5 finger sessions never leak into two-finger scroll output.
  *
- * 生の接触データを通常ポインタ機能の前で分類する。ピンチ・回転・3--5本指操作を
- * 二本指スクロールへ漏らさないため、操作の所有権をここで明示的に決める。
+ * 正規化済みsession接触データを通常ポインタ機能の前で分類する。ピンチ・回転・3--5本指
+ * 操作を二本指スクロールへ漏らさないため、操作の所有権をここで明示的に決める。
  */
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_multifinger_router

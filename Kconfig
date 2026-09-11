@@ -58,8 +58,12 @@ config TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE
     depends on IQS9150_EV02_DRIVER && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_EDGE_HOLD_CONTINUE_ENABLED
     select INPUT
     help
-      Continue a confirmed drag beyond a physical pad edge. Committed two-finger
-      scroll is detected but remains output-disabled until its own stage.
+      Continue a confirmed drag or axis-locked two-finger scroll beyond a
+      physical pad edge. Delayed output is delegated by the contact-arbiter
+      token and stops on release, cancellation, or a new physical contact.
+
+      確定したドラッグまたは軸ロック済み2本指スクロールをパッド端の先へ継続する。
+      遅延出力はcontact-arbiter tokenから委譲され、解放、取消し、新規接触で停止する。
 
 config TRAVELERS_PAD_IQS9150_SCROLL_INERTIA
     bool "Travelers Pad two-finger scroll inertia"
@@ -77,8 +81,13 @@ config TRAVELERS_PAD_IQS9150_CONTACT_SESSION
     select INPUT
     help
       Establishes normalized contact session IDs, cancel boundaries, and the
-      shadow proposal/resolver/token core while recognizers are migrated to
-      the central arbiter. Shadow mode preserves the existing output path.
+      proposal/resolver/token core. The contact arbiter is the sole ownership
+      authority; primary output is token-gated and observer output is
+      explicitly delegated by a live token.
+
+      正規化接触session ID、取消し境界、proposal/resolver/token基盤を提供する。
+      contact arbiterが唯一の所有権authorityであり、primary出力はtokenでgateし、
+      observer出力はlive tokenから明示的に委譲する。
 
 config TRAVELERS_PAD_IQS9150_TIP_TAP
     bool "Travelers Pad two-finger Tip-Tap"
@@ -105,8 +114,11 @@ config TRAVELERS_PAD_IQS9150_TAP_DRAG
     help
       Convert one-, two-, and three-finger taps into left, right, and middle
       clicks. A nearby second tap with the same finger count becomes a drag
-      when held. This function receives raw frames, independently of pointer
-      and multi-finger gesture routing.
+      when held. This function receives session-republished frames and uses
+      the contact arbiter for exclusive ownership.
+
+      同本数で近い位置の2回目タップをホールドするとドラッグへ移行する。sessionが
+      再配信したframeを受け、排他所有権はcontact arbiterだけを使用する。
 
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
     bool "IQS9150 three-to-five-finger swipe KSCAN function"
@@ -116,8 +128,11 @@ config TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN
     help
       Convert completed three- and four-finger swipes into virtual KSCAN
       positions. Five-finger contact is analysed as independent-coordinate
-      Grasp/Release geometry and is log-only until its thresholds are
-      verified. Normal ZMK keymap bindings select swipe actions.
+      Grasp/Release geometry. Normal ZMK keymap bindings select the resulting
+      actions.
+
+      3本・4本指スワイプを仮想KSCAN位置へ変換する。5本指接触は独立座標の
+      Grasp/Releaseジオメトリとして解析し、通常のZMK keymapで動作を割り当てる。
 
 config TRAVELERS_PAD_IQS9150_MATRIX_INPUT
     bool "IQS9150 grid input isolation function"

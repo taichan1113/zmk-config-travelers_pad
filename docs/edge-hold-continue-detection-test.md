@@ -1,4 +1,15 @@
-# Edge-hold continuation detection test / エッジホールド継続・検出試験
+# Archived: Edge-hold continuation detection test / 旧: エッジホールド継続・検出試験
+
+> Historical, detection-only procedure. The release firmware now emits active
+> drag and two-finger-scroll continuation. Use
+> [all-input-integration-test.md](all-input-integration-test.md) for current
+> release validation; retain this document only when intentionally restoring a
+> detection-only profile.
+>
+> これは過去の検出専用手順である。現在のリリースファームはドラッグと2本指スクロールの
+> 継続出力を有効にする。通常のリリース確認は
+> [all-input-integration-test.md](all-input-integration-test.md) を使い、意図的に検出専用
+> profileへ戻す場合だけ本書を参照する。
 
 This stage verifies only the activation boundary. It sends no additional mouse
 movement or wheel reports. The expected new logs begin with

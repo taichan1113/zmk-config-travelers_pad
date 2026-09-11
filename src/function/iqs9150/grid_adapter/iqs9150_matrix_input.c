@@ -1,19 +1,20 @@
 /*
  * Travelers Pad IQS9150 active-touch input isolation function.
  *
- * zmk-input-matrix is an input processor. Attaching it directly to the raw
- * IQS9150 would invoke a ZMK input listener for every idle report frame.
+ * zmk-input-matrix is an input processor. Attaching it directly to the
+ * normalized session stream would invoke a ZMK input listener for every idle
+ * report frame.
  * Moreover, an input processor that suppresses an event mutates Zephyr's
- * shared event object, which must not affect our independent raw consumers.
+ * shared event object, which must not affect other session consumers.
  *
  * This device mirrors only active one-finger contact frames (and the one
  * release frame) onto a private input device. The matrix listener may safely
  * suppress those private events, while idle and multi-finger IQS9150 reports
  * produce no grid-listener work.
  *
- * zmk-input-matrixはinput processorである。生IQS9150へ直接接続すると、待機中の
- * レポートフレームごとにZMK input listenerが動く。またevent抑止はZephyrの共有eventを
- * 変更するため、独立した生入力consumerへ影響してはならない。
+ * zmk-input-matrixはinput processorである。正規化sessionストリームへ直接接続すると、
+ * 待機中のレポートframeごとにZMK input listenerが動く。またevent抑止はZephyrの共有eventを
+ * 変更するため、他のsession consumerへ影響してはならない。
  *
  * このデバイスは1本指接触中のフレームと、最後の解放フレームだけを専用input deviceへ複製する。
  * そのため格子listenerは専用eventだけを安全に抑止でき、未接触・多指IQS9150レポートは処理しない。

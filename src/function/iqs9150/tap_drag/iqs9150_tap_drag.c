@@ -3,12 +3,13 @@
  *
  * 1/2/3-finger taps produce left/right/middle clicks. The first tap is held
  * briefly so that a nearby second tap with the same finger count can become
- * a hold-to-drag operation. This listens to raw frames so router suppression
- * for scrolling, geometry, and multi-finger swipes cannot lose tap history.
+ * a hold-to-drag operation. It receives session-republished contact frames, so
+ * router suppression for scrolling, geometry, and multi-finger swipes cannot
+ * lose tap history while the arbiter controls exclusive ownership.
  *
  * 1/2/3本指タップを左/右/中クリックへ変換する。最初のタップを短時間保留し、
- * 近い位置・同本数の二回目タップをホールドするとドラッグへ移行する。生フレームを
- * 監視するため、スクロール等のルーター排他によってタップ履歴を失わない。
+ * 近い位置・同本数の二回目タップをホールドするとドラッグへ移行する。session再配信の
+ * 接触frameを監視するため、タップ履歴を失わず、排他所有権はarbiterが制御する。
  */
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_tap_drag

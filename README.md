@@ -16,6 +16,12 @@ Pinch/rotation host actions and speed/acceleration tuning remain future work.
 Two-finger scroll inertia is implemented as an independent function module
 that reuses the normal listener chain.
 
+リリース時の回帰確認は、[テスト手順一覧](docs/README.md) の「構造検査 → クリーンビルド →
+全入力結合実機試験」の順で実施します。
+
+Release regression follows the [test guide index](docs/README.md): structural
+check, clean build, then full input hardware integration test.
+
 This is a ZMK/Zephyr module for the IQS9150EV02 Travelers Pad.
 
 ## モジュール構成 / Module architecture

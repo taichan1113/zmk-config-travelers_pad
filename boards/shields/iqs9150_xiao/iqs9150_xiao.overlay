@@ -209,8 +209,9 @@
         status = "okay";
     };
 
-    /* Function module: raw frames are classified before pointer handling.
-     * 生フレームはポインタ処理前にジェスチャー種別へ振り分ける。 */
+    /* Function module: normalized session frames are classified before pointer
+     * handling. / 正規化session frameをポインタ処理前にジェスチャー種別へ
+     * 振り分ける。 */
     iqs9150_router: iqs9150_router {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
         input-device = <&iqs9150_session>;
@@ -265,11 +266,11 @@
 
     /* Function module: one/two/three-finger tap maps to left/right/middle.
      * A nearby second tap with the same number of fingers starts a drag when
-     * held. This consumes raw frames so it can retain tap history even when
-     * the router claims a scroll, geometry, or multi-finger gesture.
+     * held. It receives session-republished frames so the contact arbiter
+     * controls exclusive ownership while tap history remains available.
      * 1/2/3本指タップを左/右/中クリックへ変換する。近い位置で同本数の二回目を
-     * ホールドするとドラッグを開始する。ルーターの操作排他中にも履歴を保つため、
-     * 生フレームを入力として使う。 */
+     * ホールドするとドラッグを開始する。session再配信frameを受けるため、タップ履歴を
+     * 維持しつつ排他所有権はcontact arbiterが制御する。 */
     iqs9150_tap_drag: iqs9150_tap_drag {
         compatible = "zmk,travelers-pad-iqs9150-tap-drag";
         /* Ownership is exchanged only through the contact arbiter. Its HID
@@ -294,10 +295,12 @@
         status = "okay";
     };
 
-    /* Edge continuation: a confirmed drag emits timer-driven pointer motion
-     * only while held at an edge. 2F scroll is still detection-only here.
-     * エッジ継続: 確定ドラッグだけが辺での保持中にタイマー駆動ポインタ移動を
-     * 出力する。2本指スクロールはこの段階では引き続き検出専用とする。 */
+    /* Edge continuation: a confirmed drag emits timer-driven pointer motion,
+     * and an axis-locked 2F scroll emits wheel motion, only while the relevant
+     * arbiter token remains live.
+     * エッジ継続: 確定ドラッグはタイマー駆動ポインタ移動を、軸ロック済み2本指
+     * スクロールはホイール移動を出力する。いずれもarbiter tokenがliveな間だけ
+     * 継続する。 */
     iqs9150_edge_hold_continue: iqs9150_edge_hold_continue {
         compatible = "zmk,travelers-pad-iqs9150-edge-hold-continue";
         drag-input-device = <&iqs9150_session>;
@@ -405,13 +408,12 @@
     };
 };
 
-/* Standard 3x3 grid input processor. It observes raw absolute coordinate/touch
- * events without suppressing them: Zephyr fans one mutable input event out to
- * every listener, so suppression here could hide a frame from our independent
- * pointer, tap-drag, or multi-finger modules.
- * 格子用input processorは生の絶対座標・タッチを抑止せず監視する。Zephyrは一つの
- * 可変input eventを全listenerへ配信するため、ここでの抑止は独立したポインタ、
- * タップドラッグ、多指モジュールからフレームを隠す可能性がある。 */
+/* Standard 3x3 grid input processor. It observes the private matrix stream:
+ * Zephyr fans a mutable input event out to every listener, so it must not
+ * suppress session frames consumed by pointer, tap-drag, or multi-finger
+ * modules. / 格子用input processorは専用matrixストリームを監視する。Zephyrは
+ * 可変input eventを全listenerへ配信するため、ポインタ、タップドラッグ、多指moduleが
+ * 消費するsession frameを抑止してはならない。 */
 &kscan_gesture {
     rows = <15>;
     columns = <3>;
@@ -430,9 +432,9 @@
     flick-threshold = <200>;
     long-press-ms = <0>;
     /* This listener receives only its private input stream. It can therefore
-     * suppress its events without changing raw frames seen by other modules.
-     * listenerは専用ストリームだけを受けるため、抑止しても他モジュールが見る
-     * 生フレームを変更しない。 */
+     * suppress its events without changing session frames seen by other modules.
+     * listenerは専用ストリームだけを受けるため、抑止しても他moduleが見るsession
+     * frameを変更しない。 */
     suppress-abs;
     suppress-btn-touch;
 };

@@ -13,12 +13,20 @@ used only when an integration failure needs to be localized.
 
 | Document / 文書 | Use it when / 使用タイミング |
 |---|---|
-| [all-input-integration-test.md](all-input-integration-test.md) | Default check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準確認 |
+| [`scripts/verify-contact-arbiter-architecture.sh`](../scripts/verify-contact-arbiter-architecture.sh) | Run before every release build; checks the single-owner source invariants / リリースビルド前に実行し、単一所有権のソース不変条件を検査 |
+| [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation / 実装前に責務と調整場所を確認する時 |
 | [two-finger-scroll-tuning.md](two-finger-scroll-tuning.md) | To change only the user preference for 2F scroll direction / 2本指スクロール方向だけを変更する時 |
 
 ## Isolated regression checks / 単体回帰確認
+
+These are diagnostic recipes for separately built, feature-limited UF2 files.
+They are not the default release candidate and are used only to localize an
+integration failure. The full integration test remains the release gate.
+
+これらは機能を限定して別途ビルドしたUF2向けの診断手順である。通常のリリース候補ではなく、
+結合試験の失敗を切り分ける時だけ使用する。リリース判定は全入力結合試験を正とする。
 
 | Area / 対象 | Document / 文書 |
 |---|---|
@@ -29,7 +37,7 @@ used only when an integration failure needs to be localized.
 | Edge circle continuation / エッジ円継続 | [edge-dial-circle-isolated-test.md](edge-dial-circle-isolated-test.md) |
 | Edge × pointer / エッジ×ポインタ | [edge-pointer-arbitration-test.md](edge-pointer-arbitration-test.md) |
 | Edge × tap/drag / エッジ×タップ・ドラッグ | [edge-tap-drag-arbitration-test.md](edge-tap-drag-arbitration-test.md) |
-| Edge-hold continuation detection / エッジホールド継続の検出 | [edge-hold-continue-detection-test.md](edge-hold-continue-detection-test.md) |
+| Archived edge-hold detection-only stage / 旧エッジホールド検出専用段階 | [edge-hold-continue-detection-test.md](edge-hold-continue-detection-test.md) |
 | Edge-hold drag continuation / エッジホールド・ドラッグ継続 | [edge-hold-drag-continuation-test.md](edge-hold-drag-continuation-test.md) |
 | Edge-hold 2F scroll continuation / エッジホールド・2本指スクロール継続 | [edge-hold-scroll-continuation-test.md](edge-hold-scroll-continuation-test.md) |
 | 2F scroll inertia / 2本指スクロール慣性 | [two-finger-scroll-inertia-test.md](two-finger-scroll-inertia-test.md) |
@@ -42,3 +50,14 @@ enabled later.
 
 格子文書は現在の既定設定で格子モジュールが無効でも残します。将来この任意機能を有効化
 する際の受入手順だからです。
+
+## Release evidence / リリース判定
+
+A release candidate passes only when the structural script, clean firmware
+build, and full input integration test all pass. Keep the serial log only for
+failed operations or unexpected warnings; the integration document lists the
+required evidence patterns.
+
+リリース候補は、構造script、クリーンなファームビルド、全入力結合試験のすべてに合格して
+初めて合格とする。シリアルログは失敗操作または想定外warningがある場合に保存する。必要な
+ログの判定パターンは全入力結合試験に記載する。
