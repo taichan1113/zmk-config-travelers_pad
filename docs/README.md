@@ -17,6 +17,7 @@ used only when an integration failure needs to be localized.
 | [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation / 実装前に責務と調整場所を確認する時 |
+| [contact-arbiter-solution-review-prompt.md](contact-arbiter-solution-review-prompt.md) | Hand-off to an independent architecture review after a verified milestone / 実機確認済み節目の後、独立したアーキテクチャレビューへ引き継ぐ時 |
 | [two-finger-scroll-tuning.md](two-finger-scroll-tuning.md) | To change only the user preference for 2F scroll direction / 2本指スクロール方向だけを変更する時 |
 
 ## Isolated regression checks / 単体回帰確認
