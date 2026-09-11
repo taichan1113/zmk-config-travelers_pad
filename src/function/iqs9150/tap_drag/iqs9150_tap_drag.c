@@ -175,13 +175,14 @@ static void report_click(const struct device *dev, uint8_t fingers)
 	}
 }
 
-static void report_button(const struct device *dev, uint8_t fingers, bool pressed)
+static bool report_button(const struct device *dev, uint8_t fingers, bool pressed)
 {
 	int rc = input_report_key(dev, button_for_fingers(fingers), pressed, true, K_NO_WAIT);
 
 	if (rc != 0) {
 		LOG_ERR("drag button report failed: %d", rc);
 	}
+	return rc == 0;
 }
 
 static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
@@ -289,7 +290,20 @@ static void start_drag_motion(struct tap_drag_data *data)
 		data->drag_claim_authorized = false;
 		return;
 	}
-	report_button(data->dev, data->drag_fingers, true);
+	if (!report_button(data->dev, data->drag_fingers, true)) {
+		return;
+	}
+	/* DRAG_RESERVED becomes DRAG_ACTIVE only after the physical button-down
+	 * succeeded. Edge-hold therefore cannot move a stationary second tap at an
+	 * edge while it is still eligible to become a double click.
+	 * 物理button-down成功後にだけDRAG_RESERVEDをDRAG_ACTIVEへ進める。これにより
+	 * 辺上で静止した2回目tapがdouble click候補の間、edge-holdは移動できない。 */
+	if (!travelers_pad_arbiter_activate_owner(
+			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, "tap-drag-button")) {
+		(void)report_button(data->dev, data->drag_fingers, false);
+		return;
+	}
 	data->button_down = true;
 	data->drag_previous_x = data->x;
 	data->drag_previous_y = data->y;

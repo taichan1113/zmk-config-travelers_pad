@@ -44,7 +44,13 @@ static void session_process(const struct device *dev)
 		data->dispatch_snapshot = *s;
 		data->dispatch_snapshot.contact_count = 0;
 		data->dispatch_snapshot.cancelled = true;
-		*s = (struct travelers_pad_session_snapshot){.cancelled = true};
+		/* `dispatch_snapshot` carries the one cancellation event downstream.
+		 * The next physical contact must start a fresh non-cancelled session;
+		 * retaining this flag would poison every later session after one reset.
+		 * `dispatch_snapshot`だけが一回分のcancel eventを下流へ渡す。次の物理接触は
+		 * 新しい非cancel sessionとして開始しなければならない。flagを残すと一度の
+		 * reset後の全sessionがcancel扱いになる。 */
+		*s = (struct travelers_pad_session_snapshot){};
 		data->reset_pending = false;
 		return;
 	}

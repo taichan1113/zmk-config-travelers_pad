@@ -67,11 +67,14 @@ struct arbiter_state {
 	struct arbiter_frame frames[TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES];
 	struct arbiter_decision decisions[TRAVELERS_PAD_ARBITER_MAX_DECISIONS];
 	struct travelers_pad_owner_token token;
+	struct travelers_pad_owner_token post_session;
 	struct arbiter_provisional_owner provisional;
 	struct {
 		uint32_t session_id;
 		enum travelers_pad_owner owner;
 	} ending;
+	uint32_t cancelled_session_id;
+	uint32_t next_owner_generation;
 	uint32_t registered_mask;
 	struct {
 		travelers_pad_arbiter_resolve_handler_t handler;
@@ -126,6 +129,45 @@ static uint8_t owner_priority(enum travelers_pad_owner owner)
 	case TRAVELERS_PAD_OWNER_NONE:
 	default:
 		return 0;
+	}
+}
+
+static bool token_has_capabilities(const struct travelers_pad_owner_token *token,
+				   enum travelers_pad_owner owner, uint32_t capability)
+{
+	return token != NULL && token->valid && token->owner == owner &&
+	       (token->capabilities & capability) == capability;
+}
+
+static void invalidate_decisions_for_session(uint32_t session_id)
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(state.decisions); i++) {
+		if (state.decisions[i].valid && state.decisions[i].token.session_id == session_id) {
+			state.decisions[i].token.valid = false;
+			state.decisions[i].valid = false;
+		}
+	}
+}
+
+static void revoke_session(uint32_t session_id, const char *reason)
+{
+	bool revoked = false;
+
+	if (state.token.valid && state.token.session_id == session_id) {
+		state.token.valid = false;
+		revoked = true;
+	}
+	if (state.provisional.token.valid && state.provisional.token.session_id == session_id) {
+		state.provisional.token.valid = false;
+		revoked = true;
+	}
+	if (state.post_session.valid && state.post_session.session_id == session_id) {
+		state.post_session.valid = false;
+		revoked = true;
+	}
+	invalidate_decisions_for_session(session_id);
+	if (revoked) {
+		LOG_INF("arbiter session=%u leases revoked reason=%s", session_id, reason);
 	}
 }
 
@@ -213,6 +255,7 @@ static void note_provisional_claim(const struct arbiter_frame *frame,
 			.owner = proposal->requested_owner,
 			.capabilities = proposal->capabilities,
 			.kind = TRAVELERS_PAD_TOKEN_PROVISIONAL,
+			.phase = TRAVELERS_PAD_OWNER_PHASE_NONE,
 			.valid = true,
 		},
 		.recognizer = proposal->recognizer,
@@ -228,6 +271,23 @@ void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapsh
 
 	if (snapshot == NULL || snapshot->session_id == 0) {
 		return;
+	}
+	/* Cancellation is a lifecycle boundary, not an ordinary zero-contact
+	 * release. Revoke every authority for the affected session before queued
+	 * recognizers observe the cancellation frame, so delayed work can never
+	 * turn a reset into post-session output.
+	 * cancellationは通常のzero-contact releaseではなくlifecycle境界である。
+	 * queued recognizerがcancel frameを観測する前に当該sessionの全権限を失効し、
+	 * 遅延workがresetをpost-session出力へ変換できないようにする。 */
+	if (snapshot->cancelled) {
+		state.cancelled_session_id = snapshot->session_id;
+		revoke_session(snapshot->session_id, "cancel");
+		state.ending.session_id = 0;
+		state.ending.owner = TRAVELERS_PAD_OWNER_NONE;
+	} else if (snapshot->contact_count != 0 && state.post_session.valid &&
+		   state.post_session.session_id != snapshot->session_id) {
+		/* Any new physical contact revokes the preceding inertial lease. */
+		revoke_session(state.post_session.session_id, "new-contact");
 	}
 	for (uint8_t i = 0; i < ARRAY_SIZE(state.frames); i++) {
 		if (!state.frames[i].active) {
@@ -357,6 +417,16 @@ static void resolve_frame(struct arbiter_frame *frame)
 {
 	const struct travelers_pad_arbiter_proposal *winner;
 	bool new_token = false;
+	bool terminal_scroll = false;
+	uint32_t terminal_session_id;
+
+	if (frame->snapshot.cancelled ||
+	    state.cancelled_session_id == frame->snapshot.session_id) {
+		/* Claims arriving from an older queued frame may never resurrect an
+		 * owner after this session has been cancelled. */
+		revoke_session(frame->snapshot.session_id, "cancelled-frame");
+		return;
+	}
 
 	/* A new resolved session invalidates any completed session token. The
 	 * asynchronous queue can hold several frames, so this must happen at
@@ -372,10 +442,12 @@ static void resolve_frame(struct arbiter_frame *frame)
 	if (winner != NULL && !state.token.valid) {
 		state.token = (struct travelers_pad_owner_token){
 			.session_id = frame->snapshot.session_id,
-			.owner_generation = 1,
+			.owner_generation = ++state.next_owner_generation,
 			.owner = winner->requested_owner,
 			.capabilities = winner->capabilities,
 			.kind = TRAVELERS_PAD_TOKEN_COMMITTED,
+			.phase = winner->requested_owner == TRAVELERS_PAD_OWNER_DRAG ?
+				TRAVELERS_PAD_OWNER_PHASE_RESERVED : TRAVELERS_PAD_OWNER_PHASE_ACTIVE,
 			.valid = true,
 		};
 		state.decisions[state.next_decision++ % ARRAY_SIZE(state.decisions)] =
@@ -415,12 +487,29 @@ static void resolve_frame(struct arbiter_frame *frame)
 	 * Preserve the result until validation is complete, then invalidate it so no later
 	 * work can mistake it for a live-session token. */
 	if (frame->snapshot.contact_count == 0) {
+		terminal_session_id = frame->snapshot.session_id;
 		state.ending.session_id = frame->snapshot.session_id;
 		state.ending.owner = state.token.valid ? state.token.owner :
 			(state.provisional.token.valid ? state.provisional.token.owner :
 			 TRAVELERS_PAD_OWNER_NONE);
+		terminal_scroll = state.token.valid &&
+			state.token.owner == TRAVELERS_PAD_OWNER_SCROLL && !frame->snapshot.cancelled;
+		if (terminal_scroll) {
+			state.post_session = (struct travelers_pad_owner_token){
+				.session_id = terminal_session_id,
+				.owner_generation = ++state.next_owner_generation,
+				.owner = TRAVELERS_PAD_OWNER_SCROLL,
+				.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
+				.kind = TRAVELERS_PAD_TOKEN_POST_SESSION,
+				.phase = TRAVELERS_PAD_OWNER_PHASE_ACTIVE,
+				.valid = true,
+			};
+			LOG_INF("arbiter post-session lease session=%u generation=%u owner=scroll",
+				terminal_session_id, state.post_session.owner_generation);
+		}
 		state.token.valid = false;
 		state.provisional.token.valid = false;
+		invalidate_decisions_for_session(terminal_session_id);
 	}
 }
 
@@ -445,6 +534,18 @@ enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_se
 	return TRAVELERS_PAD_OWNER_NONE;
 }
 
+bool travelers_pad_arbiter_get_frame_snapshot(uint32_t frame_seq,
+					       struct travelers_pad_session_snapshot *snapshot)
+{
+	const struct arbiter_frame *frame = frame_for(frame_seq);
+
+	if (frame == NULL || snapshot == NULL) {
+		return false;
+	}
+	*snapshot = frame->snapshot;
+	return true;
+}
+
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 					    enum travelers_pad_recognizer_id recognizer,
 					    enum travelers_pad_owner requested_owner,
@@ -459,7 +560,10 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 	};
 
 	if (decision == NULL ||
-	    !decision_allows(&decision->token, decision->recognizer, &receipt)) {
+	    !decision_allows(&decision->token, decision->recognizer, &receipt) ||
+	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
+	    state.token.session_id != decision->token.session_id ||
+	    state.token.owner_generation != decision->token.owner_generation) {
 		LOG_ERR("arbiter output rejected producer=%s ownership-frame=%u owner=%s caps=0x%x",
 			producer, ownership_frame_seq, owner_name(requested_owner), capability);
 		return false;
@@ -482,8 +586,65 @@ bool travelers_pad_arbiter_authorize_auxiliary_output(
 	 * live primary token, so a delayed timer cannot continue after release,
 	 * cancellation, or a higher-priority ownership hand-off. */
 	return auxiliary < TRAVELERS_PAD_AUXILIARY_COUNT && state.token.valid &&
-	       state.token.owner == required_owner &&
-	       (state.token.capabilities & capability) == capability;
+	       state.token.kind == TRAVELERS_PAD_TOKEN_COMMITTED &&
+	       state.token.phase == TRAVELERS_PAD_OWNER_PHASE_ACTIVE &&
+	       token_has_capabilities(&state.token, required_owner, capability);
+}
+
+bool travelers_pad_arbiter_activate_owner(uint32_t ownership_frame_seq,
+					  enum travelers_pad_recognizer_id recognizer,
+					  enum travelers_pad_owner requested_owner,
+					  const char *producer)
+{
+	struct arbiter_decision *decision = decision_for(ownership_frame_seq);
+	struct arbiter_output_receipt receipt = {
+		.recognizer = recognizer,
+		.requested_owner = requested_owner,
+		.capability = TRAVELERS_PAD_CAP_BUTTON,
+		.producer = producer,
+	};
+
+	if (decision == NULL || !decision_allows(&decision->token, decision->recognizer, &receipt) ||
+	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
+	    state.token.session_id != decision->token.session_id ||
+	    state.token.owner_generation != decision->token.owner_generation ||
+	    state.token.phase != TRAVELERS_PAD_OWNER_PHASE_RESERVED) {
+		LOG_ERR("arbiter activation rejected producer=%s ownership-frame=%u owner=%s",
+			producer, ownership_frame_seq, owner_name(requested_owner));
+		return false;
+	}
+	state.token.phase = TRAVELERS_PAD_OWNER_PHASE_ACTIVE;
+	LOG_INF("arbiter owner active session=%u generation=%u owner=%s producer=%s",
+		state.token.session_id, state.token.owner_generation, owner_name(state.token.owner), producer);
+	return true;
+}
+
+bool travelers_pad_arbiter_acquire_post_session_lease(
+	uint32_t session_id, enum travelers_pad_owner required_owner, uint32_t capability,
+	struct travelers_pad_owner_token *lease)
+{
+	if (lease == NULL || !state.post_session.valid ||
+	    state.post_session.kind != TRAVELERS_PAD_TOKEN_POST_SESSION ||
+	    state.post_session.session_id != session_id ||
+	    !token_has_capabilities(&state.post_session, required_owner, capability)) {
+		return false;
+	}
+	*lease = state.post_session;
+	return true;
+}
+
+bool travelers_pad_arbiter_authorize_post_session_output(
+	const struct travelers_pad_owner_token *lease, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer)
+{
+	ARG_UNUSED(producer);
+
+	return lease != NULL && lease->valid && lease->kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
+	       token_has_capabilities(lease, required_owner, capability) &&
+	       state.post_session.valid && state.post_session.kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
+	       state.post_session.session_id == lease->session_id &&
+	       state.post_session.owner_generation == lease->owner_generation &&
+	       token_has_capabilities(&state.post_session, required_owner, capability);
 }
 
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq)

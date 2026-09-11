@@ -73,6 +73,20 @@ require_source 'function/iqs9150/edge_dial/iqs9150_edge_dial_kscan.c' \
 require_source 'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
     'travelers_pad_arbiter_authorize_auxiliary_output'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
-    'travelers_pad_arbiter_owner_for_frame'
+    'travelers_pad_arbiter_acquire_post_session_lease'
+require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
+    'travelers_pad_arbiter_authorize_post_session_output'
+require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
+    'snapshot.cancelled'
+require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
+    'travelers_pad_arbiter_activate_owner'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'TRAVELERS_PAD_OWNER_PHASE_ACTIVE'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'arbiter post-session lease'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'snapshot->cancelled'
+require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
+    'retaining scroll owner'
 
 printf 'PASS: contact-arbiter structural regression checks\n'

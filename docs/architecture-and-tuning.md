@@ -65,10 +65,13 @@ their queued-frame acknowledgements, then emits one deterministic owner token.
 Primary first and continuation output is capability-gated by that token.
 
 `iqs9150_scroll_inertia` and `iqs9150_edge_hold_continue` are passive
-observers. They never make an ownership claim: inertia starts only after a
-physical release belonging to a scroll token, and edge hold emits only while a
-live drag or scroll token delegates the required capability. Terminal button
-release is recorded diagnostically but remains fail-safe and unconditional.
+observers. They never make an ownership claim. Edge hold emits only while an
+**ACTIVE** drag or scroll token delegates the required capability; a reserved
+double-tap drag cannot move at an edge before button-down succeeds. Inertia
+starts only after a normal physical scroll release obtains a revocable
+post-session lease; new contact or cancellation revokes it. Terminal button
+release is recorded diagnostically and remains fail-safe only for a button
+actually pressed by the trackpad source.
 
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを全機能へ再配信します。
 contact arbiterが接触所有権の唯一のauthorityである。5つのprimary recognizerがproposalを
@@ -76,9 +79,11 @@ contact arbiterが接触所有権の唯一のauthorityである。5つのprimary
 継続出力は、このtokenのcapabilityでgateする。
 
 `iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` は受動observerであり、所有権を
-claimしない。inertiaはscroll tokenに属する物理的release後だけ開始し、edge holdはliveな
-dragまたはscroll tokenから必要なcapabilityを委譲された間だけ出力する。terminal button releaseは
-診断用に記録するが、押下残りを避けるため安全側で常に送信する。
+claimしない。edge holdは **ACTIVE** なdragまたはscroll tokenから必要なcapabilityを委譲された
+間だけ出力する。予約済みdouble-tap dragはbutton-down成功前に辺で移動できない。inertiaは通常の
+scroll release後に取消可能なpost-session leaseを取得した場合だけ開始し、新規接触または
+cancellationで失効する。terminal button releaseは診断用に記録し、trackpad source自身が実際に
+押したbuttonだけを安全側でreleaseする。
 
 ## Internal layout / 内部配置
 
@@ -162,7 +167,7 @@ issues.
 | Edge recognition / エッジ認識 | Surface size, `edge-size`, linear/circle movement thresholds, local circle entry/corner position / 面サイズ、辺幅、直線・円の移動閾値、局所円の進入・中心位置 | `&iqs9150_edge_dial` in overlay | Edge module only / エッジのみ |
 | Edge hold continuation / エッジホールド継続 | Surface size, `edge-size`, drag/scroll start delay, repeat interval and delta / 面サイズ、`edge-size`、ドラッグ／スクロールの開始遅延、繰返し周期・移動量 | `&iqs9150_edge_hold_continue` + listener in overlay | Drag and axis-locked 2F scroll; either finger may reach only the forward, axis-matching edge; wheel output re-enters the normal pointer listener chain / ドラッグと軸ロック済み2本指スクロール。いずれかの指が軸・進行方向に対応する辺へ達すると有効。ホイール出力は通常ポインタのlistener chainへ再入力 |
 | Grid / 格子 | Grid settle time, transform, key bindings / 格子安定化時間、transform、キー割当 | Optional module overlay + keymap | Disabled unless explicitly enabled / 明示的に有効化するまで無効 |
-| Pinch/rotation / ピンチ・回転 | Router geometry detection thresholds exist; no host action is assigned / ルーターのジオメトリ検出閾値はあるが、ホスト動作未割当 | `&iqs9150_router`; future function module/keymap | Claimed but no visible action / 排他取得のみ、可視動作なし |
+| Pinch/rotation / ピンチ・回転 | Router geometry detection thresholds exist; no host action is assigned / ルーターのジオメトリ検出閾値はあるが、ホスト動作未割当 | `&iqs9150_router`; future function module/keymap | Routing suppression only; dedicated arbiter owner remains future work / routing抑止のみ。専用arbiter ownerは今後の作業 |
 
 ## Important boundary rules / 重要な境界ルール
 

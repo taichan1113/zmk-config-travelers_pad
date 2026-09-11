@@ -72,6 +72,17 @@ enum travelers_pad_token_kind {
 	TRAVELERS_PAD_TOKEN_POST_SESSION,
 };
 
+/* A committed owner may reserve an interpretation before it can safely emit
+ * its semantic output. A double-tap drag is the current example: it reserves
+ * the contact at second touch, and becomes active only after button-down.
+ * Committed ownerはsemantic出力を安全に行える前に解釈を予約し得る。現在は
+ * double-tap dragが例で、2回目接触で予約し、button-down後にだけactiveになる。 */
+enum travelers_pad_owner_phase {
+	TRAVELERS_PAD_OWNER_PHASE_NONE,
+	TRAVELERS_PAD_OWNER_PHASE_RESERVED,
+	TRAVELERS_PAD_OWNER_PHASE_ACTIVE,
+};
+
 /* Evidence is recognizer-local trace data only. It must never affect callback
  * ordering or the resolver policy. */
 struct travelers_pad_arbiter_proposal {
@@ -90,6 +101,7 @@ struct travelers_pad_owner_token {
 	enum travelers_pad_owner owner;
 	uint32_t capabilities;
 	enum travelers_pad_token_kind kind;
+	enum travelers_pad_owner_phase phase;
 	bool valid;
 };
 
@@ -134,6 +146,12 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
  * 同じownerはそのsessionのterminal releaseでも見える。これによりrouting側は
  * recognizer固有の可変flagを直接参照せず、非互換な生経路を抑止できる。 */
 enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq);
+/* Return immutable lifecycle metadata for a queued frame. Observers use this
+ * to distinguish a normal terminal release from a sensor-reset cancellation.
+ * queued frameの不変lifecycle情報を返す。observerは通常releaseとsensor reset
+ * cancellationを区別するために使う。 */
+bool travelers_pad_arbiter_get_frame_snapshot(uint32_t frame_seq,
+					       struct travelers_pad_session_snapshot *snapshot);
 
 /* Record a terminal release against the frame that established its ownership.
  * Releases are deliberately never blocked: a stale token must not leave a
@@ -171,6 +189,30 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
  * 起き得るため、不一致は意図的に静かに扱う。 */
 bool travelers_pad_arbiter_authorize_auxiliary_output(
 	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer);
+
+/* Promote a reserved committed owner only after its primary output succeeded.
+ * Auxiliary output is restricted to ACTIVE owners, so a stationary double-tap
+ * candidate cannot start edge continuation before it has actually pressed a
+ * button. / 予約済みcommitted ownerをprimary出力成功後にだけ昇格する。補助出力は
+ * ACTIVE ownerに制限するため、静止したdouble-tap候補はbuttonを押す前にedge継続を
+ * 開始できない。 */
+bool travelers_pad_arbiter_activate_owner(uint32_t ownership_frame_seq,
+					  enum travelers_pad_recognizer_id recognizer,
+					  enum travelers_pad_owner requested_owner,
+					  const char *producer);
+
+/* A normal completed scroll may create one revocable post-session lease for
+ * inertia. The copied lease is valid only while the arbiter retains exactly
+ * the same session and generation; new contact or cancellation revokes it.
+ * 正常終了したscrollはinertia用の取消可能なpost-session leaseを一つ作れる。copyした
+ * leaseはarbiterが同一session/generationを保持する間だけ有効で、新規接触または
+ * cancellationで失効する。 */
+bool travelers_pad_arbiter_acquire_post_session_lease(
+	uint32_t session_id, enum travelers_pad_owner required_owner, uint32_t capability,
+	struct travelers_pad_owner_token *lease);
+bool travelers_pad_arbiter_authorize_post_session_output(
+	const struct travelers_pad_owner_token *lease, enum travelers_pad_owner required_owner,
 	uint32_t capability, const char *producer);
 
 #endif

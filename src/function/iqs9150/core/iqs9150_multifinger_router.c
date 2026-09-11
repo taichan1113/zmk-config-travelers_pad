@@ -61,6 +61,7 @@ struct router_data {
 	uint32_t arbiter_frame_seq;
 	uint32_t scroll_ownership_frame_seq;
 	bool scroll_start_pending;
+	bool scroll_extra_contact;
 };
 
 static int32_t abs32(int32_t value)
@@ -134,6 +135,7 @@ static void router_begin(struct router_data *data)
 		data->start_distance_squared = squared_distance(data->start_geometry_x,
 							data->start_geometry_y);
 	}
+	data->scroll_extra_contact = false;
 }
 
 static const char *swipe_direction(const struct router_data *data)
@@ -296,14 +298,19 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO && data->fingers >= 3) {
-		router_cancel_pointer(dev);
-		data->state = ROUTER_CLAIM_MULTIFINGER;
-		if (data->fingers == 5) {
-			LOG_INF("5F route=Grasp/Release claimed; cancelled scroll");
-		} else {
-			LOG_INF("%uF route=multifinger claimed; cancelled scroll", data->fingers);
+		/* A committed scroll owns this session until all contacts are released.
+		 * Promoting a third contact to MULTI_GESTURE here would leave the arbiter
+		 * owner as SCROLL while this router stops producing scroll frames. Keep a
+		 * stable logical two-contact stream instead; a new 3--5F gesture requires
+		 * a fresh contact session.
+		 * commit済みscrollは全接触が離れるまでこのsessionを所有する。ここで3本目を
+		 * MULTI_GESTUREへ昇格すると、arbiter ownerはSCROLLのままrouterだけが
+		 * scroll frameを止める。安定した論理2点streamを維持し、3〜5本指gestureは
+		 * 新しいcontact sessionから始める。 */
+		if (!data->scroll_extra_contact) {
+			LOG_INF("%uF added during committed scroll; retaining scroll owner", data->fingers);
+			data->scroll_extra_contact = true;
 		}
-		return;
 	}
 	if (data->state == ROUTER_AWAIT_TWO && data->fingers >= 3) {
 		data->state = ROUTER_CLAIM_MULTIFINGER;
@@ -319,13 +326,20 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO) {
+		if (data->fingers < 3) {
+			data->scroll_extra_contact = false;
+		}
 		if (!travelers_pad_arbiter_authorize_output(
 			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
 			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
 			"router-scroll")) {
 			return;
 		}
-		router_emit(dev, data, data->fingers);
+		/* The pointer adapter is a two-contact scroll consumer. While a third
+		 * physical contact is present, keep reporting the first two normalized
+		 * coordinates as a logical 2F stream. A partial 1F release is still sent
+		 * as 1F so the adapter can rebase without generating a jump. */
+		router_emit(dev, data, data->fingers >= 2 ? 2 : data->fingers);
 		return;
 	}
 	if (data->state != ROUTER_AWAIT_TWO || data->fingers != 2) {
