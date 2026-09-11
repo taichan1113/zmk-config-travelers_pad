@@ -19,6 +19,31 @@ verified behavior.
 として扱ってください。維持・単純化・発展のどれが妥当かを評価し、実証済みの操作感を守る
 移行手順を示してください。
 
+## Fixed review scope / レビュー対象の固定
+
+Review the implementation on branch `main` at commit
+`65e4a8dadd534ab4b8c6a739f26064da7cda95aa`.
+
+レビュー対象は branch `main` の commit
+`65e4a8dadd534ab4b8c6a739f26064da7cda95aa` に固定します。
+
+| Item / 項目 | Fixed value / 固定値 |
+| --- | --- |
+| Target branch / 対象branch | `main` |
+| Target implementation HEAD / 対象実装HEAD | `65e4a8dadd534ab4b8c6a739f26064da7cda95aa` (`docs: add contact arbiter design review brief`) |
+| Pre-migration baseline / 移行前基準 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7` (`feat: continue two-finger scroll at pad edge`) |
+| Required review range / 必須比較範囲 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7..65e4a8dadd534ab4b8c6a739f26064da7cda95aa` |
+
+This brief may receive documentation-only refinements after the target commit.
+Those refinements do not change the code under review. Begin by read-only
+verification of `git status`, current branch, `HEAD`, the fixed target object,
+and the stated range. If the checked-out source differs, state the mismatch
+before drawing conclusions.
+
+この依頼文自身は対象commit以降に文書のみ更新され得ますが、レビュー対象コードは変わりません。
+最初に `git status`、現在branch、`HEAD`、固定した対象object、比較範囲を読み取り専用で検証
+してください。チェックアウトされたソースが異なる場合は、結論より先に差異を報告してください。
+
 ## Current verified capabilities / 現在確認済みの機能
 
 - IQS9150 EV02 initialization, ATI, Event Mode, runtime recovery.
@@ -130,34 +155,115 @@ requested owner and allowed capabilities (`pointer delta`, `scroll delta`,
 | 80 | `gesture` | 3–5F gesture | Virtual KSCAN / 仮想KSCAN |
 | 70 | `scroll` | 2F router | Wheel through pointer/listener / pointer・listener経由ホイール |
 | 60 | `tip-tap` | Tip-Tap | Virtual KSCAN / 仮想KSCAN |
-| 10 | `pointer provisional` | router | Suppression only; no exclusive semantic output / 抑止だけ。排他的semantic出力なし |
+| 10 | `pointer provisional` | none at this target / この対象ではなし | Retained enum; no active proposal requests it / enumは残るが、有効proposalは要求しない |
+
+`TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL` is a retained owner enum, but no
+current recognizer submits it as `requested_owner`. The actual provisional
+mechanism is `TRAVELERS_PAD_TOKEN_PROVISIONAL`: before resolution it exposes
+the highest-priority submitted **claim's real requested owner** (for example,
+`drag`) only to suppress incompatible raw routing. It never authorizes
+semantic output. Verify whether retaining the unused owner enum is useful or
+misleading.
+
+`TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL` はowner enumとして残っているが、この対象では
+どのrecognizerも `requested_owner` として提出しない。実際の暫定機構は
+`TRAVELERS_PAD_TOKEN_PROVISIONAL` であり、解決前には優先度が最も高い提出済みclaimの**実際の
+requested owner**（例: `drag`）を、生経路の非互換抑止のためだけに見せる。semantic出力は
+許可しない。この未使用owner enumを残す意義と誤解の可能性を検証してください。
+
+Priority selects among unresolved claims for a frame. Once a committed token
+is live for the session, later claims do not preempt it in the current code;
+they may be recorded but cannot create a second owner. Confirm this behavior
+and assess whether it is correct for phase-changing operations.
+
+優先度は同一frameの未解決claim間でのみ勝者を選ぶ。現在のコードではsession中にcommitted tokenが
+liveなら、後続claimは記録されても先取りして第2 ownerを作れない。この挙動をコードで確認し、
+phase遷移を持つ操作にも正しいか評価してください。
 
 ### Token lifetime / tokenの生存期間
 
-1. **Provisional:** a submitted claim is visible before all queued listeners
-   acknowledge the frame. It can suppress an incompatible raw path, but never
-   authorizes semantic output.
+1. **Provisional:** a submitted `CLAIM` is represented by a provisional token
+   carrying that claim's requested owner before all queued listeners acknowledge
+   the frame. It can suppress an incompatible raw path, but never authorizes
+   semantic output.
 2. **Committed:** the deterministic winner receives a token after all
    acknowledgements. First output is dispatched through a resolver callback;
    continuation output must pass the owner/capability gate.
 3. **Terminal:** the owner remains queryable while the terminal frame is
    processed. The live token is then invalidated. Button release is always
-   sent as a fail-safe and recorded diagnostically, so a stale token cannot
-   leave a host button held.
-4. **Observer continuation:** edge hold has no owner and can emit only while a
+   sent as a fail-safe **only for a button the trackpad owner actually pressed**
+   and is recorded diagnostically, so a stale token cannot leave a host button
+   held or release a button held by another source.
+4. **Observer continuation:** both edge-hold and inertia are registered
+   acknowledgement participants at this target. Edge hold has no owner and can emit only while a
    live drag or scroll token explicitly grants its capability. Scroll inertia
    observes the terminal frame's scroll owner, then emits post-release decay;
    new physical contact cancels it immediately.
 
-1. **暫定:** 提出済みclaimは、全queued listenerがframeを確認する前から見える。
-   非互換な生経路を抑止できるが、semantic出力は許可しない。
+1. **暫定:** 提出済み `CLAIM` は、そのclaimのrequested ownerを持つ暫定tokenとして、
+   全queued listenerがframeを確認する前から見える。非互換な生経路を抑止できるが、
+   semantic出力は許可しない。
 2. **確定:** 全確認後に決定的な勝者へtokenを発行する。初回出力はresolver callbackから
    dispatchし、継続出力はowner/capability gateを通す。
 3. **終端:** terminal frame処理中はownerを問い合わせられる。その後live tokenを無効化する。
-   stale tokenでホストの押下状態が残らないよう、button releaseは常に送信し診断記録する。
-4. **observer継続:** edge hold自身はownerを持たず、liveなdragまたはscroll tokenが
+   stale tokenでホストの押下状態が残らないよう、**trackpad owner自身が実際に押したbuttonだけ**を
+   安全側でreleaseし診断記録する。他sourceが保持するbuttonをreleaseしてはならない。
+4. **observer継続:** この対象ではedge-holdとinertiaの両方がacknowledgement参加者である。
+   edge hold自身はownerを持たず、liveなdragまたはscroll tokenが
    capabilityを明示委譲した間だけ出力できる。scroll inertiaはterminal frameのscroll ownerを
    観測してrelease後の減衰を出し、新規物理接触で直ちに停止する。
+
+### Current implementation facts that require validation / 検証すべき現行実装事実
+
+The following are code-reading facts for the fixed target, not assertions that
+they are the best design. Confirm every item against symbols, call paths, and
+Devicetree registration; report any discrepancy.
+
+以下は固定対象のコード読解による事実であり、最良の設計だという主張ではありません。各項目を
+symbol、call path、Devicetree登録と照合し、差異があれば報告してください。
+
+- **Pinch/rotation:** the 2F router enters `ROUTER_CLAIM_GEOMETRY` and stops
+  pointer/scroll routing, but it does not currently submit an arbiter claim or
+  receive a dedicated owner token. Follow whether this unowned suppression can
+  leak into tap/drag or another primary path.
+- **Tip-Tap repeat:** the first completed Tip-Tap submits one `TIP_TAP` claim.
+  Repeats while the anchor remains down reuse `ownership_frame_seq` and must
+  pass the same committed-token gate; they do not acquire a new owner per tap.
+- **Double-tap drag:** the first valid tap is deferred for
+  `double-tap-max-gap-ms` (active setting: 250 ms). A matching second contact
+  submits a `DRAG` claim, but no HID button-down is sent at that point. The
+  button goes down only when movement reaches `drag-start-move` (active
+  setting: 8 coordinate units), then the threshold-crossing frame is rebased
+  and only subsequent motion moves the grabbed item. A stationary second
+  release emits two clicks. Review the exact event order, cancellation paths,
+  and the first-tap timer race.
+- **Terminal releases:** the tap/drag module records terminal output for
+  diagnostics but sends an up event only when its own `button_down` flag is
+  true. Audit every other HID and virtual-KSCAN press/release path with the
+  same source-ownership criterion; do not assume the general policy is safe
+  without checking the code.
+- **Module disablement:** the API is designed so a disabled DT node does not
+  register a recognizer. This brief does not claim that every enabled/disabled
+  module combination has been built or hardware-tested; require a suitable
+  build matrix or justify a smaller representative matrix.
+
+- **Pinch/rotation:** 2F routerは `ROUTER_CLAIM_GEOMETRY` へ遷移し、
+  pointer/scroll routingを止めるが、現時点ではarbiter claimを提出せず、専用owner tokenも
+  得ない。このownerを持たない抑止がtap/dragや他primary経路へ漏れ得るか追跡してください。
+- **Tip-Tap repeat:** 最初に完了したTip-Tapだけが `TIP_TAP` claimを一つ提出する。
+  anchorを維持するrepeatは `ownership_frame_seq` を共有し、同じcommitted-token gateを
+  通る。tapごとに新ownerを取得しない。
+- **ダブルタップdrag:** 最初の有効tapは `double-tap-max-gap-ms`（有効設定: 250 ms）だけ
+  保留する。一致する2回目接触は `DRAG` claimを提出するが、その時点でHID button-downは送らない。
+  移動が `drag-start-move`（有効設定: 8座標unit）に達した時だけbuttonを押し、閾値到達frameを
+  rebaseして、その後の移動だけで掴んだ対象を動かす。静止した2回目のreleaseは2 clickを送る。
+  正確なevent順、cancel経路、first-tap timerとのraceをレビューしてください。
+- **terminal release:** tap/drag moduleは診断用にterminal outputを記録するが、自身の
+  `button_down` flagが真の時だけup eventを送る。ほかのHIDおよびvirtual-KSCANのpress/release
+  経路にも、このsource所有の条件があるか監査し、一般方針が安全だとコード確認なしに仮定しない。
+- **module disable:** APIはdisabled DT nodeがrecognizer登録しないよう設計される。この依頼文は、
+  全enabled/disabled組合せのbuildまたは実機試験が済んだとは主張しない。適切なbuild matrix、
+  または代表matrixに絞る根拠を求めてください。
 
 ## Why this migration happened / この移行に至った経緯
 
@@ -224,7 +330,8 @@ the exact evolution if desired.
 5. A primary owner is exclusive per contact session; observers may extend an
    established action but may never establish ownership.
 6. Terminal release must remain fail-safe even if architectural cleanup makes
-   a token stale.
+   a token stale, but only for output pressed by that trackpad owner; it must
+   not release another HID/KSCAN source's output.
 7. Future modules must not reintroduce a direct subscription to the driver or
    a recognizer-private ownership query.
 
@@ -238,7 +345,76 @@ the exact evolution if desired.
 5. primary ownerは接触sessionごとに排他的である。observerは確立済み操作を継続できるが、
    所有権を確立してはならない。
 6. アーキテクチャ整理でtokenがstaleになってもterminal releaseは安全側でなければならない。
+   ただしtrackpad owner自身が押した出力だけをreleaseし、別HID/KSCAN sourceの出力を
+   releaseしてはならない。
 7. 将来moduleはdriver直接購読やrecognizer-private所有権問い合わせを再導入してはならない。
+
+## Review method / レビュー方法
+
+- Treat the code at the fixed target HEAD as authoritative. This prompt and
+  architecture documents are claims to verify, not facts to assume.
+- Begin with read-only inspection of the fixed baseline-to-HEAD diff,
+  Devicetree/Kconfig registration, arbiter state transitions, and every HID /
+  virtual-KSCAN output path.
+- Report documentation/code discrepancies explicitly.
+- Present concrete findings before architectural alternatives or redesign.
+- For every finding, identify the file, symbol or call path, triggering
+  sequence, user-visible or safety impact, and recommended correction.
+- Distinguish verified defects, plausible risks, unverified assumptions, and
+  optional simplifications.
+- Do not recommend replacement solely for architectural elegance. Retain the
+  working solution unless a concrete invariant, maintainability, latency, or
+  testability benefit justifies a change.
+
+- 固定対象HEADのコードを正とする。この依頼文とarchitecture文書は、前提にせず検証すべき主張である。
+- 固定baselineからHEADまでのdiff、Devicetree/Kconfig登録、arbiter state遷移、全HID／
+  virtual-KSCAN出力経路を読み取り専用で最初に調べる。
+- 文書とコードの不一致を明示的に報告する。
+- architecture案や再設計より先に、具体的なfindingを示す。
+- 各findingには、ファイル、symbolまたはcall path、発火順序、ユーザー可視または安全上の影響、
+  推奨修正を含める。
+- 確認済みdefect、もっともらしいrisk、未検証assumption、任意の簡略化を区別する。
+- 設計上の美しさだけを理由に置換を勧めない。具体的なinvariant、保守性、遅延、テスト性の
+  改善がある時だけ、動作中のsolution変更を提案する。
+
+## Required adversarial review cases / 必須の異常系レビュー
+
+Inspect the implementation or propose deterministic tests for all of the
+following. State explicitly which cases are already covered, only structurally
+checked, or remain untested.
+
+以下のすべてについて実装を調査するか、決定的試験を提案してください。既に確認済み、構造的に
+のみ検査済み、未試験のどれかを明記してください。
+
+- Every acknowledgement ordering, including a fast recognizer processing frame
+  N+1 while another has not acknowledged N.
+- Duplicate, missing, stale, and wrong-frame acknowledgements; zero registered
+  recognizers; a recognizer that proposes nothing; and registered-mask mismatch.
+- Frame-queue and proposal-queue overflow, dropped intermediate frames, session
+  cancellation, and recovery without an old proposal leaking into a later frame.
+- Whether a missing acknowledgement can permanently freeze pointer input; the
+  appropriate timeout/recovery rule and whether it should fail open or closed.
+- Token validation and actual HID/KSCAN dispatch running in one serialized
+  context: resolver reentrancy, lock lifetime, gate-to-output TOCTOU, and
+  cancellation racing with recognizer, edge-hold, inertia, or delayed tap work.
+- Terminal button/KSCAN releases after token invalidation, duplicate release,
+  and another input source holding the same HID button.
+- First-tap timeout racing with second-contact drag acquisition, and Tip-Tap
+  repeat attempting to use a stale or replaced token.
+
+- すべてのacknowledgement順序。特に、一つのrecognizerがN+1を処理済みだが他方がNを未ackの場合。
+- duplicate、missing、stale、wrong-frame acknowledgement、登録recognizerが0件、
+  proposalを出さないrecognizer、registered mask不一致。
+- frame/proposal queue overflow、中間frame脱落、session cancel、旧proposalを後続frameへ
+  漏らさないrecovery。
+- missing acknowledgementがpointer入力を永久停止し得るか。適切なtimeout/recovery規則と
+  fail-open／fail-closedの選択。
+- token検証と実HID/KSCAN dispatchが一つの直列contextで動くか。resolver再入、lock生存期間、
+  gateから出力までのTOCTOU、recognizer／edge-hold／inertia／遅延tap workとcancelのrace。
+- token失効後のterminal button/KSCAN release、duplicate release、別入力sourceが同じHID buttonを
+  保持している場合。
+- first-tap timeoutと2回目接触によるdrag取得のrace、Tip-Tap repeatがstaleまたは置換済みtokenを
+  使おうとする場合。
 
 ## Specific design questions / 重点レビュー論点
 
@@ -296,6 +472,12 @@ the exact evolution if desired.
 
 ## Required review output / 求めるレビュー成果物
 
+0. **Findings first / まずfinding:** List code-confirmed issues in
+   Critical / High / Medium / Low order before proposing alternatives. Each
+   finding must give its file, symbol or call path, trigger, impact, and
+   recommended correction. Separate verified facts from plausible risks,
+   unverified assumptions, and optional improvements. If there are no defects,
+   list the invariants actually checked and the parts left unverified.
 1. **Verdict:** retain, refine, or replace the current architecture, with an
    evidence-based reason.
 2. **At least two alternatives:** compare the current design with at least one
@@ -316,6 +498,10 @@ the exact evolution if desired.
 8. **Open decisions:** identify choices that require product/UX input rather
    than an engineering assumption.
 
+0. **まずfinding:** architecture案の前に、コードから確認した問題を Critical / High / Medium /
+   Low の順で示す。各findingにはファイル、symbolまたはcall path、発火条件、影響、推奨修正を
+   含める。確認済み事実、もっともらしいrisk、未検証assumption、任意改善を分ける。defectが
+   ない場合も、実際に検査したinvariantと未検証箇所を列挙する。
 1. **結論:** 現行を維持・改善・置換のどれにするか、根拠とともに示す。
 2. **少なくとも2案:** 現行設計と、実質的に異なる少なくとも1案を比較する。結合度、disable
    安全性、遅延、将来拡張性、移行リスク、テスト性を含める。
