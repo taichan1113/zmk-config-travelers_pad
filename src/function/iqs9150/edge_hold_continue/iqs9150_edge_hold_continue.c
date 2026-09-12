@@ -475,10 +475,31 @@ static void edge_hold_drag_input(const struct device *dev, struct input_event *e
 	if (evt->sync) {
 		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD);
-		detect_drag_edge(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD,
 					       data->arbiter_frame_seq);
 	}
+}
+
+static void edge_hold_deliver_resolved_frame(
+	void *context, const struct travelers_pad_session_snapshot *snapshot,
+	const struct travelers_pad_owner_token *token)
+{
+	struct edge_hold_data *data = context;
+
+	ARG_UNUSED(token);
+	if (snapshot->cancelled) {
+		stop_drag_repeat(data->dev);
+		stop_scroll_repeat(data->dev);
+		data->drag_fingers = 0;
+		data->drag_edge = EDGE_HOLD_NONE;
+		data->scroll_edge = EDGE_HOLD_NONE;
+		return;
+	}
+	/* This observer's raw slot data is complete by construction here. The
+	 * primary decision has also completed, so arming an edge timer cannot depend
+	 * on Zephyr listener order. / このobserverの生slot dataはここで必ず完成済みであり、
+	 * primary裁定も完了している。従ってedge timerのarmはZephyr listener順に依存しない。 */
+	detect_drag_edge(data->dev);
 }
 
 static void edge_hold_scroll_input(const struct device *dev, struct input_event *evt)
@@ -518,6 +539,8 @@ static int edge_hold_init(const struct device *dev)
 	k_work_init_delayable(&((struct edge_hold_data *)dev->data)->scroll_repeat_work,
 			     scroll_repeat_work_handler);
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD);
+	(void)travelers_pad_arbiter_bind_frame_handler(
+		TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD, edge_hold_deliver_resolved_frame, dev->data);
 	LOG_INF("edge hold active: surface=%ux%u edge=%u; drag delay=%ums period=%ums delta=%d; "
 		"scroll delay=%ums period=%ums delta=%d", cfg->surface_x, cfg->surface_y, cfg->edge_size,
 		cfg->drag_start_delay_ms, cfg->drag_repeat_ms, cfg->drag_repeat_delta,

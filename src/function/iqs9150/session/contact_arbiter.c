@@ -3,14 +3,15 @@
  *
  * Accept proposals emitted for one logical input frame and resolve them
  * independently of callback order. Zephyr queues input callbacks, so
- * resolution waits until every registered recognizer acknowledges that frame.
- * Primary semantic output is token-gated; the session manager owns only the
- * immutable lifecycle boundary, never contact ownership.
+ * resolution waits until every registered primary recognizer acknowledges that frame.
+ * A frame-routing callback runs only after that complete proposal set has been
+ * resolved. Primary semantic output is token-gated; the session manager owns
+ * only the immutable lifecycle boundary, never contact ownership.
  *
  * 一つの論理input frameに対して出たproposalを収集し、callback順に依存せず解決する。
- * Zephyr input callbackはqueue方式のため、全registered recognizerのframe通知を待つ。
- * primary semantic outputはtoken gateし、session managerは不変lifecycle境界だけを
- * 保持して接触所有権を持たない。
+ * Zephyr input callbackはqueue方式のため、全registered primary recognizerのframe通知を待つ。
+ * その完全なproposal集合を解決後にだけframe-routing callbackを呼ぶ。primary semantic
+ * outputはtoken gateし、session managerは不変lifecycle境界だけを保持して接触所有権を持たない。
  */
 
 #include <zephyr/logging/log.h>
@@ -24,6 +25,7 @@ LOG_MODULE_REGISTER(travelers_pad_arbiter, LOG_LEVEL_INF);
 #define TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES 16
 #define TRAVELERS_PAD_ARBITER_MAX_OUTPUT_RECEIPTS 4
 #define TRAVELERS_PAD_ARBITER_MAX_DECISIONS 16
+#define TRAVELERS_PAD_ARBITER_MAX_TERMINAL_ACTIONS 8
 
 struct arbiter_output_receipt {
 	enum travelers_pad_recognizer_id recognizer;
@@ -41,6 +43,11 @@ struct arbiter_decision {
 	bool authoritative_output_verified;
 };
 
+struct terminal_action_record {
+	struct travelers_pad_terminal_action_grant grant;
+	bool consumed;
+};
+
 struct arbiter_frame {
 	struct travelers_pad_session_snapshot snapshot;
 	struct travelers_pad_arbiter_proposal proposals[TRAVELERS_PAD_ARBITER_MAX_PROPOSALS];
@@ -49,26 +56,26 @@ struct arbiter_frame {
 	uint8_t proposal_count;
 	uint8_t output_receipt_count;
 	bool active;
-};
-
-/* A claim must be visible before the queued listener fan-out has completed:
- * the router uses it only to suppress an incompatible raw stream. It is not a
- * grant and cannot authorize semantic output. The resolver replaces it with a
- * committed token after every recognizer has observed the frame.
- * claimはqueued listener fan-out完了前にも見える必要がある。routerはこれを
- * 非互換な生ストリームの抑止だけに使う。これはgrantではなくsemantic出力を許可
- * できない。全recognizerがframeを観測後、resolverが確定tokenへ置換する。 */
-struct arbiter_provisional_owner {
-	struct travelers_pad_owner_token token;
-	enum travelers_pad_recognizer_id recognizer;
+	/* Primary recognizers may decide the frame before asynchronous observers
+	 * consume its immutable snapshot. Keep storage alive until every registered
+	 * input listener has acknowledged it. / primary recognizerはobserverより先に
+	 * frameを裁定できる。全登録input listenerがacknowledgeするまで不変snapshotを保持する。 */
+	bool resolved;
+	bool terminal_action_open;
+	/* A handler must receive a resolved frame only once. Primary handlers run
+	 * at primary resolution; observer handlers wait until their own raw input
+	 * callback has acknowledged that frame. / handlerは裁定済みframeを一度だけ受ける。
+	 * primary handlerはprimary裁定時、observer handlerは自身の生input callbackが同frameを
+	 * acknowledgeしてから呼ばれる。 */
+	uint32_t frame_handler_mask;
 };
 
 struct arbiter_state {
 	struct arbiter_frame frames[TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES];
 	struct arbiter_decision decisions[TRAVELERS_PAD_ARBITER_MAX_DECISIONS];
+	struct terminal_action_record terminal_actions[TRAVELERS_PAD_ARBITER_MAX_TERMINAL_ACTIONS];
 	struct travelers_pad_owner_token token;
 	struct travelers_pad_owner_token post_session;
-	struct arbiter_provisional_owner provisional;
 	struct {
 		uint32_t session_id;
 		enum travelers_pad_owner owner;
@@ -76,20 +83,30 @@ struct arbiter_state {
 	uint32_t cancelled_session_id;
 	uint32_t next_owner_generation;
 	uint32_t registered_mask;
+	uint32_t primary_registered_mask;
 	struct {
 		travelers_pad_arbiter_resolve_handler_t handler;
 		void *context;
 	} handlers[TRAVELERS_PAD_RECOGNIZER_COUNT];
+	struct {
+		travelers_pad_arbiter_frame_handler_t handler;
+		void *context;
+	} frame_handlers[TRAVELERS_PAD_RECOGNIZER_COUNT];
 	uint8_t next_decision;
+	uint8_t next_terminal_action;
+	uint32_t next_terminal_action_generation;
 };
 
 static struct arbiter_state state;
 
+static bool is_primary_recognizer(enum travelers_pad_recognizer_id recognizer)
+{
+	return recognizer <= TRAVELERS_PAD_RECOGNIZER_TIP_TAP;
+}
+
 static const char *owner_name(enum travelers_pad_owner owner)
 {
 	switch (owner) {
-	case TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL:
-		return "pointer";
 	case TRAVELERS_PAD_OWNER_DRAG:
 		return "drag";
 	case TRAVELERS_PAD_OWNER_SCROLL:
@@ -124,8 +141,6 @@ static uint8_t owner_priority(enum travelers_pad_owner owner)
 		return 70;
 	case TRAVELERS_PAD_OWNER_TIP_TAP:
 		return 60;
-	case TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL:
-		return 10;
 	case TRAVELERS_PAD_OWNER_NONE:
 	default:
 		return 0;
@@ -157,10 +172,6 @@ static void revoke_session(uint32_t session_id, const char *reason)
 		state.token.valid = false;
 		revoked = true;
 	}
-	if (state.provisional.token.valid && state.provisional.token.session_id == session_id) {
-		state.provisional.token.valid = false;
-		revoked = true;
-	}
 	if (state.post_session.valid && state.post_session.session_id == session_id) {
 		state.post_session.valid = false;
 		revoked = true;
@@ -184,7 +195,12 @@ bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
 		return false;
 	}
 	state.registered_mask |= bit;
-	LOG_INF("arbiter recognizer=%u registered", recognizer);
+	if (is_primary_recognizer(recognizer)) {
+		state.primary_registered_mask |= bit;
+		LOG_INF("arbiter primary recognizer=%u registered", recognizer);
+	} else {
+		LOG_INF("arbiter observer=%u registered", recognizer);
+	}
 	return true;
 }
 
@@ -201,6 +217,22 @@ bool travelers_pad_arbiter_bind_resolve_handler(
 	state.handlers[recognizer].handler = handler;
 	state.handlers[recognizer].context = context;
 	LOG_INF("resolver handler bound recognizer=%u", recognizer);
+	return true;
+}
+
+bool travelers_pad_arbiter_bind_frame_handler(
+	enum travelers_pad_recognizer_id recognizer,
+	travelers_pad_arbiter_frame_handler_t handler, void *context)
+{
+	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT || handler == NULL ||
+	    (state.registered_mask & (1U << recognizer)) == 0U ||
+	    state.frame_handlers[recognizer].handler != NULL) {
+		LOG_WRN("frame handler rejected recognizer=%u", recognizer);
+		return false;
+	}
+	state.frame_handlers[recognizer].handler = handler;
+	state.frame_handlers[recognizer].context = context;
+	LOG_INF("frame handler bound recognizer=%u", recognizer);
 	return true;
 }
 
@@ -232,37 +264,6 @@ static bool proposal_wins_over(enum travelers_pad_owner candidate_owner,
 	return owner_priority(candidate_owner) > owner_priority(current_owner) ||
 	       (owner_priority(candidate_owner) == owner_priority(current_owner) &&
 		candidate_recognizer < current_recognizer);
-}
-
-static void note_provisional_claim(const struct arbiter_frame *frame,
-				   const struct travelers_pad_arbiter_proposal *proposal)
-{
-	struct arbiter_provisional_owner *provisional = &state.provisional;
-
-	if (proposal->intent != TRAVELERS_PAD_PROPOSAL_CLAIM ||
-	    (state.token.valid && state.token.session_id == frame->snapshot.session_id)) {
-		return;
-	}
-	if (provisional->token.valid && provisional->token.session_id == frame->snapshot.session_id &&
-	    !proposal_wins_over(proposal->requested_owner, proposal->recognizer,
-				provisional->token.owner, provisional->recognizer)) {
-		return;
-	}
-	*provisional = (struct arbiter_provisional_owner){
-		.token = {
-			.session_id = frame->snapshot.session_id,
-			.owner_generation = 0,
-			.owner = proposal->requested_owner,
-			.capabilities = proposal->capabilities,
-			.kind = TRAVELERS_PAD_TOKEN_PROVISIONAL,
-			.phase = TRAVELERS_PAD_OWNER_PHASE_NONE,
-			.valid = true,
-		},
-		.recognizer = proposal->recognizer,
-	};
-	LOG_INF("arbiter provisional session=%u frame=%u owner=%s recognizer=%u",
-		frame->snapshot.session_id, frame->snapshot.frame_seq,
-		owner_name(proposal->requested_owner), proposal->recognizer);
 }
 
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot)
@@ -355,7 +356,6 @@ bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *p
 		return false;
 	}
 	frame->proposals[frame->proposal_count++] = *proposal;
-	note_provisional_claim(frame, proposal);
 	return true;
 }
 
@@ -413,6 +413,47 @@ static void validate_receipts(const struct arbiter_frame *frame,
 	}
 }
 
+static void dispatch_frame_handler(struct arbiter_frame *frame,
+				   enum travelers_pad_recognizer_id recognizer)
+{
+	const struct travelers_pad_owner_token *token = NULL;
+	uint32_t bit;
+
+	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT) {
+		return;
+	}
+	bit = 1U << recognizer;
+	if ((frame->frame_handler_mask & bit) != 0U ||
+	    state.frame_handlers[recognizer].handler == NULL) {
+		return;
+	}
+	if (state.token.valid && state.token.session_id == frame->snapshot.session_id) {
+		token = &state.token;
+	}
+	frame->frame_handler_mask |= bit;
+	state.frame_handlers[recognizer].handler(state.frame_handlers[recognizer].context,
+						  &frame->snapshot, token);
+}
+
+static void dispatch_frame_handlers(struct arbiter_frame *frame)
+{
+	/* Primary handlers are intentionally invoked immediately after the final
+	 * same-frame decision. This makes router forwarding independent from
+	 * callback order. Observers which have already consumed the raw frame can
+	 * run now too; later observers are dispatched by arbiter_observed().
+	 * primary handlerは同一frameの最終裁定直後に呼ぶため、router転送はcallback順に
+	 * 依存しない。すでに生frameを消費済みのobserverもここで実行し、後続observerは
+	 * arbiter_observed()からdispatchする。 */
+	for (uint8_t recognizer = 0; recognizer < TRAVELERS_PAD_RECOGNIZER_COUNT;
+	     recognizer++) {
+		uint32_t bit = 1U << recognizer;
+
+		if (is_primary_recognizer(recognizer) || (frame->observed_mask & bit) != 0U) {
+			dispatch_frame_handler(frame, recognizer);
+		}
+	}
+}
+
 static void resolve_frame(struct arbiter_frame *frame)
 {
 	const struct travelers_pad_arbiter_proposal *winner;
@@ -425,6 +466,7 @@ static void resolve_frame(struct arbiter_frame *frame)
 		/* Claims arriving from an older queued frame may never resurrect an
 		 * owner after this session has been cancelled. */
 		revoke_session(frame->snapshot.session_id, "cancelled-frame");
+		dispatch_frame_handlers(frame);
 		return;
 	}
 
@@ -433,10 +475,6 @@ static void resolve_frame(struct arbiter_frame *frame)
 	 * resolution time rather than when the producer enqueues a frame. */
 	if (state.token.valid && state.token.session_id != frame->snapshot.session_id) {
 		state.token.valid = false;
-	}
-	if (state.provisional.token.valid &&
-	    state.provisional.token.session_id != frame->snapshot.session_id) {
-		state.provisional.token.valid = false;
 	}
 	winner = select_winner(frame);
 	if (winner != NULL && !state.token.valid) {
@@ -458,10 +496,6 @@ static void resolve_frame(struct arbiter_frame *frame)
 				.valid = true,
 			};
 		new_token = true;
-		if (state.provisional.token.valid &&
-		    state.provisional.token.session_id == frame->snapshot.session_id) {
-			state.provisional.token.valid = false;
-		}
 	}
 
 	if (new_token) {
@@ -482,6 +516,11 @@ static void resolve_frame(struct arbiter_frame *frame)
 		validate_receipts(frame, winner == NULL ? TRAVELERS_PAD_RECOGNIZER_COUNT :
 						       winner->recognizer);
 	}
+	/* Terminal grants are minted only during complete-frame delivery, while the
+	 * final owner token (if any) is still live. */
+	frame->terminal_action_open = frame->snapshot.contact_count == 0;
+	dispatch_frame_handlers(frame);
+	frame->terminal_action_open = false;
 
 	/* A terminal frame may still carry a proposal or terminal release record.
 	 * Preserve the result until validation is complete, then invalidate it so no later
@@ -489,9 +528,7 @@ static void resolve_frame(struct arbiter_frame *frame)
 	if (frame->snapshot.contact_count == 0) {
 		terminal_session_id = frame->snapshot.session_id;
 		state.ending.session_id = frame->snapshot.session_id;
-		state.ending.owner = state.token.valid ? state.token.owner :
-			(state.provisional.token.valid ? state.provisional.token.owner :
-			 TRAVELERS_PAD_OWNER_NONE);
+		state.ending.owner = state.token.valid ? state.token.owner : TRAVELERS_PAD_OWNER_NONE;
 		terminal_scroll = state.token.valid &&
 			state.token.owner == TRAVELERS_PAD_OWNER_SCROLL && !frame->snapshot.cancelled;
 		if (terminal_scroll) {
@@ -508,7 +545,6 @@ static void resolve_frame(struct arbiter_frame *frame)
 				terminal_session_id, state.post_session.owner_generation);
 		}
 		state.token.valid = false;
-		state.provisional.token.valid = false;
 		invalidate_decisions_for_session(terminal_session_id);
 	}
 }
@@ -524,9 +560,6 @@ enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_se
 	session_id = frame->snapshot.session_id;
 	if (state.token.valid && state.token.session_id == session_id) {
 		return state.token.owner;
-	}
-	if (state.provisional.token.valid && state.provisional.token.session_id == session_id) {
-		return state.provisional.token.owner;
 	}
 	if (frame->snapshot.contact_count == 0 && state.ending.session_id == session_id) {
 		return state.ending.owner;
@@ -544,6 +577,85 @@ bool travelers_pad_arbiter_get_frame_snapshot(uint32_t frame_seq,
 	}
 	*snapshot = frame->snapshot;
 	return true;
+}
+
+bool travelers_pad_arbiter_issue_terminal_action(
+	uint32_t frame_seq, enum travelers_pad_recognizer_id recognizer,
+	enum travelers_pad_owner owner, uint32_t capability,
+	struct travelers_pad_terminal_action_grant *grant)
+{
+	struct arbiter_frame *frame = frame_for(frame_seq);
+	struct terminal_action_record *record;
+	bool owner_allowed;
+
+	if (grant == NULL || recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
+	    capability == TRAVELERS_PAD_CAP_NONE || frame == NULL || !frame->resolved ||
+	    !frame->terminal_action_open || frame->snapshot.cancelled ||
+	    frame->snapshot.contact_count != 0) {
+		return false;
+	}
+	/* A bare tap may be granted only if no primary recognizer owns the session.
+	 * A double-tap candidate is the narrow exception: its own reserved DRAG
+	 * token permits its terminal double-click but no other recognizer may use it.
+	 * 通常tapはprimary ownerがいない時だけgrantする。唯一の例外は予約済みDRAGで、
+	 * 自身のterminal double-clickだけを許可し、他recognizerは利用できない。 */
+	if (owner == TRAVELERS_PAD_OWNER_NONE) {
+		owner_allowed = !state.token.valid;
+	} else {
+		owner_allowed = state.token.valid && state.token.session_id == frame->snapshot.session_id &&
+			state.token.owner == owner && token_has_capabilities(&state.token, owner, capability);
+	}
+	if (!owner_allowed) {
+		LOG_WRN("terminal action denied session=%u frame=%u recognizer=%u owner=%s",
+			frame->snapshot.session_id, frame_seq, recognizer, owner_name(owner));
+		return false;
+	}
+
+	record = &state.terminal_actions[
+		state.next_terminal_action++ % ARRAY_SIZE(state.terminal_actions)];
+	*record = (struct terminal_action_record){
+		.grant = {
+			.session_id = frame->snapshot.session_id,
+			.grant_generation = ++state.next_terminal_action_generation,
+			.recognizer = recognizer,
+			.owner = owner,
+			.capability = capability,
+			.valid = true,
+		},
+	};
+	*grant = record->grant;
+	LOG_INF("terminal action granted session=%u frame=%u generation=%u recognizer=%u owner=%s",
+		grant->session_id, frame_seq, grant->grant_generation, recognizer, owner_name(owner));
+	return true;
+}
+
+bool travelers_pad_arbiter_consume_terminal_action(
+	struct travelers_pad_terminal_action_grant *grant,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint32_t capability, const char *producer)
+{
+	if (grant == NULL || !grant->valid || recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
+	    grant->recognizer != recognizer || grant->owner != owner ||
+	    (grant->capability & capability) != capability) {
+		return false;
+	}
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.terminal_actions); index++) {
+		struct terminal_action_record *record = &state.terminal_actions[index];
+
+		if (!record->grant.valid || record->consumed ||
+		    record->grant.grant_generation != grant->grant_generation ||
+		    record->grant.session_id != grant->session_id ||
+		    record->grant.recognizer != recognizer || record->grant.owner != owner ||
+		    (record->grant.capability & capability) != capability) {
+			continue;
+		}
+		record->consumed = true;
+		grant->valid = false;
+		LOG_INF("terminal action consumed session=%u generation=%u producer=%s",
+			grant->session_id, grant->grant_generation, producer);
+		return true;
+	}
+	return false;
 }
 
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
@@ -655,11 +767,28 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
 		return;
 	}
 	frame->observed_mask |= 1U << recognizer;
-	if ((frame->observed_mask & state.registered_mask) != state.registered_mask) {
-		return;
+	/* Observers consume the resolved lifecycle result; they never participate in
+	 * selecting it. Their callback order or disabled state therefore cannot hold
+	 * up pointer/scroll routing. / observerは解決済みlifecycle結果を消費するだけで
+	 * 選択には参加しない。従ってobserverのcallback順や無効状態でpointer/scrollの
+	 * routingを待たせない。 */
+	if (!frame->resolved &&
+	    (frame->observed_mask & state.primary_registered_mask) == state.primary_registered_mask) {
+		frame->resolved = true;
+		resolve_frame(frame);
 	}
-	resolve_frame(frame);
-	frame->active = false;
+	/* An observer may be called after primary resolution, or it may have
+	 * consumed its raw frame before the final primary acknowledgement. In both
+	 * cases dispatch exactly once only when both facts are true.
+	 * observerはprimary裁定後に呼ばれる場合と、最終primary acknowledgement前に生frameを
+	 * 消費済みの場合がある。両方の条件が満たされた時だけ一度dispatchする。 */
+	if (frame->resolved && !is_primary_recognizer(recognizer)) {
+		dispatch_frame_handler(frame, recognizer);
+	}
+	/* Keep the immutable frame available to late observer callbacks. */
+	if ((frame->observed_mask & state.registered_mask) == state.registered_mask) {
+		frame->active = false;
+	}
 }
 
 bool travelers_pad_arbiter_note_terminal_output(uint32_t ownership_frame_seq,

@@ -7,6 +7,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 #include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tip_tap, LOG_LEVEL_INF);
@@ -47,14 +48,11 @@ static void tip_tap_resolve_action(void *context, const struct travelers_pad_own
 	ARG_UNUSED(token);
 	if (!d->pending_action || d->pending_frame_seq != ownership_frame_seq) return;
 	d->pending_action = false;
-	if (!travelers_pad_arbiter_authorize_output(
-			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
-			TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION, "tip-tap")) return;
-	if (d->callback) {
-		d->callback(d->dev, 0, d->pending_left ? 0 : 1, true);
-		d->callback(d->dev, 0, d->pending_left ? 0 : 1, false);
+	if (travelers_pad_output_behavior_primary(
+			d->dev, d->callback, ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+			TRAVELERS_PAD_OWNER_TIP_TAP, 0, d->pending_left ? 0 : 1, "tip-tap") == 0) {
+		LOG_INF("Tip-Tap initial action dispatched by arbiter");
 	}
-	LOG_INF("Tip-Tap initial action dispatched by arbiter");
 }
 
 static bool claim_tip_tap(struct data *d)
@@ -120,19 +118,14 @@ static void process(const struct device *dev)
 	    absi((int)d->sx - d->ax) >= c->separation && claim_tip_tap(d)) {
 		bool left=d->sx<d->ax; if (c->invert) left=!left; d->fired=true;
 		LOG_INF("Tip-Tap %s anchor=%d second=%d duration=%lld", left?"Left":"Right", d->anchor_id,d->second_id,now-d->second_start);
-		if (d->callback) {
-			if (d->ownership_frame_seq == d->arbiter_frame_seq) {
-				d->pending_action=true; d->pending_left=left;
-				d->pending_frame_seq=d->ownership_frame_seq;
-			} else {
-				if (!travelers_pad_arbiter_authorize_output(
-					d->ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
-					TRAVELERS_PAD_OWNER_TIP_TAP, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-					"tip-tap")) {
-					return;
-				}
-				d->callback(dev,0,left?0:1,true); d->callback(dev,0,left?0:1,false);
-			}
+		if (d->ownership_frame_seq == d->arbiter_frame_seq) {
+			d->pending_action=true; d->pending_left=left;
+			d->pending_frame_seq=d->ownership_frame_seq;
+		} else if (travelers_pad_output_behavior_primary(
+				   dev, d->callback, d->ownership_frame_seq,
+				   TRAVELERS_PAD_RECOGNIZER_TIP_TAP, TRAVELERS_PAD_OWNER_TIP_TAP, 0,
+				   left ? 0 : 1, "tip-tap") != 0) {
+			return;
 		}
 	}
 	if (d->fingers == 0) {

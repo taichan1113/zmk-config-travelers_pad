@@ -25,6 +25,7 @@
 #include <zephyr/logging/log.h>
 
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 
 LOG_MODULE_REGISTER(travelers_pad_edge_dial, LOG_LEVEL_INF);
 
@@ -187,18 +188,12 @@ static void edge_dial_emit_step(const struct device *dev, bool positive)
 	 * 直線時と同一に保つ。 */
 	uint8_t row = 0;
 
-	if (data->callback == NULL) {
-		LOG_WRN("edge dial ignored: KSCAN callback is not configured");
+	if (travelers_pad_output_behavior_primary(
+		dev, data->callback, data->ownership_frame_seq,
+		TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL, TRAVELERS_PAD_OWNER_EDGE_DIAL, row, column,
+		"edge-dial-step") != 0) {
 		return;
 	}
-	if (!travelers_pad_arbiter_authorize_output(
-		data->ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
-		TRAVELERS_PAD_OWNER_EDGE_DIAL, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"edge-dial-step")) {
-		return;
-	}
-	data->callback(dev, row, column, true);
-	data->callback(dev, row, column, false);
 	LOG_INF("edge dial mode=%s edge=%u row=%u column=%u at=(%u,%u)",
 		data->mode == EDGE_DIAL_CIRCLE ? "circle" : "linear", data->edge, row, column,
 		data->x, data->y);

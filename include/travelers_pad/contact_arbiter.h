@@ -20,7 +20,6 @@
 
 enum travelers_pad_owner {
 	TRAVELERS_PAD_OWNER_NONE,
-	TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL,
 	TRAVELERS_PAD_OWNER_DRAG,
 	TRAVELERS_PAD_OWNER_SCROLL,
 	TRAVELERS_PAD_OWNER_MULTI_GESTURE,
@@ -67,7 +66,6 @@ enum travelers_pad_output_capability {
 
 enum travelers_pad_token_kind {
 	TRAVELERS_PAD_TOKEN_NONE,
-	TRAVELERS_PAD_TOKEN_PROVISIONAL,
 	TRAVELERS_PAD_TOKEN_COMMITTED,
 	TRAVELERS_PAD_TOKEN_POST_SESSION,
 };
@@ -105,6 +103,22 @@ struct travelers_pad_owner_token {
 	bool valid;
 };
 
+/* A terminal action is intentionally separate from a live owner token. It is
+ * minted only after a normal terminal frame has been fully resolved and may be
+ * consumed exactly once by its originating recognizer. This suits a delayed
+ * tap/double-click without allowing a stale timer to acquire session ownership.
+ * terminal actionはlive owner tokenとは意図的に分離する。通常terminal frameの裁定後にだけ
+ * 発行され、発行元recognizerが一度だけ消費できる。遅延tap/double-clickに適し、古いtimerが
+ * session所有権を取得することはできない。 */
+struct travelers_pad_terminal_action_grant {
+	uint32_t session_id;
+	uint32_t grant_generation;
+	enum travelers_pad_recognizer_id recognizer;
+	enum travelers_pad_owner owner;
+	uint32_t capability;
+	bool valid;
+};
+
 /* A recognizer can defer the semantic action which first establishes its
  * ownership until the resolver has issued a token.  This is needed because
  * the five input listeners run asynchronously: at proposal time the winning
@@ -117,14 +131,32 @@ struct travelers_pad_owner_token {
 typedef void (*travelers_pad_arbiter_resolve_handler_t)(
 	void *context, const struct travelers_pad_owner_token *token, uint32_t ownership_frame_seq);
 
-/* Recognizers register from their DT-backed init function. Therefore a node
- * with status = "disabled" has no registry entry and cannot alter ordering.
- * recognizerはDT-backed initから登録する。従ってstatus = "disabled"のnodeは
- * registryへ入らず、他機能の順序を変えない。 */
+/* A primary recognizer's callback runs once after the complete primary proposal
+ * set is resolved. An observer's callback runs once only after that same
+ * resolution *and* after the observer has consumed its own raw frame. It is
+ * for consumers that need an immutable resolved frame; it must not submit a
+ * proposal for that frame.
+ * primary recognizerのcallbackは完全なprimary proposal集合の裁定後に一度だけ呼ばれる。
+ * observerのcallbackは同じ裁定後、かつobserver自身が生frameを消費した後に一度だけ呼ばれる。
+ * 不変の裁定済みframeを必要とするconsumer用であり、同じframeへのproposalを追加してはならない。 */
+typedef void (*travelers_pad_arbiter_frame_handler_t)(
+	void *context, const struct travelers_pad_session_snapshot *snapshot,
+	const struct travelers_pad_owner_token *token);
+
+/* Recognizers register from their DT-backed init function. The five primary
+ * recognizers form the decision barrier; edge-hold and inertia are observers
+ * and are deliberately excluded from it. All registered functions still
+ * acknowledge before the frame storage is reclaimed.
+ * recognizerはDT-backed initから登録する。5個のprimary recognizerだけが裁定barrierを
+ * 構成し、edge-holdとinertiaはobserverとして意図的にbarrierから除外する。ただし、frame
+ * storageの回収前には登録済み全機能がacknowledgeする。 */
 bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer);
 bool travelers_pad_arbiter_bind_resolve_handler(
 	enum travelers_pad_recognizer_id recognizer,
 	travelers_pad_arbiter_resolve_handler_t handler, void *context);
+bool travelers_pad_arbiter_bind_frame_handler(
+	enum travelers_pad_recognizer_id recognizer,
+	travelers_pad_arbiter_frame_handler_t handler, void *context);
 
 /* Called by the session manager around one synchronously forwarded frame. */
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot);
@@ -135,16 +167,13 @@ void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapsh
 uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recognizer);
 bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *proposal);
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq);
-/* Return the arbiter owner applicable while processing one forwarded frame.
- * A CLAIM is visible as a provisional owner before all queued recognizers
- * have acknowledged the frame. Once resolved it becomes the committed owner;
- * the same owner remains visible for that frame's terminal release. This lets
- * a routing consumer suppress an incompatible raw path without importing a
- * recognizer-private mutable flag.
- * 転送済みframeを処理中に適用されるarbiter ownerを返す。CLAIMは、queue内の
- * 全recognizerがframeを確認する前は暫定ownerとして見える。解決後は確定ownerとなり、
- * 同じownerはそのsessionのterminal releaseでも見える。これによりrouting側は
- * recognizer固有の可変flagを直接参照せず、非互換な生経路を抑止できる。 */
+/* Return the committed arbiter owner applicable while processing one forwarded
+ * frame. A same-frame claim is deliberately invisible until all recognizers
+ * have observed the frame; routing that requires the new decision must use a
+ * frame handler. The committed owner remains visible for its terminal release.
+ * 転送済みframeに適用されるcommit済みarbiter ownerを返す。同一frameのclaimは、全
+ * recognizerがframeを観測するまで意図的に不可視である。新しい決定を必要とするroutingは
+ * frame handlerを使う。commit済みownerはterminal releaseでも見える。 */
 enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq);
 /* Return immutable lifecycle metadata for a queued frame. Observers use this
  * to distinguish a normal terminal release from a sensor-reset cancellation.
@@ -152,6 +181,22 @@ enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_se
  * cancellationを区別するために使う。 */
 bool travelers_pad_arbiter_get_frame_snapshot(uint32_t frame_seq,
 					       struct travelers_pad_session_snapshot *snapshot);
+
+/* Issue a one-shot terminal-action grant from a fully resolved normal release.
+ * owner=NONE is allowed only when the frame has no committed owner; a non-NONE
+ * owner must match the active committed token and its capability. The grant is
+ * later consumed atomically by the output broker.
+ * fully resolved済みの通常releaseから、一回限りterminal-action grantを発行する。
+ * owner=NONEはcommit済みownerが無いframeだけで許可する。NONE以外はactiveなcommit
+ * tokenとcapabilityの一致が必要である。grantは後でoutput brokerが原子的に消費する。 */
+bool travelers_pad_arbiter_issue_terminal_action(
+	uint32_t frame_seq, enum travelers_pad_recognizer_id recognizer,
+	enum travelers_pad_owner owner, uint32_t capability,
+	struct travelers_pad_terminal_action_grant *grant);
+bool travelers_pad_arbiter_consume_terminal_action(
+	struct travelers_pad_terminal_action_grant *grant,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint32_t capability, const char *producer);
 
 /* Record a terminal release against the frame that established its ownership.
  * Releases are deliberately never blocked: a stale token must not leave a

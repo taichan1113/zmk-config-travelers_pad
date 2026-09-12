@@ -154,9 +154,6 @@ static void inertia_work_handler(struct k_work *work)
 static void inertia_handle_contact(const struct device *dev, struct input_event *evt)
 {
 	struct scroll_inertia_data *data = dev->data;
-	const struct scroll_inertia_config *cfg = dev->config;
-	struct travelers_pad_session_snapshot snapshot;
-	enum travelers_pad_owner owner;
 
 	if (evt->type == INPUT_EV_ABS && evt->code == INPUT_ABS_Z) {
 		uint8_t previous_fingers = data->contact_fingers;
@@ -173,34 +170,42 @@ static void inertia_handle_contact(const struct device *dev, struct input_event 
 			data->release_pending = true;
 		}
 	}
-	if (!evt->sync) {
-		return;
-	}
-	if (!travelers_pad_arbiter_get_frame_snapshot(data->arbiter_frame_seq, &snapshot)) {
-		return;
-	}
-	if (snapshot.cancelled) {
+	/* The resolved observer handler performs cancellation and terminal-release
+	 * decisions. At this point only record raw lifecycle evidence; it must not
+	 * inspect an unresolved owner whose primary decision may not exist yet.
+	 * 裁定済みobserver handlerがcancelとterminal releaseを判断する。ここでは生lifecycle
+	 * evidenceだけを記録し、まだ存在しないかもしれないprimary決定を参照しない。 */
+}
+
+static void inertia_deliver_resolved_frame(
+	void *context, const struct travelers_pad_session_snapshot *snapshot,
+	const struct travelers_pad_owner_token *token)
+{
+	struct scroll_inertia_data *data = context;
+	const struct scroll_inertia_config *cfg = data->dev->config;
+
+	if (snapshot->cancelled) {
 		/* A sensor reset is not a finger release. It must stop a running glide
 		 * and may never create a new post-session lease. */
-		LOG_INF("scroll inertia cancelled by sensor reset session=%u", snapshot.session_id);
-		stop_inertia(dev);
+		LOG_INF("scroll inertia cancelled by sensor reset session=%u", snapshot->session_id);
+		stop_inertia(data->dev);
 		return;
 	}
 
-	owner = travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
-	if (data->release_pending && data->contact_fingers == 0) {
-		if (owner == TRAVELERS_PAD_OWNER_SCROLL &&
+	if (data->release_pending && snapshot->contact_count == 0) {
+		if (token != NULL && token->valid && token->owner == TRAVELERS_PAD_OWNER_SCROLL &&
 		    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
 			/* The arbiter creates the post-session lease when this terminal frame
 			 * resolves. Delay work until then and acquire that exact session lease
 			 * before sending any wheel value. */
 			data->post_session_pending = true;
-			data->post_session_id = snapshot.session_id;
+			data->post_session_id = snapshot->session_id;
 			data->post_session_lease = (struct travelers_pad_owner_token){};
 			LOG_INF("scroll inertia pending normal-end lease session=%u h=%d v=%d",
-				snapshot.session_id, data->horizontal_velocity, data->vertical_velocity);
+				snapshot->session_id, data->horizontal_velocity, data->vertical_velocity);
 			k_work_schedule(&data->work, K_MSEC(cfg->start_delay_ms));
-		} else if (owner != TRAVELERS_PAD_OWNER_SCROLL) {
+		} else if (token == NULL || !token->valid ||
+			   token->owner != TRAVELERS_PAD_OWNER_SCROLL) {
 			/* The raw contact stream may look like a two-finger release for a
 			 * click, Tip-Tap, geometry, or higher-priority action. */
 			data->horizontal_velocity = 0;
@@ -236,6 +241,8 @@ static int inertia_init(const struct device *dev)
 
 	k_work_init_delayable(&data->work, inertia_work_handler);
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);
+	(void)travelers_pad_arbiter_bind_frame_handler(
+		TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA, inertia_deliver_resolved_frame, data);
 	LOG_INF("scroll inertia active: delay=%ums period=%ums decay=%u/%u stop=%u",
 		cfg->start_delay_ms, cfg->repeat_ms, cfg->decay_numerator, cfg->decay_denominator,
 		cfg->stop_delta);

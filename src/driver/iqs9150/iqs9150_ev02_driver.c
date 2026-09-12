@@ -50,6 +50,8 @@ LOG_MODULE_REGISTER(iqs9150_ev02_driver, CONFIG_IQS9150_EV02_DRIVER_LOG_LEVEL);
 #define IQS9150_REPORT_ERROR_RETRY_MAX      3
 #define IQS9150_PRODUCT_RETRY_MAX           40
 #define IQS9150_PRODUCT_RETRY_INTERVAL_MS   25
+#define IQS9150_ATI_RECOVERY_RETRY_MAX       8
+#define IQS9150_ATI_RECOVERY_DELAY_MS      250
 
 #define IQS9150_REPORT_1F_GESTURE_OFFSET     8
 #define IQS9150_REPORT_2F_GESTURE_OFFSET    10
@@ -101,6 +103,7 @@ struct iqs9150_data {
 	uint8_t ack_attempts;
 	uint8_t report_error_count;
 	uint8_t product_attempts;
+	uint8_t ati_recovery_attempts;
 	bool terminate_comms_window;
 	int64_t last_two_finger_log_ms;
 	int64_t last_multitouch_log_ms;
@@ -569,9 +572,26 @@ static void iqs9150_work_handler(struct k_work *work)
 			return;
 		}
 		if (value[0] & IQS9150_INFO_TP_ATI_ERROR) {
-			LOG_ERR("STEP1B ATI completed with error; Info Flags=0x%02x%02x",
-				value[1], value[0]);
-			iqs9150_fail(data, "ATI (trackpad ATI error flag set)", -EIO);
+			/* A contact placed while the sensor is calibrating can set both
+			 * TP_REATI_OCCURRED and TP_ATI_ERROR (for example 0x0118). This is
+			 * recoverable startup timing, not a permanent configuration failure.
+			 * Reset, reapply the complete EV02 image, and retry ATI after a quiet
+			 * interval. / calibration中の接触はTP_REATI_OCCURREDとTP_ATI_ERRORを
+			 * 同時に立て得る（例: 0x0118）。これは恒久的な設定不良ではなく復帰可能な
+			 * 起動タイミング問題である。software reset後にEV02 imageを再適用し、
+			 * 静止intervalを置いてATIを再試行する。 */
+			data->ati_recovery_attempts++;
+			if (data->ati_recovery_attempts > IQS9150_ATI_RECOVERY_RETRY_MAX) {
+				LOG_ERR("STEP1B ATI retry limit reached; Info Flags=0x%02x%02x",
+					value[1], value[0]);
+				iqs9150_fail(data, "ATI recovery retry limit", -EIO);
+				return;
+			}
+			LOG_WRN("STEP1B ATI error Info Flags=0x%02x%02x; startup recovery %u/%u",
+				value[1], value[0], data->ati_recovery_attempts,
+				IQS9150_ATI_RECOVERY_RETRY_MAX);
+			iqs9150_start_runtime_recovery(data, "startup ATI error", false);
+			k_work_schedule(&data->work, K_MSEC(IQS9150_ATI_RECOVERY_DELAY_MS));
 			return;
 		}
 
@@ -597,6 +617,7 @@ static void iqs9150_work_handler(struct k_work *work)
 			return;
 		}
 		data->state = IQS9150_RUNNING;
+		data->ati_recovery_attempts = 0;
 		LOG_INF("STEP1B complete: Event Mode active; touch the pad to produce reports");
 		return;
 
@@ -605,11 +626,25 @@ static void iqs9150_work_handler(struct k_work *work)
 		return;
 
 	case IQS9150_RECOVER_RESET:
+		/* A delayed startup-ATI recovery may wake between RDY windows. Wait for
+		 * the active-low RDY window before writing System Control; this keeps the
+		 * recovery transaction subject to the same protocol timing as startup.
+		 * 遅延した起動ATI recoveryはRDY window外で起き得る。System Controlの書込み前に
+		 * active-low RDY windowを待ち、recovery transactionも起動時と同じprotocol
+		 * timingに従わせる。 */
+		if (gpio_pin_get_dt(&((const struct iqs9150_config *)dev->config)->rdy_gpio) != 0) {
+			k_work_schedule(&data->work, K_MSEC(IQS9150_PRODUCT_RETRY_INTERVAL_MS));
+			return;
+		}
 		/* Reset only after a failed report sequence. A sensor-originated reset
 		 * already has Show Reset asserted, so it can go straight to ACK on the
 		 * following RDY window. */
-		value[0] = 0;
-		value[1] = IQS9150_SYSTEM_CONTROL_SW_RESET;
+		/* System Control is little-endian. SW_RESET is bit 1 of the low
+		 * byte, hence the complete command is 0x0002, not 0x0200.
+		 * System Controlはlittle-endianである。SW_RESETは下位byteのbit 1なので、
+		 * 完全なcommandは0x0200ではなく0x0002となる。 */
+		value[0] = IQS9150_SYSTEM_CONTROL_SW_RESET;
+		value[1] = 0;
 		rc = write_reg(dev, IQS9150_SYSTEM_CONTROL_REG, value, 2);
 		if (rc != 0) {
 			iqs9150_fail(data, "runtime software reset", rc);

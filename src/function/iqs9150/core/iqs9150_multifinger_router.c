@@ -60,8 +60,14 @@ struct router_data {
 	bool sensor_reset;
 	uint32_t arbiter_frame_seq;
 	uint32_t scroll_ownership_frame_seq;
-	bool scroll_start_pending;
 	bool scroll_extra_contact;
+	/* Router contact output is deferred until the arbiter has observed every
+	 * primary recognizer for this frame. Track whether the pointer adapter has
+	 * an open logical contact so an ownership hand-off can cancel it exactly
+	 * once. / routerの接触出力は、このframeを全primary recognizerが観測した後まで
+	 * 保留する。pointer adapterが開いた論理接触を追跡し、所有権移行時に一度だけ
+	 * cancelできるようにする。 */
+	bool pointer_stream_open;
 };
 
 static int32_t abs32(int32_t value)
@@ -100,27 +106,6 @@ static void router_cancel_pointer(const struct device *dev)
 	}
 }
 
-static void router_resolve_action(void *context, const struct travelers_pad_owner_token *token,
-				  uint32_t ownership_frame_seq)
-{
-	struct router_data *data = context;
-
-	ARG_UNUSED(token);
-	if (!data->scroll_start_pending || data->scroll_ownership_frame_seq != ownership_frame_seq) {
-		return;
-	}
-	data->scroll_start_pending = false;
-	if (!travelers_pad_arbiter_authorize_output(
-			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
-			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll-start")) {
-		data->state = ROUTER_IDLE;
-		return;
-	}
-	router_emit(data->dev, data, 2);
-	LOG_INF("2F route=scroll initial output dispatched by arbiter");
-}
-
 static void router_begin(struct router_data *data)
 {
 	data->max_fingers = data->fingers;
@@ -149,7 +134,10 @@ static const char *swipe_direction(const struct router_data *data)
 	return dy >= 0 ? "down" : "up";
 }
 
-static void router_process_frame(const struct device *dev)
+/* Phase 1: observe and propose only. Input reports are deferred until every
+ * primary recognizer has observed the frame. / 第1段階は観測とproposalだけを
+ * 行い、input reportは全primary recognizerの観測完了まで保留する。 */
+static void router_recognize_frame(const struct device *dev)
 {
 	const struct router_config *cfg = dev->config;
 	struct router_data *data = dev->data;
@@ -159,115 +147,11 @@ static void router_process_frame(const struct device *dev)
 	uint32_t distance_delta;
 	uint32_t rotation_cross;
 	uint32_t primary_move;
-	enum travelers_pad_owner arbiter_owner =
-		travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
-
-	/* A double-tap hold registers a provisional DRAG claim before its movement
-	 * threshold is crossed. The arbiter exposes that claim to this routing path,
-	 * so pointer suppression no longer depends on tap/drag's private flag. A
-	 * provisional claim can never send semantic output; it only prevents the
-	 * router from reinterpreting the same raw frames as pointer or scroll.
-	 * ダブルタップholdは移動閾値を越える前に暫定DRAG claimを登録する。arbiterが
-	 * そのclaimをrouting経路へ公開するので、pointer抑止はtap/drag固有flagへ依存
-	 * しない。暫定claim自身はsemantic出力を行えず、同じ生frameをpointer/scrollへ
-	 * 再解釈しないためだけに使用する。 */
-	if (arbiter_owner == TRAVELERS_PAD_OWNER_DRAG) {
-		if (data->state != ROUTER_TAP_DRAG) {
-			router_cancel_pointer(dev);
-			data->state = ROUTER_TAP_DRAG;
-			LOG_INF("arbiter drag owns %uF contact stream", data->fingers);
-		}
-		if (data->fingers == 0) {
-			data->state = ROUTER_IDLE;
-			data->max_fingers = 0;
-		}
-		return;
-	}
-	if (data->state == ROUTER_TAP_DRAG) {
-		if (data->fingers == 0) {
-			data->state = ROUTER_IDLE;
-			data->max_fingers = 0;
-		}
-		return;
-	}
-
-	if (data->sensor_reset) {
-		router_cancel_pointer(dev);
-		data->state = ROUTER_IDLE;
-		data->max_fingers = 0;
-		data->sensor_reset = false;
-		LOG_WRN("router cancelled session after sensor reset");
-		return;
-	}
-
-	/* An enabled edge publishes EDGE_DIAL ownership as soon as it acquires the
-	 * one-finger contact. Keep all frames belonging to that arbiter owner out of
-	 * the pointer path until release; this prevents initial edge travel before
-	 * the first detent from moving the cursor. The router deliberately does not
-	 * inspect edge dial's private active flag.
-	 * 有効辺は1本指接触の取得と同時にEDGE_DIAL ownerをarbiterへ公開する。その
-	 * ownerに属するframeを解放までポインタ経路から除外し、最初のstep前の辺移動で
-	 * カーソルが動くことを防ぐ。routerはedge dial固有のactive flagを参照しない。 */
-	if (arbiter_owner == TRAVELERS_PAD_OWNER_EDGE_DIAL) {
-		if (data->state != ROUTER_EDGE_DIAL) {
-			router_cancel_pointer(dev);
-			data->state = ROUTER_EDGE_DIAL;
-			data->max_fingers = 1;
-			LOG_INF("arbiter edge dial owns 1F contact stream");
-		}
-		if (data->fingers == 0) {
-			data->state = ROUTER_IDLE;
-			data->max_fingers = 0;
-			LOG_INF("arbiter edge dial contact released; router idle");
-		}
-		return;
-	}
-	if (data->state == ROUTER_EDGE_DIAL) {
-		if (data->fingers == 0) {
-			data->state = ROUTER_IDLE;
-			data->max_fingers = 0;
-			LOG_INF("edge dial contact released; router idle");
-		}
-		return;
-	}
-
-	if (data->fingers == 0) {
-		/* A terminal owner already emitted its semantic action. In particular,
-		 * Tip-Tap must not create the router's synthetic 2F tap pair. */
-		if (arbiter_owner == TRAVELERS_PAD_OWNER_TIP_TAP ||
-		    arbiter_owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE ||
-		    arbiter_owner == TRAVELERS_PAD_OWNER_EDGE_DIAL ||
-		    arbiter_owner == TRAVELERS_PAD_OWNER_DRAG) {
-			data->state = ROUTER_IDLE;
-			data->max_fingers = 0;
-			return;
-		}
-		if (data->state == ROUTER_PASS_ONE || data->state == ROUTER_SCROLL_TWO) {
-			router_emit(dev, data, 0);
-		} else if (data->state == ROUTER_AWAIT_TWO) {
-			/* A held-still two-finger session is a right-click candidate. Send a
-			 * synthetic start/release pair only now, so no provisional scroll can
-			 * have escaped before the gesture was classified. */
-			data->x = data->start_x;
-			data->y = data->start_y;
-			data->finger2_x = data->start_finger2_x;
-			data->finger2_y = data->start_finger2_y;
-			data->finger2_valid = data->have_geometry;
-			router_emit(dev, data, 2);
-			router_emit(dev, data, 0);
-			LOG_INF("2F route=tap candidate");
-		} else if (data->state == ROUTER_CLAIM_GEOMETRY) {
-			LOG_INF("2F route=geometry candidate complete");
-		} else if (data->state == ROUTER_CLAIM_MULTIFINGER) {
-			if (data->max_fingers == 5) {
-				LOG_INF("5F route=Grasp/Release candidate complete");
-			} else {
-				LOG_INF("%uF route=swipe candidate direction=%s", data->max_fingers,
-					swipe_direction(data));
-			}
-		}
-		data->state = ROUTER_IDLE;
-		data->max_fingers = 0;
+	/* Ownership and all host-facing contact output are resolved after every
+	 * primary recognizer has observed this frame. */
+	if (data->sensor_reset || data->fingers == 0 || data->state == ROUTER_TAP_DRAG ||
+	    data->state == ROUTER_EDGE_DIAL || data->state == ROUTER_CLAIM_GEOMETRY ||
+	    data->state == ROUTER_CLAIM_MULTIFINGER) {
 		return;
 	}
 
@@ -275,7 +159,6 @@ static void router_process_frame(const struct device *dev)
 		router_begin(data);
 		if (data->fingers == 1) {
 			data->state = ROUTER_PASS_ONE;
-			router_emit(dev, data, 1);
 		} else if (data->fingers == 2) {
 			data->state = ROUTER_AWAIT_TWO;
 			LOG_INF("2F route=awaiting scroll-or-geometry classification");
@@ -292,7 +175,6 @@ static void router_process_frame(const struct device *dev)
 
 	data->max_fingers = MAX(data->max_fingers, data->fingers);
 	if (data->state == ROUTER_PASS_ONE && data->fingers >= 2) {
-		router_cancel_pointer(dev);
 		router_begin(data);
 		data->state = data->fingers == 2 ? ROUTER_AWAIT_TWO : ROUTER_CLAIM_MULTIFINGER;
 		return;
@@ -322,24 +204,12 @@ static void router_process_frame(const struct device *dev)
 		return;
 	}
 	if (data->state == ROUTER_PASS_ONE) {
-		router_emit(dev, data, 1);
 		return;
 	}
 	if (data->state == ROUTER_SCROLL_TWO) {
 		if (data->fingers < 3) {
 			data->scroll_extra_contact = false;
 		}
-		if (!travelers_pad_arbiter_authorize_output(
-			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
-			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll")) {
-			return;
-		}
-		/* The pointer adapter is a two-contact scroll consumer. While a third
-		 * physical contact is present, keep reporting the first two normalized
-		 * coordinates as a logical 2F stream. A partial 1F release is still sent
-		 * as 1F so the adapter can rebase without generating a jump. */
-		router_emit(dev, data, data->fingers >= 2 ? 2 : data->fingers);
 		return;
 	}
 	if (data->state != ROUTER_AWAIT_TWO || data->fingers != 2) {
@@ -364,11 +234,8 @@ static void router_process_frame(const struct device *dev)
 		}
 	}
 	if (primary_move >= cfg->scroll_classify_move) {
-		/* The arbiter is now the sole owner path for a classified scroll. Its
-		 * resolver dispatches the first routed frame only after the immutable
-		 * decision exists; later frames are checked against that same token.
-		 * scroll分類後の所有権経路はarbiterだけとする。resolverは不変decisionが
-		 * 確定してから最初のrouted frameを出力し、以後も同じtokenで検査する。 */
+		/* The frame callback emits only after every recognizer has observed this
+		 * proposal and the arbiter has made its immutable decision. */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
 			.frame_seq = data->arbiter_frame_seq,
 			.recognizer = TRAVELERS_PAD_RECOGNIZER_ROUTER,
@@ -383,8 +250,123 @@ static void router_process_frame(const struct device *dev)
 		}
 		data->scroll_ownership_frame_seq = data->arbiter_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
-		data->scroll_start_pending = true;
-		LOG_INF("2F route=scroll proposed; awaiting arbiter dispatch");
+		LOG_INF("2F route=scroll proposed; awaiting frame decision");
+	}
+}
+
+static void router_suppress_pointer(const struct device *dev, struct router_data *data)
+{
+	if (data->pointer_stream_open) {
+		router_cancel_pointer(dev);
+		data->pointer_stream_open = false;
+	}
+}
+
+/* Phase 2: invoked once after all primary recognizers observed this frame.
+ * This is the router's only contact-reporting path. / 第2段階は全primary
+ * recognizerの観測後に一度だけ呼ばれる。routerで唯一接触reportを送れる経路である。 */
+static void router_deliver_resolved_frame(
+	void *context, const struct travelers_pad_session_snapshot *snapshot,
+	const struct travelers_pad_owner_token *token)
+{
+	struct router_data *data = context;
+	const struct device *dev = data->dev;
+	enum travelers_pad_owner owner = token != NULL ? token->owner : TRAVELERS_PAD_OWNER_NONE;
+
+	if (snapshot->cancelled || data->sensor_reset) {
+		router_suppress_pointer(dev, data);
+		data->state = ROUTER_IDLE;
+		data->max_fingers = 0;
+		data->sensor_reset = false;
+		LOG_WRN("router cancelled session after sensor reset");
+		return;
+	}
+
+	if (owner == TRAVELERS_PAD_OWNER_DRAG) {
+		router_suppress_pointer(dev, data);
+		data->state = ROUTER_TAP_DRAG;
+		if (snapshot->contact_count == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+		}
+		return;
+	}
+	if (owner == TRAVELERS_PAD_OWNER_EDGE_DIAL) {
+		router_suppress_pointer(dev, data);
+		data->state = ROUTER_EDGE_DIAL;
+		if (snapshot->contact_count == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+		}
+		return;
+	}
+	if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
+		router_suppress_pointer(dev, data);
+		data->state = ROUTER_CLAIM_MULTIFINGER;
+		if (snapshot->contact_count == 0) {
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+		}
+		return;
+	}
+	if (owner == TRAVELERS_PAD_OWNER_SCROLL) {
+		data->state = ROUTER_SCROLL_TWO;
+		if (snapshot->contact_count == 0) {
+			router_emit(dev, data, 0);
+			data->pointer_stream_open = false;
+			data->state = ROUTER_IDLE;
+			data->max_fingers = 0;
+			return;
+		}
+		if (!travelers_pad_arbiter_authorize_output(
+			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
+			"router-scroll")) {
+			return;
+		}
+		/* The pointer adapter consumes a logical two-contact scroll stream, even
+		 * when a third physical contact arrives during an owned scroll. */
+		router_emit(dev, data, snapshot->contact_count >= 2 ? 2 : snapshot->contact_count);
+		data->pointer_stream_open = snapshot->contact_count != 0;
+		return;
+	}
+
+	if (snapshot->contact_count == 0) {
+		if (data->state == ROUTER_PASS_ONE || data->state == ROUTER_SCROLL_TWO) {
+			router_emit(dev, data, 0);
+			data->pointer_stream_open = false;
+		} else if (data->state == ROUTER_AWAIT_TWO) {
+			/* A held-still 2F session becomes a right-click candidate only on
+			 * release, after every same-frame competing claim was resolved. */
+			data->x = data->start_x;
+			data->y = data->start_y;
+			data->finger2_x = data->start_finger2_x;
+			data->finger2_y = data->start_finger2_y;
+			data->finger2_valid = data->have_geometry;
+			router_emit(dev, data, 2);
+			router_emit(dev, data, 0);
+			LOG_INF("2F route=tap candidate");
+		} else if (data->state == ROUTER_CLAIM_GEOMETRY) {
+			LOG_INF("2F route=geometry candidate complete");
+		} else if (data->state == ROUTER_CLAIM_MULTIFINGER) {
+			if (data->max_fingers == 5) {
+				LOG_INF("5F route=Grasp/Release candidate complete");
+			} else {
+				LOG_INF("%uF route=swipe candidate direction=%s", data->max_fingers,
+					swipe_direction(data));
+			}
+		}
+		data->state = ROUTER_IDLE;
+		data->max_fingers = 0;
+		return;
+	}
+
+	if (data->state == ROUTER_PASS_ONE) {
+		router_emit(dev, data, 1);
+		data->pointer_stream_open = true;
+	} else {
+		/* Awaiting a two-finger classification must not leak a pointer frame. */
+		router_suppress_pointer(dev, data);
 	}
 }
 
@@ -412,7 +394,7 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 	if (evt->sync) {
 		data->arbiter_frame_seq =
 			travelers_pad_arbiter_next_frame(TRAVELERS_PAD_RECOGNIZER_ROUTER);
-		router_process_frame(dev);
+		router_recognize_frame(dev);
 		travelers_pad_arbiter_observed(TRAVELERS_PAD_RECOGNIZER_ROUTER,
 					       data->arbiter_frame_seq);
 	}
@@ -421,8 +403,8 @@ static void router_handle_input(const struct device *dev, struct input_event *ev
 static int router_init(const struct device *dev)
 {
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_ROUTER);
-	(void)travelers_pad_arbiter_bind_resolve_handler(
-		TRAVELERS_PAD_RECOGNIZER_ROUTER, router_resolve_action, dev->data);
+	(void)travelers_pad_arbiter_bind_frame_handler(
+		TRAVELERS_PAD_RECOGNIZER_ROUTER, router_deliver_resolved_frame, dev->data);
 	return 0;
 }
 

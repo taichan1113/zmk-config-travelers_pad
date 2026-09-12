@@ -16,6 +16,7 @@ used only when an integration failure needs to be localized.
 | [`scripts/verify-contact-arbiter-architecture.sh`](../scripts/verify-contact-arbiter-architecture.sh) | Run before every release build; checks the single-owner source invariants / リリースビルド前に実行し、単一所有権のソース不変条件を検査 |
 | [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
+| [startup-ati-recovery-test.md](startup-ati-recovery-test.md) | After IQS9150 initialization or ATI changes / IQS9150初期化またはATI変更後 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation / 実装前に責務と調整場所を確認する時 |
 | [contact-arbiter-solution-review-prompt.md](contact-arbiter-solution-review-prompt.md) | Hand-off to an independent architecture review after a verified milestone / 実機確認済み節目の後、独立したアーキテクチャレビューへ引き継ぐ時 |
 | [two-finger-scroll-tuning.md](two-finger-scroll-tuning.md) | To change only the user preference for 2F scroll direction / 2本指スクロール方向だけを変更する時 |
@@ -44,6 +45,11 @@ integration failure. The full integration test remains the release gate.
 | 2F scroll inertia / 2本指スクロール慣性 | [two-finger-scroll-inertia-test.md](two-finger-scroll-inertia-test.md) |
 | Arbiter lifecycle and leases / Arbiter lifecycle・lease | [arbiter-lifecycle-lease-test.md](arbiter-lifecycle-lease-test.md) |
 | Arbiter output broker / Arbiter output broker | [arbiter-output-broker-test.md](arbiter-output-broker-test.md) |
+| Arbiter complete-frame routing / Arbiter完全frame routing | [arbiter-complete-frame-routing-test.md](arbiter-complete-frame-routing-test.md) |
+| Primary decision and observer boundary / Primary裁定とobserver境界 | [arbiter-observer-boundary-test.md](arbiter-observer-boundary-test.md) |
+| Terminal tap/double-click grant / Terminal tap・double-click grant | [arbiter-terminal-action-test.md](arbiter-terminal-action-test.md) |
+| Primary virtual-KSCAN broker / Primary仮想KSCAN broker | [arbiter-kscan-output-broker-test.md](arbiter-kscan-output-broker-test.md) |
+| Terminal button ledger / Terminal button ledger | [arbiter-button-ledger-test.md](arbiter-button-ledger-test.md) |
 | Optional grid adapter / 任意格子アダプタ | [grid-matrix-isolated-test.md](grid-matrix-isolated-test.md) |
 | Earlier base integration / 旧基本結合確認 | [basic-input-integration-test.md](basic-input-integration-test.md) |
 

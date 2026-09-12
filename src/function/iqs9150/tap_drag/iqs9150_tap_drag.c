@@ -67,6 +67,7 @@ struct tap_drag_data {
 	bool drag_position_valid;
 	bool moved;
 	bool first_valid;
+	struct travelers_pad_terminal_action_grant first_tap_grant;
 	bool second_tap;
 	bool button_down;
 	/* The second tap owns the session but has not crossed drag_start_move yet.
@@ -87,6 +88,9 @@ struct tap_drag_data {
 	uint32_t arbiter_frame_seq;
 	uint32_t drag_ownership_frame_seq;
 	bool drag_start_pending;
+	bool terminal_pending;
+	uint32_t terminal_frame_seq;
+	int64_t terminal_timestamp_ms;
 	uint32_t tap_generation;
 	uint32_t deferred_click_generation;
 };
@@ -98,16 +102,12 @@ static int absolute_int(int value)
 
 static bool owner_excludes_tap_drag(enum travelers_pad_owner owner)
 {
-	/* DRAG is this recognizer's own ownership. A pointer-provisional owner has
-	 * no exclusive semantic action, while NONE means no recognizer has claimed
-	 * the contact. All other primary owners must keep their session out of
-	 * tap/drag classification.
-	 * DRAGはこのrecognizer自身の所有権である。POINTER_PROVISIONALは排他的な
-	 * semantic actionを持たず、NONEはまだclaimが無い。他のprimary ownerは
-	 * tap/drag分類からそのsessionを除外する。 */
-	return owner != TRAVELERS_PAD_OWNER_NONE &&
-	       owner != TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL &&
-	       owner != TRAVELERS_PAD_OWNER_DRAG;
+	/* DRAG is this recognizer's own ownership, while NONE means the primary
+	 * decision has no owner. Every other committed owner excludes this session
+	 * from tap/drag classification.
+	 * DRAGはこのrecognizer自身の所有権であり、NONEはprimary裁定にownerが無いことを示す。
+	 * それ以外のcommit済みownerはtap/drag分類からこのsessionを除外する。 */
+	return owner != TRAVELERS_PAD_OWNER_NONE && owner != TRAVELERS_PAD_OWNER_DRAG;
 }
 
 static void update_contact_centroid(struct tap_drag_data *data)
@@ -163,19 +163,18 @@ static uint16_t button_for_fingers(uint8_t fingers)
 	return fingers == 1 ? INPUT_BTN_0 : fingers == 2 ? INPUT_BTN_1 : INPUT_BTN_2;
 }
 
-static void report_click(const struct device *dev, uint8_t fingers)
+static bool report_click(struct tap_drag_data *data,
+			 struct travelers_pad_terminal_action_grant *grant,
+			 enum travelers_pad_owner owner, uint8_t fingers, uint8_t click_count)
 {
 	uint16_t button = button_for_fingers(fingers);
-	int rc = travelers_pad_output_terminal_tap(dev, INPUT_EV_KEY, button, 1, true,
-					     "tap-drag-tap-down");
-
-	if (rc == 0) {
-		rc = travelers_pad_output_terminal_tap(dev, INPUT_EV_KEY, button, 0, true,
-						     "tap-drag-tap-up");
-	}
+	int rc = travelers_pad_output_terminal_click(
+		data->dev, grant, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG, owner, button, click_count,
+		"tap-drag-terminal-click");
 	if (rc != 0) {
 		LOG_ERR("tap click report failed: %d", rc);
 	}
+	return rc == 0;
 }
 
 static bool report_button(struct tap_drag_data *data, bool pressed)
@@ -268,7 +267,8 @@ static void deferred_click_work(struct k_work *work)
 
 	if (data->first_valid && data->deferred_click_generation == data->tap_generation) {
 		LOG_INF("%uF single tap confirmed", data->first_fingers);
-		report_click(data->dev, data->first_fingers);
+		(void)report_click(data, &data->first_tap_grant, TRAVELERS_PAD_OWNER_NONE,
+				   data->first_fingers, 1);
 		data->first_valid = false;
 	}
 }
@@ -372,7 +372,9 @@ static void begin_contact(struct tap_drag_data *data, const struct tap_drag_conf
 	}
 }
 
-static void finish_contact(const struct device *dev, const struct tap_drag_config *cfg, int64_t now)
+static void finish_contact(const struct device *dev, const struct tap_drag_config *cfg,
+			   int64_t now, uint32_t terminal_frame_seq,
+			   const struct travelers_pad_owner_token *terminal_token)
 {
 	struct tap_drag_data *data = dev->data;
 	if (data->session_suppressed) {
@@ -392,6 +394,25 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		data->drag_claim_authorized = false;
 		return;
 	}
+	/* A higher-priority recognizer can establish ownership on this terminal
+	 * frame itself (Tip-Tap is the normal case). The raw tap/drag callback ran
+	 * before that decision existed, so session_suppressed cannot see it yet.
+	 * Consume the resolved token here instead of requesting a terminal grant
+	 * that is guaranteed to be denied. / 上位recognizerはこのterminal frame自身で
+	 * 所有権を確立し得る（通常はTip-Tap）。生tap/drag callbackはその決定前に走るため、
+	 * session_suppressedではまだ検出できない。必ず拒否されるterminal grantを要求せず、
+	 * ここで裁定済みtokenを消費する。 */
+	if (terminal_token != NULL && terminal_token->valid &&
+	    terminal_token->owner != TRAVELERS_PAD_OWNER_NONE &&
+	    terminal_token->owner != TRAVELERS_PAD_OWNER_DRAG) {
+		LOG_INF("%uF tap suppressed: resolved terminal owner=%u", data->max_fingers,
+			terminal_token->owner);
+		data->first_valid = false;
+		data->first_tap_grant.valid = false;
+		data->second_tap = false;
+		k_work_cancel_delayable(&data->deferred_click_work);
+		return;
+	}
 	bool valid_tap = !data->moved && data->max_fingers >= 1 && data->max_fingers <= 3 &&
 			 now - data->started_ms <= cfg->tap_max_ms;
 
@@ -407,21 +428,39 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			 * a double click. Neither click was sent before this release.
 			 * 二回目接触中に有意な移動がなかったためdouble clickとする。ここまで
 			 * いずれのclickも送っていない。 */
-			report_click(dev, data->drag_fingers);
-			report_click(dev, data->drag_fingers);
-			LOG_INF("%uF double-tap completed on release", data->drag_fingers);
+			struct travelers_pad_terminal_action_grant grant = {};
+
+			if (travelers_pad_arbiter_issue_terminal_action(
+				terminal_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+				TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, &grant) &&
+			    report_click(data, &grant, TRAVELERS_PAD_OWNER_DRAG,
+					 data->drag_fingers, 2)) {
+				LOG_INF("%uF double-tap completed on release", data->drag_fingers);
+			}
+			data->first_tap_grant.valid = false;
 		} else {
 			/* Preserve the first tap only if a competing owner prevented this
 			 * candidate from becoming a drag or double click.
 			 * 競合ownerによりこの候補をdrag/double clickにできなかった場合は、
 			 * 一回目tapだけを保持する。 */
-			report_click(dev, data->drag_fingers);
-			LOG_INF("%uF double-tap not armed; delivering first tap only",
-				data->drag_fingers);
+			if (report_click(data, &data->first_tap_grant, TRAVELERS_PAD_OWNER_NONE,
+					 data->drag_fingers, 1)) {
+				LOG_INF("%uF double-tap not armed; delivering first tap only",
+					data->drag_fingers);
+			}
 		}
 	} else if (valid_tap) {
 		LOG_INF("%uF tap released centroid=(%u,%u), duration=%lld ms", data->max_fingers,
 			data->start_x, data->start_y, now - data->started_ms);
+		data->first_tap_grant = (struct travelers_pad_terminal_action_grant){};
+		if (!travelers_pad_arbiter_issue_terminal_action(
+				terminal_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+				TRAVELERS_PAD_OWNER_NONE, TRAVELERS_PAD_CAP_BUTTON,
+				&data->first_tap_grant)) {
+			LOG_ERR("%uF tap terminal-action grant rejected", data->max_fingers);
+			data->first_valid = false;
+			return;
+		}
 		data->first_valid = true;
 		data->first_released_ms = now;
 		data->first_x = data->start_x;
@@ -434,6 +473,7 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		LOG_INF("%uF tap rejected: duration=%lld ms moved=%d limit-ms=%u", data->max_fingers,
 			now - data->started_ms, data->moved, cfg->tap_max_ms);
 		data->first_valid = false;
+		data->first_tap_grant.valid = false;
 		k_work_cancel_delayable(&data->deferred_click_work);
 	}
 	data->second_tap = false;
@@ -507,7 +547,8 @@ static void process_frame(const struct device *dev)
 				 * 複数指接触を新しい操作として分類する。 */
 				LOG_INF("%uF double-tap candidate cancelled by %uF contact", data->drag_fingers,
 					data->fingers);
-				report_click(dev, data->drag_fingers);
+				(void)report_click(data, &data->first_tap_grant,
+						   TRAVELERS_PAD_OWNER_NONE, data->drag_fingers, 1);
 				data->second_tap = false;
 				data->drag_start_pending = false;
 				data->drag_claim_authorized = false;
@@ -585,12 +626,36 @@ static void process_frame(const struct device *dev)
 			data->drag_position_valid = false;
 		}
 	} else if (data->previous_fingers != 0) {
-		finish_contact(dev, cfg, now);
+		/* Terminal clicks are not emitted from the raw callback. Wait for the
+		 * arbiter's complete-frame callback, which can mint an exact-once grant
+		 * only after all competing primary proposals have resolved.
+		 * terminal clickは生callbackから出さない。全競合primary proposalの裁定後に
+		 * だけ一回限りgrantを発行できる、arbiterのcomplete-frame callbackを待つ。 */
+		data->terminal_pending = true;
+		data->terminal_frame_seq = data->arbiter_frame_seq;
+		data->terminal_timestamp_ms = now;
 	}
 	if (data->fingers != 0) {
 		snapshot_contact_slots(data);
 	}
 	data->previous_fingers = data->fingers;
+}
+
+static void tap_drag_deliver_resolved_frame(
+	void *context, const struct travelers_pad_session_snapshot *snapshot,
+	const struct travelers_pad_owner_token *token)
+{
+	struct tap_drag_data *data = context;
+	const struct tap_drag_config *cfg = data->dev->config;
+
+	if (!data->terminal_pending || snapshot->frame_seq != data->terminal_frame_seq) {
+		return;
+	}
+	data->terminal_pending = false;
+	if (snapshot->cancelled || snapshot->contact_count != 0) {
+		return;
+	}
+	finish_contact(data->dev, cfg, data->terminal_timestamp_ms, snapshot->frame_seq, token);
 }
 
 static void tap_drag_handle_input(const struct device *dev, struct input_event *evt)
@@ -637,6 +702,8 @@ static int tap_drag_init(const struct device *dev)
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_TAP_DRAG);
 	(void)travelers_pad_arbiter_bind_resolve_handler(
 		TRAVELERS_PAD_RECOGNIZER_TAP_DRAG, tap_drag_resolve_action, data);
+	(void)travelers_pad_arbiter_bind_frame_handler(
+		TRAVELERS_PAD_RECOGNIZER_TAP_DRAG, tap_drag_deliver_resolved_frame, data);
 	LOG_INF("tap/drag active: tap=%ums move=%u settle=%ums double-gap=%ums",
 		cfg->tap_max_ms, cfg->tap_max_move, cfg->multifinger_settle_ms,
 		cfg->double_tap_max_gap_ms);

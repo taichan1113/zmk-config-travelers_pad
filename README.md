@@ -24,6 +24,15 @@ check, clean build, then full input hardware integration test.
 
 This is a ZMK/Zephyr module for the IQS9150EV02 Travelers Pad.
 
+`config/west.yml` is a complete workspace manifest: it declares ZMK v0.3 and
+`zmk-input-matrix`. From the workspace root, `nix develop` then `just init`
+can select `config/zmk-config-travelers_pad` without relying on a previously
+selected keyboard configuration.
+
+`config/west.yml` は完全なworkspace manifestであり、ZMK v0.3と
+`zmk-input-matrix` を宣言する。workspace rootで `nix develop` 後に `just init` を実行して
+`config/zmk-config-travelers_pad` を選んでも、以前に選択したkeyboard設定には依存しない。
+
 ## モジュール構成 / Module architecture
 
 センサ固有の処理と操作ポリシーを分離しています。`driver` はIQS9150の初期化、RDY、ATI、
@@ -54,9 +63,10 @@ primary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge d
 全recognizerのFIFO確認後に、callback登録順と無関係な唯一のwinnerとowner tokenを決定します。
 
 primaryの初回・継続semantic出力は、確定tokenのcapability検査を通過してからHIDまたはKSCANへ
-送ります。暫定claimは未確定の間に互換性のない生経路を抑止するだけで、出力を許可しません。
-terminal frameでもownerを参照でき、button releaseはホスト側で押下状態が残らないよう安全側で必ず
-送信します。
+送ります。同一frameのclaimはprimary全員の裁定が終わるまで公開せず、routerはcomplete-frame
+callbackでのみ接触frameをforwardします。通常のterminal frameで発生するtap/double-clickは、
+裁定後に発行される一回限りのterminal-action grantをbrokerが原子的に消費して送信します。
+button releaseはホスト側で押下状態が残らないよう安全側で必ず送信します。
 
 `scroll_inertia` と `edge_hold_continue` はownerを獲得しないobserverです。前者は物理的な解放を
 scroll tokenへ対応付け、後者はdragまたはaxis-locked scrollのlive tokenからだけtimer出力を
@@ -71,10 +81,12 @@ acknowledgement, selects one winner and owner token independently of callback
 registration order.
 
 Initial and continuation primary output reaches HID or KSCAN only after the
-committed token authorizes its capability. A provisional claim merely suppresses
-an incompatible raw route while resolution is pending; it never authorizes
-output. The terminal frame retains owner visibility, while button releases are
-always sent as a fail-safe against a stuck host button.
+committed token authorizes its capability. Same-frame claims remain invisible
+until every primary recognizer has been resolved, and the router forwards a
+contact frame only from its complete-frame callback. A tap or double-click on a
+normal terminal frame uses a one-shot terminal-action grant, atomically
+consumed by the broker after resolution. Button releases are always sent as a
+fail-safe against a stuck host button.
 
 `scroll_inertia` and `edge_hold_continue` are observers, not owners. The former
 associates a physical release with a scroll token; the latter receives delayed

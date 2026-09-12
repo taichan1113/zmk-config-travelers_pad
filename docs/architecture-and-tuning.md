@@ -63,11 +63,27 @@ flowchart TD
 frames to every function. Its contact arbiter is the single authority for
 contact ownership: the five primary recognizers submit proposals, it waits for
 their queued-frame acknowledgements, then emits one deterministic owner token.
-Primary first and continuation output is capability-gated by that token. The
-contact output broker is the only host-facing `REL_*`/mouse-button transport
-for pointer, tap/drag, edge-hold, and inertia paths; it checks the matching
-primary token, auxiliary delegation, or post-session lease immediately before
-emitting.
+The router receives a complete-frame callback only after that decision, so it
+cannot forward a pointer or scroll contact frame while a later recognizer may
+still claim the same raw frame. Primary first and continuation output is
+capability-gated by that token. The contact output broker is the only
+host-facing `REL_*`/mouse-button transport and primary virtual-KSCAN pulse
+transport for pointer, tap/drag, edge-hold, inertia, edge dial, Tip-Tap, and
+multi-finger gesture paths. It checks the matching primary token, auxiliary
+delegation, post-session lease, or a one-shot terminal action grant immediately
+before emitting. A terminal grant is minted only from a fully resolved normal
+release and is consumed exactly once for a tap or double-click.
+
+There is no provisional-owner token or pass-through owner: until the five
+primary proposals resolve, a frame has no owner. A consumer which needs the
+new decision must use its resolved-frame callback.
+
+`iqs9150_scroll_inertia` and `iqs9150_edge_hold_continue` do not join the
+primary decision barrier. They receive the already-resolved immutable frame as
+observers, but only after each observer has first consumed its own raw frame.
+Thus enabling, disabling, or scheduling either observer cannot delay
+pointer/scroll ownership selection, nor can an observer act on incomplete
+per-contact data.
 
 `iqs9150_scroll_inertia` and `iqs9150_edge_hold_continue` are passive
 observers. They never make an ownership claim. Edge hold emits only while an
@@ -76,21 +92,38 @@ double-tap drag cannot move at an edge before button-down succeeds. Inertia
 starts only after a normal physical scroll release obtains a revocable
 post-session lease; new contact or cancellation revokes it. Terminal button
 release is recorded diagnostically and remains fail-safe only for a button
-actually pressed by the trackpad source.
+actually pressed by the trackpad source. The broker's held-button ledger keys
+that release by input device, ownership frame, recognizer, owner, and button,
+so a stale trackpad path cannot release a matching button held elsewhere.
 
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを全機能へ再配信します。
 contact arbiterが接触所有権の唯一のauthorityである。5つのprimary recognizerがproposalを
-提出し、queue経由の全frame確認後に、決定的なowner tokenを一つ発行する。primaryの初回・
-継続出力は、このtokenのcapabilityでgateする。contact output brokerはpointer、tap/drag、
-edge-hold、inertia経路における唯一のホスト向け`REL_*`／マウスボタンtransportであり、
-出力直前に一致するprimary token、auxiliary委譲、またはpost-session leaseを検査する。
+提出し、queue経由の全frame確認後に、決定的なowner tokenを一つ発行する。routerはその決定後
+だけcomplete-frame callbackを受け取るため、後から呼ばれるrecognizerが同じ生frameをclaim
+できる間はポインタ／scroll接触frameをforwardしない。primaryの初回・継続出力は、このtokenの
+capabilityでgateする。contact output brokerはpointer、tap/drag、edge-hold、inertia、edge dial、
+Tip-Tap、多指gesture経路における唯一のホスト向け`REL_*`／マウスボタンtransportおよび
+primary仮想KSCAN pulse transportであり、
+出力直前に一致するprimary token、auxiliary委譲、post-session lease、または一回限りの
+terminal-action grantを検査する。terminal grantは完全に裁定された通常releaseからだけ発行され、
+tapまたはdouble-clickのために一度だけ消費される。
+
+暫定owner tokenやpass-through ownerは存在しない。5 primary proposalの裁定が終わるまでは、
+frameにownerは存在しない。新しい決定を必要とするconsumerは、裁定済みframe callbackを使う。
+
+`iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` はprimary裁定barrierへ参加しない。
+これらは各observer自身が生frameを消費した**後**に、裁定済みの不変frameをobserverとして受け取る。
+従って、いずれかのobserverの有効・無効や実行順はpointer/scroll所有権の決定を遅らせず、observerが
+未完成の接触別dataを使って動作することもない。
 
 `iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` は受動observerであり、所有権を
 claimしない。edge holdは **ACTIVE** なdragまたはscroll tokenから必要なcapabilityを委譲された
 間だけ出力する。予約済みdouble-tap dragはbutton-down成功前に辺で移動できない。inertiaは通常の
 scroll release後に取消可能なpost-session leaseを取得した場合だけ開始し、新規接触または
 cancellationで失効する。terminal button releaseは診断用に記録し、trackpad source自身が実際に
-押したbuttonだけを安全側でreleaseする。
+押したbuttonだけを安全側でreleaseする。brokerのheld-button ledgerは入力device、所有権frame、
+recognizer、owner、buttonでreleaseを照合するため、staleなtrackpad経路が別経路の同一buttonを
+releaseできない。
 
 ## Internal layout / 内部配置
 
@@ -121,7 +154,7 @@ src/
 |---|---|---|---|---|
 | Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
 | Contact session / 接触session | `iqs9150_session`, `contact_arbiter`, `contact_output_broker` | Session ID, normal-end/cancel boundary, proposal collection, deterministic resolver, token authority, and token-checked host output transport / session ID、通常終了・cancel境界、proposal収集、決定的resolver、token authority、token検査済みホスト出力transport | Republished contact frames; owner token; brokered `REL_*`/button output / 再配信接触frame、owner token、broker経由の`REL_*`／button出力 | Enabled; output broker covers pointer/tap-drag/edge-hold/inertia / 有効・brokerはpointer/tap-drag/edge-hold/inertiaを担当 |
-| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Arbiter-authoritative / arbiterが正 |
+| Arbitration / 排他制御 | `iqs9150_multifinger_router` | Observes/proposes first, then forwards pointer or 2F scroll only from the arbiter complete-frame callback / まず観測・proposalを行い、arbiterのcomplete-frame callbackからのみポインタ／2本指scrollをforward | Routed contact frames / 振り分け済み接触フレーム | Arbiter-authoritative; callback-order independent / arbiterが正・callback順非依存 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Token-gated / tokenでgate |
 | Tip-Tap / Tip-Tap | `iqs9150_tip_tap` | Anchored 2F left/right virtual-key tap; repeats while the anchor stays down / anchorを維持した2本指左右の仮想キーtap、anchor維持中は繰返し可能 | Virtual KSCAN | Token-gated; one token per anchored interaction / tokenでgate・anchor操作ごとに一つ |

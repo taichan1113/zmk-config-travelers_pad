@@ -1,17 +1,17 @@
 /*
  * Travelers Pad contact output broker.
  *
- * All host-facing relative motion, wheel, and button reports produced by a
- * contact-session feature pass through this interface.  The broker is the
- * single place that checks the arbiter token or post-session lease immediately
- * before emitting an input event.  Internal normalized-contact forwarding is
- * intentionally outside this interface.
+ * All host-facing relative motion, wheel, button reports, and primary virtual
+ * KSCAN actions produced by a contact-session feature pass through this
+ * interface. The broker is the single place that checks the arbiter token or
+ * post-session lease immediately before emitting an action. Internal normalized
+ * contact forwarding is intentionally outside this interface.
  *
  * Travelers Pad 接触出力broker。
- * 接触session機能が生成するホスト向けの相対移動、ホイール、ボタンreportは、すべて
- * このinterfaceを通す。brokerはinput eventを出す直前にarbiter tokenまたは
- * post-session leaseを検査する唯一の場所である。正規化接触frameの内部配送は意図的に
- * 対象外とする。
+ * 接触session機能が生成するホスト向けの相対移動、ホイール、ボタンreport、およびprimaryの
+ * 仮想KSCAN actionは、すべてこのinterfaceを通す。brokerはactionを出す直前にarbiter
+ * tokenまたはpost-session leaseを検査する唯一の場所である。正規化接触frameの内部配送は
+ * 意図的に対象外とする。
  */
 #ifndef TRAVELERS_PAD_CONTACT_OUTPUT_BROKER_H_
 #define TRAVELERS_PAD_CONTACT_OUTPUT_BROKER_H_
@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/kscan.h>
 
 #include <travelers_pad/contact_arbiter.h>
 
@@ -57,13 +58,25 @@ int travelers_pad_output_terminal(const struct device *dev, uint32_t ownership_f
 				 uint8_t type, uint16_t code, int32_t value, bool sync,
 				 const char *producer);
 
-/* A tap click has no long-lived owner token: it is a terminal semantic action
- * after the session classifier completes. It still uses this broker so no
- * host-facing report bypasses the central transport point.
- * tap clickには長寿命owner tokenがない。session classifier完了後のterminal
- * semantic actionだが、ホスト向けreportが中央transportを迂回しないようbrokerを通す。 */
-int travelers_pad_output_terminal_tap(const struct device *dev, uint8_t type, uint16_t code,
-				      int32_t value, bool sync, const char *producer);
+/* Consume one terminal-action grant and emit one or more complete mouse-click
+ * pulses as one semantic action. A delayed tap cannot replay after its grant
+ * was consumed or overwritten.
+ * terminal-action grantを一度消費し、1回以上の完全なmouse-click pulseを一つのsemantic
+ * actionとして出力する。遅延tapはgrantが消費済みまたは上書き済みなら再生できない。 */
+int travelers_pad_output_terminal_click(
+	const struct device *dev, struct travelers_pad_terminal_action_grant *grant,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint16_t button, uint8_t click_count, const char *producer);
+
+/* A primary virtual-KSCAN action is authorized and emitted as an inseparable
+ * press/release pair. Primary recognizers must not authorize a token in one
+ * place and invoke the KSCAN callback through a separate path.
+ * primaryの仮想KSCAN actionは、認可と不可分なpress/release対として送信する。primary
+ * recognizerは、ある場所でtokenを認可し、別経路でKSCAN callbackを呼んではならない。 */
+int travelers_pad_output_behavior_primary(
+	const struct device *dev, kscan_callback_t callback, uint32_t ownership_frame_seq,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint16_t row, uint16_t column, const char *producer);
 
 /* Canonical pointer output is already selected by the router before it reaches
  * the pointer adapter. It has no independent recognizer claim, but uses the

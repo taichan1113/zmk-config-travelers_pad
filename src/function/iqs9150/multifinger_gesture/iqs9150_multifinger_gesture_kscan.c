@@ -21,6 +21,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 #include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_multifinger_gesture, LOG_LEVEL_INF);
@@ -128,20 +129,15 @@ static void multifinger_resolve_action(void *context,
 		return;
 	}
 	data->pending_five_finger_action = false;
-	if (!travelers_pad_arbiter_authorize_output(
-			ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
-			TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-			"multifinger-geometry")) {
-		return;
-	}
-	if (data->callback == NULL) {
-		return;
-	}
 	column = data->pending_five_finger_candidate == FIVE_FINGER_GRASP ? 0 : 1;
-	data->callback(data->dev, 2, column, true);
-	data->callback(data->dev, 2, column, false);
-	LOG_INF("5F %s action dispatched by arbiter",
-		five_finger_candidate_name(data->pending_five_finger_candidate));
+	if (travelers_pad_output_behavior_primary(
+			data->dev, data->callback, ownership_frame_seq,
+			TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+			TRAVELERS_PAD_OWNER_MULTI_GESTURE, 2, column,
+			"multifinger-geometry") == 0) {
+		LOG_INF("5F %s action dispatched by arbiter",
+			five_finger_candidate_name(data->pending_five_finger_candidate));
+	}
 }
 
 static bool claim_multifinger_gesture(struct gesture_data *data, uint32_t evidence)
@@ -283,21 +279,14 @@ static void emit_gesture(const struct device *dev)
 	uint16_t row = data->max_fingers - 3;
 	uint16_t column = gesture_direction(data);
 
-	if (data->callback == NULL) {
-		LOG_WRN("%uF swipe ignored: KSCAN callback is not configured", data->max_fingers);
+	if (travelers_pad_output_behavior_primary(
+		data->dev, data->callback, data->ownership_frame_seq,
+		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
+		TRAVELERS_PAD_OWNER_MULTI_GESTURE, row, column, "multifinger-swipe") != 0) {
 		return;
 	}
 	LOG_INF("%uF swipe row=%u column=%u start=(%u,%u) end=(%u,%u)", data->max_fingers,
 		row, column, data->start_x, data->start_y, data->x, data->y);
-	if (!travelers_pad_arbiter_authorize_output(
-		data->ownership_frame_seq,
-		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
-		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"multifinger-swipe")) {
-		return;
-	}
-	data->callback(dev, row, column, true);
-	data->callback(dev, row, column, false);
 }
 
 static void emit_five_finger_gesture(const struct device *dev,
@@ -306,11 +295,6 @@ static void emit_five_finger_gesture(const struct device *dev,
 	struct gesture_data *data = dev->data;
 	uint16_t column = candidate == FIVE_FINGER_GRASP ? 0 : 1;
 
-	if (data->callback == NULL) {
-		LOG_WRN("5F %s ignored: KSCAN callback is not configured",
-			five_finger_candidate_name(candidate));
-		return;
-	}
 	/* The 5F candidate claims and emits in the same logical input frame. Stage
 	 * its first KSCAN pair until that frame has a committed arbiter token.
 	 * 5本指candidateは同一論理input frameでclaimと出力を行う。その最初の
@@ -321,16 +305,14 @@ static void emit_five_finger_gesture(const struct device *dev,
 		data->pending_five_finger_frame_seq = data->ownership_frame_seq;
 		return;
 	}
-	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
-	if (!travelers_pad_arbiter_authorize_output(
-		data->ownership_frame_seq,
+	if (travelers_pad_output_behavior_primary(
+		data->dev, data->callback, data->ownership_frame_seq,
 		TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
-		TRAVELERS_PAD_OWNER_MULTI_GESTURE, TRAVELERS_PAD_CAP_BEHAVIOR_ACTION,
-		"multifinger-geometry")) {
+		TRAVELERS_PAD_OWNER_MULTI_GESTURE, 2, column,
+		"multifinger-geometry") != 0) {
 		return;
 	}
-	data->callback(dev, 2, column, true);
-	data->callback(dev, 2, column, false);
+	LOG_INF("5F %s emitted row=2 column=%u", five_finger_candidate_name(candidate), column);
 }
 
 static void reset_session(struct gesture_data *data)
@@ -383,11 +365,11 @@ static void gesture_process_frame(const struct device *dev)
 			data->start_x = data->x;
 			data->start_y = data->y;
 		}
-		/* A confirmed or provisional DRAG owner exclusively interprets this
+		/* A committed DRAG owner exclusively interprets this
 		 * contact session. Consult the arbiter rather than tap/drag's private
 		 * tracking flag, so gesture cancellation follows the same owner source as
 		 * router suppression.
-		 * 確定または暫定のDRAG ownerは、この接触sessionを排他的に解釈する。
+		 * commit済みDRAG ownerは、この接触sessionを排他的に解釈する。
 		 * routerの抑止と同じowner sourceに従うため、tap/drag固有のtracking flag
 		 * ではなくarbiterを参照してgestureを取消す。 */
 		if (travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq) ==
