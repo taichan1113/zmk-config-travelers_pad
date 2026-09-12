@@ -3,6 +3,9 @@
 Last updated: 2026-09-13
 Integration target: `main`
 Development branch for this milestone: `feat/arbiter-lifecycle-leases`
+Integrated commit: `06e334f0626d250a3a8b8bc0f16ba6a35cf72c93`
+Independent architecture review: **conditionally approved; continue hardening** /
+独立architecture review: **条件付き承認・hardening継続**
 
 ## 1. Current objective / 現在の目的
 
@@ -184,7 +187,7 @@ The intended newly added test documents include:
 
 Touching during the first ATI can produce `Info Flags=0x0118`
 (`TP_REATI_OCCURRED | TP_ATI_ERROR`). The initial implementation treated this
-as permanent ERROR. The current uncommitted driver retries a bounded recovery:
+as permanent ERROR. The current driver retries a bounded recovery:
 
 1. emit a reset contact frame;
 2. write the little-endian System Control software-reset value `0x0002`;
@@ -193,7 +196,7 @@ as permanent ERROR. The current uncommitted driver retries a bounded recovery:
 5. enter Event Mode.
 
 最初のATI中の接触は `Info Flags=0x0118` を出し得る。以前は恒久ERRORとしていたが、
-現行の未commit driverは接触reset frame、little-endianのsoftware reset `0x0002`、
+現行driverは接触reset frame、little-endianのsoftware reset `0x0002`、
 Show Reset acknowledge、EV02 imageとATIの再実行、Event Mode到達を上限付きで行う。
 
 The first recovery attempt used `0x0200` by mistake and stalled waiting for
@@ -242,46 +245,62 @@ the agent without explicit instruction.
 
 ## 10. Remaining work / 未解決事項・次に行う作業
 
-Priority order:
+The next milestone is **arbiter safety hardening**. Preserve `06e334f` as the
+development base; do not revert the accepted normal-path architecture.
 
-1. **Commit and merge the verified arbiter milestone.** Inspect the uncommitted
-   diff, exclude the two review artifacts, commit, and merge to `main` only
-   after user approval.
-   **検証済みarbiter節目をcommit・mergeする。** 未commit diffを確認し、review artifactを
-   除外してcommitする。`main`へのmergeはユーザー承認後に行う。
-2. **Monitor the rare post-idle pointer freeze.** A long-idle state was once
-   reported where pointer input did not resume. It is deferred because it has
-   not been reproducibly tied to deep sleep, USB, or IQS9150. Preserve serial
-   logs and record elapsed idle time, USB state, battery state, and whether
-   RESET/USB reconnect recovers it before changing power-management code.
-   **長時間idle後の稀なポインタfreezeを監視する。** deep sleep、USB、IQS9150との因果は
-   未再現であるため保留中。再発時はserial log、idle時間、USB状態、battery状態、RESET/USB再接続
-   での復旧可否を記録してからpower-managementを改修する。
-3. **Optional feature work:** pinch/rotation has geometry detection only; no
-   host action or dedicated arbiter owner is assigned. Design it as a new
-   primary recognizer before enabling host output.
-   **任意機能:** pinch/rotationはgeometry検出のみで、host actionと専用arbiter ownerは未実装。
-   host出力前に新しいprimary recognizerとして設計する。
-4. **Optional grid:** remains disabled by default. Enable only with its isolated
-   regression test and an explicit user-selected keymap.
-   **任意grid:** 既定は無効。単体回帰試験と明示的なkeymap選択がある場合のみ有効化する。
-5. **UX tuning, not driver redesign:** pointer/scroll acceleration and thresholds
-   can be adjusted after collecting user feedback. Keep the input-processor
-   configuration path for 2F scroll.
-   **UX tuning:** pointer/scroll加速と閾値は利用feedback後に調整する。2F scrollの
-   input-processor設定経路は維持する。
+次のmilestoneは **arbiter safety hardening** である。通常系として承認された`06e334f`を
+開発baseとして維持し、以前の並列所有権構成へ戻さない。
+
+| Order / 順序 | Priority / 優先度 | Task / タスク | Completion / 完了度 | Required verification / 必須検証 |
+|---:|---|---|---:|---|
+| 1 | P0 | Add a global lifecycle epoch and `arbiter_cancel_all()` that invalidate the current token, terminal grant, post-session lease, auxiliary lease, and observer/work generations even when no session is active / session外resetでも全token・lease・work世代を失効するglobal epochと`cancel_all` | 0% | Sensor reset during scroll inertia; reset after normal release but before delayed output |
+| 2 | P0 | Synchronize arbiter state or serialize every state mutation/output request in one execution context / arbiter stateをlock保護するか単一実行contextへ直列化 | 0% | Concurrent terminal-grant consumption and cancel; callback-order permutation tests |
+| 3 | P0 | Give tap/drag, edge hold, and inertia work items captured generations; stop reinitializing work after asynchronous cancel / 各delayable workへ取得時generationを持たせ、非同期cancel後にworkを再初期化しない | 0% | Cancel exactly at tap timer boundary; old work executing after a new session starts |
+| 4 | P0 | Add an explicit session/generation-bound auxiliary lease for edge hold / edge holdへsession・generation付きauxiliary leaseを追加 | 0% | Old edge-hold work during a following DRAG and a following SCROLL session |
+| 5 | P0 | Make the broker own pending button-up and retry state, including terminal click press/release / brokerがterminal clickを含むpending button-upとretryを所有 | 0% | Inject press success plus release enqueue failure; retry without duplicate release or stuck button |
+| 6 | P1 | Correct Kconfig, init-priority, Devicetree phandle, and KSCAN dependencies; build a feature enable/disable matrix / feature単位の依存関係整理とbuild matrix | 0% | Build router-only, tap-only, router+tap, gesture-only, Tip-Tap-only, observer combinations, and the shipped full configuration |
+| 7 | P1 | Extract pinch/rotation geometry into a `TRANSFORM_GESTURE` primary owner with `PINCH`, `ROTATE`, and `PINCH_ROTATE` submodes / pinch・rotationを専用primary ownerへ分離 | 0% | Once geometry commits, release must never fall back to a 2F tap; verify SCROLL priority evidence |
+| 8 | P1 | Route the optional grid adapter through the output broker before enabling it / 任意grid adapterを有効化前にbroker経由へ移行 | 0% | Grid-only build and KSCAN token/cancel regression |
+| 9 | P2 | Decide whether to migrate recognizers from reconstructed input events to one immutable complete `ContactFrame` transaction / immutable完全`ContactFrame`への移行判断・実装 | 0% | Frame completeness, sequence, and no mixed-generation contacts under stress |
+| 10 | Monitor | Investigate the rare post-idle pointer freeze without adding power responsibility to the arbiter / 長時間idle後freezeの監視・診断 | Monitoring / 監視中 | Record last raw receive time, resolved/forward sequence, in-flight count, ack mask, enqueue failures, USB/battery state, and RESET/reconnect recovery |
+| 11 | Later / 後続 | UX tuning such as pointer/scroll acceleration; retain keyboard-side 2F input processors / pointer・scroll加速等のUX調整 | Deferred / 保留 | Full integration test after each tuning change |
+
+Complete items 1 and 2 as one foundation change before extending leases or
+workers, because lifecycle invalidation is only reliable when state access is
+synchronized. Implement items 3--5 in separate hardware-verifiable branches,
+then perform item 6 as the release gate. Geometry and optional features follow
+the safety milestone.
+
+lifecycle失効はstate accessの同期なしには保証できないため、1と2を基盤変更として先に行う。
+3〜5は実機確認可能な単位でbranchを分け、6のbuild matrixをrelease gateとする。geometryと
+任意機能は安全性milestone完了後に進める。
 
 ## 11. Architecture migration score / アーキテクチャ移行度
 
-Overall: **100%** for the defined arbiter migration scope.
+Normal user-visible paths: **100%**.
+Overall migration including cancel, concurrency, output-failure safety, and
+feature isolation: **65%**.
+
+通常のユーザー操作経路: **100%**。
+cancel、並行性、出力失敗時安全性、feature独立性を含む全体移行度: **65%**。
 
 | Area / 領域状態 | Completion / 完了度 |
 |---|---:|
 | driver → normalized contact frames / 正規化接触frame | 100% |
-| session boundary and frame numbering / session境界・frame連番 | 100% |
+| session boundary and frame numbering / session境界・frame連番 | 85% |
 | five primary recognizer proposals / 5 primary recognizerのproposal | 100% |
 | priority arbiter decision / 優先順位付きarbiter決定 | 100% |
-| primary output token gate / primary出力のtoken gate | 100% |
-| single ownership path / 単一の所有権経路 | 100% |
-| edge hold and inertia arbiter integration / edge hold・inertiaのarbiter統合 | 100% |
-| documentation and regression coverage / 文書と回帰試験の整備 | 100% |
+| primary output token gate / primary出力のtoken gate | 75% |
+| single ownership path / 単一の所有権経路 | 75% |
+| edge hold and inertia arbiter integration / edge hold・inertiaのarbiter統合 | 65% |
+| output failure recovery / 出力失敗時復旧 | 35% |
+| feature-level disable independence / feature単位の無効化独立性 | 20% |
+| immutable complete ContactFrame / immutable完全ContactFrame | 0% |
+| documentation and regression coverage / 文書と回帰試験の整備 | 70% |
+
+The independent review conditionally approves `06e334f` as the continuing
+development base. It does **not** approve a final release or a 100% migration
+claim until items 1--6 and their failure-path tests pass.
+
+独立reviewは`06e334f`を継続開発baseとして条件付き承認した。上記1〜6と異常系testが
+完了するまでは、最終releaseおよび移行100%とは判定しない。
