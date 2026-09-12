@@ -14,6 +14,8 @@
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_edge_hold_continue
 
+#include <errno.h>
+
 #include <zephyr/device.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/input/input.h>
@@ -21,6 +23,7 @@
 #include <zephyr/logging/log.h>
 
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 #include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_edge_hold, LOG_LEVEL_INF);
@@ -186,11 +189,21 @@ static void drag_repeat_work_handler(struct k_work *work)
 	}
 
 	if (dx != 0) {
-		rc = input_report_rel(data->dev, INPUT_REL_X, dx, true, K_NO_WAIT);
+		rc = travelers_pad_output_auxiliary(
+			data->dev, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_X, dx, true,
+			"edge-hold-drag-x");
 	} else {
-		rc = input_report_rel(data->dev, INPUT_REL_Y, dy, true, K_NO_WAIT);
+		rc = travelers_pad_output_auxiliary(
+			data->dev, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_Y, dy, true,
+			"edge-hold-drag-y");
 	}
 	if (rc != 0) {
+		if (rc == -EACCES) {
+			data->drag_repeat_armed = false;
+			return;
+		}
 		LOG_ERR("drag continuation report failed: %d", rc);
 	}
 	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_repeat_ms));
@@ -242,13 +255,21 @@ static void scroll_repeat_work_handler(struct k_work *work)
 	}
 
 	if (data->scroll_horizontal != 0) {
-		rc = input_report_rel(cfg->scroll_output_device, INPUT_REL_HWHEEL, data->scroll_horizontal,
-				      true, K_NO_WAIT);
+		rc = travelers_pad_output_auxiliary(
+			cfg->scroll_output_device, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL,
+			INPUT_REL_HWHEEL, data->scroll_horizontal, true, "edge-hold-scroll-hwheel");
 	} else {
-		rc = input_report_rel(cfg->scroll_output_device, INPUT_REL_WHEEL, data->scroll_vertical,
-				      true, K_NO_WAIT);
+		rc = travelers_pad_output_auxiliary(
+			cfg->scroll_output_device, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
+			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL,
+			INPUT_REL_WHEEL, data->scroll_vertical, true, "edge-hold-scroll-wheel");
 	}
 	if (rc != 0) {
+		if (rc == -EACCES) {
+			data->scroll_repeat_armed = false;
+			return;
+		}
 		LOG_ERR("scroll continuation report failed: %d", rc);
 	}
 	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_repeat_ms));

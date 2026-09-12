@@ -23,6 +23,7 @@
 
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 
 LOG_MODULE_REGISTER(travelers_pad_tap_drag, LOG_LEVEL_INF);
 
@@ -165,19 +166,33 @@ static uint16_t button_for_fingers(uint8_t fingers)
 static void report_click(const struct device *dev, uint8_t fingers)
 {
 	uint16_t button = button_for_fingers(fingers);
-	int rc = input_report_key(dev, button, 1, true, K_NO_WAIT);
+	int rc = travelers_pad_output_terminal_tap(dev, INPUT_EV_KEY, button, 1, true,
+					     "tap-drag-tap-down");
 
 	if (rc == 0) {
-		rc = input_report_key(dev, button, 0, true, K_NO_WAIT);
+		rc = travelers_pad_output_terminal_tap(dev, INPUT_EV_KEY, button, 0, true,
+						     "tap-drag-tap-up");
 	}
 	if (rc != 0) {
 		LOG_ERR("tap click report failed: %d", rc);
 	}
 }
 
-static bool report_button(const struct device *dev, uint8_t fingers, bool pressed)
+static bool report_button(struct tap_drag_data *data, bool pressed)
 {
-	int rc = input_report_key(dev, button_for_fingers(fingers), pressed, true, K_NO_WAIT);
+	int rc;
+
+	if (pressed) {
+		rc = travelers_pad_output_primary(
+			data->dev, data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, INPUT_EV_KEY,
+			button_for_fingers(data->drag_fingers), 1, true, "tap-drag-button-down");
+	} else {
+		rc = travelers_pad_output_terminal(
+			data->dev, data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, INPUT_EV_KEY,
+			button_for_fingers(data->drag_fingers), 0, true, "tap-drag-button-up");
+	}
 
 	if (rc != 0) {
 		LOG_ERR("drag button report failed: %d", rc);
@@ -185,7 +200,7 @@ static bool report_button(const struct device *dev, uint8_t fingers, bool presse
 	return rc == 0;
 }
 
-static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
+static void report_drag_motion(struct tap_drag_data *data, int16_t dx, int16_t dy)
 {
 	int rc;
 
@@ -201,13 +216,19 @@ static void report_drag_motion(const struct device *dev, int16_t dx, int16_t dy)
 	}
 
 	if (dx != 0) {
-		rc = input_report_rel(dev, INPUT_REL_X, dx, dy == 0, K_NO_WAIT);
+		rc = travelers_pad_output_primary(
+			data->dev, data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL,
+			INPUT_REL_X, dx, dy == 0, "tap-drag-motion-x");
 		if (rc != 0) {
 			LOG_ERR("drag X report failed: %d", rc);
 		}
 	}
 	if (dy != 0) {
-		rc = input_report_rel(dev, INPUT_REL_Y, dy, true, K_NO_WAIT);
+		rc = travelers_pad_output_primary(
+			data->dev, data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
+			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL,
+			INPUT_REL_Y, dy, true, "tap-drag-motion-y");
 		if (rc != 0) {
 			LOG_ERR("drag Y report failed: %d", rc);
 		}
@@ -283,14 +304,7 @@ static void start_drag_motion(struct tap_drag_data *data)
 	 * ドラッグ開始閾値を越えるためだけの移動で、掴んだ対象をずらしてはならない。
 	 * double-tap候補の追跡中はrouterが通常ポインタ出力を抑止済みなので、開始frameで
 	 * 基準を現在座標へ再設定し、以後の移動だけをボタン押下中に送信する。 */
-	if (!travelers_pad_arbiter_authorize_output(
-			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON,
-			"tap-drag-button")) {
-		data->drag_claim_authorized = false;
-		return;
-	}
-	if (!report_button(data->dev, data->drag_fingers, true)) {
+	if (!report_button(data, true)) {
 		return;
 	}
 	/* DRAG_RESERVED becomes DRAG_ACTIVE only after the physical button-down
@@ -301,7 +315,7 @@ static void start_drag_motion(struct tap_drag_data *data)
 	if (!travelers_pad_arbiter_activate_owner(
 			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
 			TRAVELERS_PAD_OWNER_DRAG, "tap-drag-button")) {
-		(void)report_button(data->dev, data->drag_fingers, false);
+		(void)report_button(data, false);
 		return;
 	}
 	data->button_down = true;
@@ -366,7 +380,7 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		 * preserve a deferred click from an earlier session, but must never turn
 		 * its own release into a 2F tap. */
 		if (data->button_down) {
-			report_button(dev, data->drag_fingers, false);
+			report_button(data, false);
 			data->button_down = false;
 		}
 		LOG_INF("%uF tap suppressed: arbiter owner=%u", data->max_fingers,
@@ -382,10 +396,7 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			 now - data->started_ms <= cfg->tap_max_ms;
 
 	if (data->button_down) {
-		(void)travelers_pad_arbiter_note_terminal_output(
-			data->drag_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-			TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_BUTTON, "tap-drag-button");
-		report_button(dev, data->drag_fingers, false);
+		report_button(data, false);
 		LOG_INF("%uF drag released", data->drag_fingers);
 		data->button_down = false;
 		data->drag_motion_active = false;
@@ -444,7 +455,7 @@ static void process_frame(const struct device *dev)
 		 * 参照せず、この転送frame自身のownerを確認する。 */
 		if (owner_excludes_tap_drag(arbiter_owner)) {
 			if (data->button_down) {
-				report_button(dev, data->drag_fingers, false);
+				report_button(data, false);
 				data->button_down = false;
 			}
 			data->drag_motion_active = false;
@@ -461,7 +472,7 @@ static void process_frame(const struct device *dev)
 	if (data->sensor_reset) {
 		k_work_cancel_delayable(&data->deferred_click_work);
 		if (data->button_down) {
-			report_button(dev, data->drag_fingers, false);
+			report_button(data, false);
 		}
 		*data = (struct tap_drag_data){.dev = dev};
 		k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
@@ -562,14 +573,8 @@ static void process_frame(const struct device *dev)
 		if (data->button_down && data->drag_motion_active &&
 		    data->fingers == data->drag_fingers) {
 			if (data->drag_position_valid) {
-				if (travelers_pad_arbiter_authorize_output(
-					data->drag_ownership_frame_seq,
-					TRAVELERS_PAD_RECOGNIZER_TAP_DRAG,
-					TRAVELERS_PAD_OWNER_DRAG, TRAVELERS_PAD_CAP_POINTER_DELTA,
-					"tap-drag-motion")) {
-					report_drag_motion(dev, (int16_t)((int)data->x - data->drag_previous_x),
-							    (int16_t)((int)data->y - data->drag_previous_y));
-				}
+				report_drag_motion(data, (int16_t)((int)data->x - data->drag_previous_x),
+						   (int16_t)((int)data->y - data->drag_previous_y));
 			}
 			data->drag_previous_x = data->x;
 			data->drag_previous_y = data->y;

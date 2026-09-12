@@ -4,11 +4,13 @@
 #
 # This deliberately checks source-level invariants that a normal firmware build
 # cannot prove: one raw subscriber, no retired shared-claim API, primary token
-# gates, and observer-only delayed paths. It complements, rather than replaces,
-# the hardware procedure in docs/all-input-integration-test.md.
+# gates, observer-only delayed paths, and a single host-facing REL/KEY transport
+# point. It complements, rather than replaces, the hardware procedure in
+# docs/all-input-integration-test.md.
 # 通常のファームビルドだけでは証明できない構造不変条件を検査する。すなわち、唯一の
 # 生入力購読者、廃止済みshared-claim APIが無いこと、primary token gate、observerだけの
-# 遅延経路である。docs/all-input-integration-test.mdの実機試験を置き換えない。
+# 遅延経路、ホスト向けREL/KEY transportの一元化である。docs/all-input-integration-test.mdの
+# 実機試験を置き換えない。
 
 set -euo pipefail
 
@@ -56,7 +58,7 @@ require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
 require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
-    'travelers_pad_arbiter_authorize_output'
+    'travelers_pad_output_primary'
 require_source 'function/iqs9150/tip_tap/iqs9150_tip_tap_kscan.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/tip_tap/iqs9150_tip_tap_kscan.c' \
@@ -71,11 +73,11 @@ require_source 'function/iqs9150/edge_dial/iqs9150_edge_dial_kscan.c' \
     'travelers_pad_arbiter_authorize_output'
 
 require_source 'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
-    'travelers_pad_arbiter_authorize_auxiliary_output'
+    'travelers_pad_output_auxiliary'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_arbiter_acquire_post_session_lease'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
-    'travelers_pad_arbiter_authorize_post_session_output'
+    'travelers_pad_output_post_session'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'snapshot.cancelled'
 require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
@@ -88,5 +90,25 @@ require_source 'function/iqs9150/session/contact_arbiter.c' \
     'snapshot->cancelled'
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
     'retaining scroll owner'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'travelers_pad_arbiter_authorize_output'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'travelers_pad_arbiter_authorize_auxiliary_output'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'travelers_pad_arbiter_authorize_post_session_output'
+
+# Semantic REL/KEY output must not bypass the broker. Router/session/grid ABS
+# forwarding remains intentionally outside this assertion.
+# semanticなREL/KEY出力はbrokerを迂回してはならない。router/session/gridのABS転送は
+# 意図的にこの検査の対象外である。
+for producer in \
+    'function/iqs9150/core/iqs9150_pointer.c' \
+    'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
+    'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
+    'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c'; do
+    if rg --quiet 'input_report_(rel|key)' "$source_root/$producer"; then
+        fail "semantic REL/KEY output bypasses contact output broker: $producer"
+    fi
+done
 
 printf 'PASS: contact-arbiter structural regression checks\n'

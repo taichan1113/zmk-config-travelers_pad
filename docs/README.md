@@ -43,6 +43,7 @@ integration failure. The full integration test remains the release gate.
 | Edge-hold 2F scroll continuation / エッジホールド・2本指スクロール継続 | [edge-hold-scroll-continuation-test.md](edge-hold-scroll-continuation-test.md) |
 | 2F scroll inertia / 2本指スクロール慣性 | [two-finger-scroll-inertia-test.md](two-finger-scroll-inertia-test.md) |
 | Arbiter lifecycle and leases / Arbiter lifecycle・lease | [arbiter-lifecycle-lease-test.md](arbiter-lifecycle-lease-test.md) |
+| Arbiter output broker / Arbiter output broker | [arbiter-output-broker-test.md](arbiter-output-broker-test.md) |
 | Optional grid adapter / 任意格子アダプタ | [grid-matrix-isolated-test.md](grid-matrix-isolated-test.md) |
 | Earlier base integration / 旧基本結合確認 | [basic-input-integration-test.md](basic-input-integration-test.md) |
 

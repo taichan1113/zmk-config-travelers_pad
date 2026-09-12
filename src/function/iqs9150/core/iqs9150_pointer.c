@@ -15,6 +15,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include <travelers_pad/contact_output_broker.h>
+
 LOG_MODULE_REGISTER(travelers_pad_pointer, LOG_LEVEL_INF);
 
 struct pointer_config {
@@ -61,13 +63,15 @@ static void report_motion(const struct device *dev, int16_t dx, int16_t dy) {
 	int rc;
 
 	if (dx != 0) {
-		rc = input_report_rel(dev, INPUT_REL_X, dx, dy == 0, K_NO_WAIT);
+		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_X, dx,
+						  dy == 0, "pointer-x");
 		if (rc != 0) {
 			LOG_ERR("pointer X report failed: %d", rc);
 		}
 	}
 	if (dy != 0) {
-		rc = input_report_rel(dev, INPUT_REL_Y, dy, true, K_NO_WAIT);
+		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_Y, dy, true,
+						  "pointer-y");
 		if (rc != 0) {
 			LOG_ERR("pointer Y report failed: %d", rc);
 		}
@@ -86,13 +90,15 @@ static void report_scroll(const struct device *dev, int16_t dx, int16_t dy) {
 	int16_t vertical = -dy;
 
 	if (horizontal != 0) {
-		rc = input_report_rel(dev, INPUT_REL_HWHEEL, horizontal, vertical == 0, K_NO_WAIT);
+		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal,
+						  vertical == 0, "pointer-hwheel");
 		if (rc != 0) {
 			LOG_ERR("horizontal scroll report failed: %d", rc);
 		}
 	}
 	if (vertical != 0) {
-		rc = input_report_rel(dev, INPUT_REL_WHEEL, -vertical, true, K_NO_WAIT);
+		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_WHEEL, -vertical,
+						  true, "pointer-wheel");
 		if (rc != 0) {
 			LOG_ERR("vertical scroll report failed: %d", rc);
 		}

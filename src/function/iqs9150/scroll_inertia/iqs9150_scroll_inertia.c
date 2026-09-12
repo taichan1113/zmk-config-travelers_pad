@@ -15,12 +15,15 @@
 
 #define DT_DRV_COMPAT zmk_travelers_pad_scroll_inertia
 
+#include <errno.h>
+
 #include <zephyr/device.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/input/input.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 
 LOG_MODULE_REGISTER(travelers_pad_scroll_inertia, LOG_LEVEL_INF);
 
@@ -106,14 +109,6 @@ static void inertia_work_handler(struct k_work *work)
 			data->post_session_lease.session_id,
 			data->post_session_lease.owner_generation);
 	}
-	if (!travelers_pad_arbiter_authorize_post_session_output(
-			&data->post_session_lease, TRAVELERS_PAD_OWNER_SCROLL,
-			TRAVELERS_PAD_CAP_SCROLL_DELTA, "scroll-inertia")) {
-		LOG_DBG("scroll inertia cancelled: lease revoked");
-		stop_inertia(data->dev);
-		return;
-	}
-
 	data->horizontal_velocity = decay_velocity(data->horizontal_velocity, cfg);
 	data->vertical_velocity = decay_velocity(data->vertical_velocity, cfg);
 	if (absolute_int16(data->horizontal_velocity) < cfg->stop_delta &&
@@ -125,16 +120,30 @@ static void inertia_work_handler(struct k_work *work)
 
 	data->emitting = true;
 	if (data->horizontal_velocity != 0) {
-		rc = input_report_rel(cfg->wheel_output_device, INPUT_REL_HWHEEL,
-				      data->horizontal_velocity, data->vertical_velocity == 0, K_NO_WAIT);
+		rc = travelers_pad_output_post_session(
+			cfg->wheel_output_device, &data->post_session_lease, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL, INPUT_REL_HWHEEL,
+			data->horizontal_velocity, data->vertical_velocity == 0, "scroll-inertia-hwheel");
 		if (rc != 0) {
+			if (rc == -EACCES) {
+				LOG_DBG("scroll inertia cancelled: lease revoked");
+				stop_inertia(data->dev);
+				return;
+			}
 			LOG_ERR("inertia horizontal report failed: %d", rc);
 		}
 	}
 	if (data->vertical_velocity != 0) {
-		rc = input_report_rel(cfg->wheel_output_device, INPUT_REL_WHEEL,
-				      data->vertical_velocity, true, K_NO_WAIT);
+		rc = travelers_pad_output_post_session(
+			cfg->wheel_output_device, &data->post_session_lease, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL, INPUT_REL_WHEEL,
+			data->vertical_velocity, true, "scroll-inertia-wheel");
 		if (rc != 0) {
+			if (rc == -EACCES) {
+				LOG_DBG("scroll inertia cancelled: lease revoked");
+				stop_inertia(data->dev);
+				return;
+			}
 			LOG_ERR("inertia vertical report failed: %d", rc);
 		}
 	}

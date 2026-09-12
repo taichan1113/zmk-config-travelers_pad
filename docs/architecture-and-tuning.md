@@ -17,6 +17,7 @@ flowchart TD
     RAW[Normalized contact frames<br/>正規化済み接触フレーム]
     SESSION[Contact session manager<br/>接触session manager]
     ARB[Contact arbiter<br/>contact arbiter]
+    OUT[Contact output broker<br/>接触出力broker]
     ROUTER[Multi-finger router<br/>多指ルーター]
     PTR[Pointer function<br/>ポインタ機能]
     TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
@@ -47,10 +48,10 @@ flowchart TD
     EDGE -. proposal / token .-> ARB
     ARB -. delegated token .-> INERTIA
     ARB -. delegated token .-> HOLD
-    ROUTER --> PTR --> HID --> HOST
-    TAP --> HID
-    INERTIA --> HID
-    HOLD --> HID
+    ROUTER --> PTR --> OUT --> HID --> HOST
+    TAP --> OUT
+    INERTIA --> OUT
+    HOLD --> OUT
     TIP --> COMP
     MF --> COMP --> KEYMAP --> HOST
     EDGE --> COMP
@@ -62,7 +63,11 @@ flowchart TD
 frames to every function. Its contact arbiter is the single authority for
 contact ownership: the five primary recognizers submit proposals, it waits for
 their queued-frame acknowledgements, then emits one deterministic owner token.
-Primary first and continuation output is capability-gated by that token.
+Primary first and continuation output is capability-gated by that token. The
+contact output broker is the only host-facing `REL_*`/mouse-button transport
+for pointer, tap/drag, edge-hold, and inertia paths; it checks the matching
+primary token, auxiliary delegation, or post-session lease immediately before
+emitting.
 
 `iqs9150_scroll_inertia` and `iqs9150_edge_hold_continue` are passive
 observers. They never make an ownership claim. Edge hold emits only while an
@@ -76,7 +81,9 @@ actually pressed by the trackpad source.
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを全機能へ再配信します。
 contact arbiterが接触所有権の唯一のauthorityである。5つのprimary recognizerがproposalを
 提出し、queue経由の全frame確認後に、決定的なowner tokenを一つ発行する。primaryの初回・
-継続出力は、このtokenのcapabilityでgateする。
+継続出力は、このtokenのcapabilityでgateする。contact output brokerはpointer、tap/drag、
+edge-hold、inertia経路における唯一のホスト向け`REL_*`／マウスボタンtransportであり、
+出力直前に一致するprimary token、auxiliary委譲、またはpost-session leaseを検査する。
 
 `iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` は受動observerであり、所有権を
 claimしない。edge holdは **ACTIVE** なdragまたはscroll tokenから必要なcapabilityを委譲された
@@ -113,7 +120,7 @@ src/
 | Layer / 層 | Component / 構成要素 | Responsibility / 責務 | Output / 出力 | Status / 状態 |
 |---|---|---|---|---|
 | Sensor driver / センサードライバ | `src/driver/iqs9150/iqs9150_ev02_driver.c` | I2C, EV02 initialization, ATI, product/status validation, contact decoding, up to five contact coordinates / I2C、EV02初期化、ATI、製品・状態検証、接触復号、最大5点座標 | Normalized absolute contact frames / 正規化済み絶対座標フレーム | Enabled / 有効 |
-| Contact session / 接触session | `iqs9150_session`, `contact_arbiter` | Session ID, normal-end/cancel boundary, proposal collection, deterministic resolver, and token authority / session ID、通常終了・cancel境界、proposal収集、決定的resolver、token authority | Republished contact frames; owner token / 再配信接触frame、owner token | Enabled; sole ownership path / 有効・単一所有権経路 |
+| Contact session / 接触session | `iqs9150_session`, `contact_arbiter`, `contact_output_broker` | Session ID, normal-end/cancel boundary, proposal collection, deterministic resolver, token authority, and token-checked host output transport / session ID、通常終了・cancel境界、proposal収集、決定的resolver、token authority、token検査済みホスト出力transport | Republished contact frames; owner token; brokered `REL_*`/button output / 再配信接触frame、owner token、broker経由の`REL_*`／button出力 | Enabled; output broker covers pointer/tap-drag/edge-hold/inertia / 有効・brokerはpointer/tap-drag/edge-hold/inertiaを担当 |
 | Arbitration / 排他制御 | `iqs9150_multifinger_router` | Selects pointer, 2F scroll, geometry claim, 3–5F gesture, edge, or drag ownership / ポインタ、2本指スクロール、ジオメトリ、3〜5本指、エッジ、ドラッグの経路選択 | Routed contact frames / 振り分け済み接触フレーム | Arbiter-authoritative / arbiterが正 |
 | Pointer / ポインタ | `iqs9150_pointer` | 1F relative pointer; 2F axis lock, discontinuity rejection, and wheel conversion / 1本指相対ポインタ、2本指軸ロック・不連続除外・ホイール変換 | `REL_X/Y`, `REL_WHEEL/HWHEEL` | Enabled / 有効 |
 | Tap/drag / タップ・ドラッグ | `iqs9150_tap_drag` | 1/2/3F click; same-count double-tap + hold + move drag / 1/2/3本指クリック、同本数ダブルタップ+ホールド+移動ドラッグ | Mouse buttons and relative movement / マウスボタン・相対移動 | Token-gated / tokenでgate |
