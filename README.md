@@ -216,8 +216,8 @@ when assigning the final action.
 | --- | --- | --- |
 | 1本指移動 / one-finger move | ルーターログなし / no router log | ポインタ移動 / pointer movement |
 | 2本指平行移動 / parallel two-finger move | `2F route=scroll committed` | スクロールのみ / scroll only |
-| ピンチ / pinch | `owner=transform` と `action=PINCH_IN` または `PINCH_OUT` | Ctrl+- / Ctrl+=、スクロール・右クリックなし / zoom key, no scroll or right click |
-| 回転 / rotation | `owner=transform` と `action=ROTATE_COUNTER_CLOCKWISE` または `ROTATE_CLOCKWISE` | F15 / F16、スクロール・右クリックなし / F15 or F16, no scroll or right click |
+| ピンチ / pinch | `winner=transform` と `action=PINCH_IN` または `PINCH_OUT` | Ctrl+- / Ctrl+=、スクロール・右クリックなし / zoom key, no scroll or right click |
+| 回転 / rotation | `winner=transform` と `action=ROTATE_COUNTER_CLOCKWISE` または `ROTATE_CLOCKWISE` | F15 / F16、スクロール・右クリックなし / F15 or F16, no scroll or right click |
 | 3〜5本指移動 / three-to-five-finger move | `3F`〜`5F route=multifinger claimed` と終了時の方向 / claim plus direction on release | ポインタ・スクロールなし / no pointer or scroll |
 
 ## タップとダブルタップ・移動開始ドラッグ / Tap and double-tap-move drag

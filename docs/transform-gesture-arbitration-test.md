@@ -42,8 +42,8 @@ Keep the same firmware and serial capture for every case.
 | Order | Operation / 操作 | Required result / 合格条件 |
 |---:|---|---|
 | 1 | Move one finger, then make one stationary two-finger tap / 1本指移動後、静止した2本指タップ | Pointer and right-click remain normal. No transform action appears. |
-| 2 | Move both fingers in parallel / 両方の指を同方向へ平行移動 | Log shows `route=scroll proposed move=(...,...) dot=...` with a positive dot value, followed by `owner=scroll`; scrolling occurs and no transform action appears. |
-| 3 | Pinch inward far enough to cross several steps / 指間を十分に狭める | One `transform=PINCH proposed`, `owner=transform`, and one or more `action=PINCH_IN`; browser zoom decreases. No wheel or right-click occurs. |
+| 2 | Move both fingers in parallel / 両方の指を同方向へ平行移動 | Log shows `route=scroll proposed move=(...,...) dot=...` with a positive dot value, followed by `winner=scroll`; scrolling occurs and no transform action appears. |
+| 3 | Pinch inward far enough to cross several steps / 指間を十分に狭める | One `transform=PINCH proposed`, `winner=transform`, and one or more `action=PINCH_IN`; browser zoom decreases. No wheel or right-click occurs. |
 | 4 | Start a new contact and pinch outward across several steps / 新しい接触で指間を十分に広げる | `action=PINCH_OUT` appears one or more times; browser zoom increases. |
 | 5 | Start a new contact and rotate counter-clockwise / 新しい接触で反時計回り | `action=ROTATE_COUNTER_CLOCKWISE`; host receives F15 if observed. |
 | 6 | Start a new contact and rotate clockwise / 新しい接触で時計回り | `action=ROTATE_CLOCKWISE`; host receives F16 if observed. |
@@ -63,7 +63,7 @@ The run fails if any of these occur:
 
 - Pinch and rotation directions are reversed from the table.
 - A transform produces wheel output or a two-finger right-click on release.
-- An action appears before `owner=transform`, after `completed`, or in the next session.
+- An action appears before `winner=transform`, after `completed`, or in the next session.
 - The log contains `transform-pinch ignored: KSCAN callback is not configured`,
   `arbiter output rejected producer=transform`, `proposal rejected`, or a queue-overflow message.
 - A transform is reported as scroll, or ordinary parallel scrolling is reported as transform.
