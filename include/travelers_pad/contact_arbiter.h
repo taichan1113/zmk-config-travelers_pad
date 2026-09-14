@@ -272,6 +272,16 @@ bool travelers_pad_arbiter_begin_primary_output(
 	enum travelers_pad_owner requested_owner, uint32_t capability, const char *producer,
 	struct travelers_pad_arbiter_output_guard *guard);
 
+/* The router labels an internally forwarded contact frame before it enters the
+ * asynchronous pointer adapter. The adapter must present the exact frame
+ * sequence to begin_routed_output() before emitting a resulting REL report.
+ * This prevents a queued old contact frame from borrowing later authority. */
+bool travelers_pad_arbiter_prepare_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability);
+bool travelers_pad_arbiter_begin_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability,
+	const char *producer, struct travelers_pad_arbiter_output_guard *guard);
+
 /* An auxiliary function may extend an already-committed primary action, but
  * may not establish ownership itself. This validates its delayed output
  * against the live token. It is intentionally quiet on a mismatch because

@@ -390,9 +390,19 @@ int travelers_pad_output_behavior_primary(
 	return 0;
 }
 
-int travelers_pad_output_routed_pointer(const struct device *dev, uint8_t type, uint16_t code,
-				 int32_t value, bool sync, const char *producer)
+int travelers_pad_output_routed_pointer(const struct device *dev, uint32_t routed_frame_seq,
+				 enum travelers_pad_owner owner, uint32_t capability,
+				 uint8_t type, uint16_t code, int32_t value, bool sync,
+				 const char *producer)
 {
+	struct travelers_pad_arbiter_output_guard guard;
+
 	retry_pending_button_ups("broker-pointer-retry");
-	return emit(dev, type, code, value, sync, producer);
+	if (!travelers_pad_arbiter_begin_routed_output(routed_frame_seq, owner, capability,
+							   producer, &guard)) {
+		LOG_DBG("%s routed output denied frame=%u owner=%u", producer, routed_frame_seq,
+			owner);
+		return -EACCES;
+	}
+	return emit_guarded(dev, type, code, value, sync, producer, &guard);
 }

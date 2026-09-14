@@ -19,6 +19,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
@@ -59,7 +60,6 @@ struct router_data {
 	uint32_t start_distance_squared;
 	bool sensor_reset;
 	uint32_t arbiter_frame_seq;
-	uint32_t scroll_ownership_frame_seq;
 	bool scroll_extra_contact;
 	/* Router contact output is deferred until the arbiter has observed every
 	 * primary recognizer for this frame. Track whether the pointer adapter has
@@ -80,9 +80,13 @@ static uint32_t squared_distance(int32_t x, int32_t y)
 	return (uint32_t)(x * x + y * y);
 }
 
-static void router_emit(const struct device *dev, const struct router_data *data, uint8_t fingers)
+static void router_emit(const struct device *dev, const struct router_data *data,
+			uint32_t frame_seq, uint8_t fingers)
 {
-	int rc = input_report_abs(dev, INPUT_ABS_X, data->x, false, K_NO_WAIT);
+	int rc = input_report(dev, INPUT_EV_MSC, TRAVELERS_PAD_INPUT_MSC_ROUTED_FRAME_SEQ,
+			      frame_seq, false, K_NO_WAIT);
+
+	rc |= input_report_abs(dev, INPUT_ABS_X, data->x, false, K_NO_WAIT);
 
 	rc |= input_report_abs(dev, INPUT_ABS_Y, data->y, false, K_NO_WAIT);
 	rc |= input_report_abs(dev, INPUT_ABS_RX, data->finger2_x, false, K_NO_WAIT);
@@ -248,7 +252,6 @@ static void router_recognize_frame(const struct device *dev)
 			LOG_WRN("2F scroll proposal rejected");
 			return;
 		}
-		data->scroll_ownership_frame_seq = data->arbiter_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
 		LOG_INF("2F route=scroll proposed; awaiting frame decision");
 	}
@@ -312,28 +315,28 @@ static void router_deliver_resolved_frame(
 	if (owner == TRAVELERS_PAD_OWNER_SCROLL) {
 		data->state = ROUTER_SCROLL_TWO;
 		if (snapshot->contact_count == 0) {
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			data->pointer_stream_open = false;
 			data->state = ROUTER_IDLE;
 			data->max_fingers = 0;
 			return;
 		}
-		if (!travelers_pad_arbiter_authorize_output(
-			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
-			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll")) {
+		if (!travelers_pad_arbiter_prepare_routed_output(
+			snapshot->frame_seq, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA)) {
 			return;
 		}
 		/* The pointer adapter consumes a logical two-contact scroll stream, even
 		 * when a third physical contact arrives during an owned scroll. */
-		router_emit(dev, data, snapshot->contact_count >= 2 ? 2 : snapshot->contact_count);
+		router_emit(dev, data, snapshot->frame_seq,
+			snapshot->contact_count >= 2 ? 2 : snapshot->contact_count);
 		data->pointer_stream_open = snapshot->contact_count != 0;
 		return;
 	}
 
 	if (snapshot->contact_count == 0) {
 		if (data->state == ROUTER_PASS_ONE || data->state == ROUTER_SCROLL_TWO) {
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			data->pointer_stream_open = false;
 		} else if (data->state == ROUTER_AWAIT_TWO) {
 			/* A held-still 2F session becomes a right-click candidate only on
@@ -343,8 +346,8 @@ static void router_deliver_resolved_frame(
 			data->finger2_x = data->start_finger2_x;
 			data->finger2_y = data->start_finger2_y;
 			data->finger2_valid = data->have_geometry;
-			router_emit(dev, data, 2);
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 2);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			LOG_INF("2F route=tap candidate");
 		} else if (data->state == ROUTER_CLAIM_GEOMETRY) {
 			LOG_INF("2F route=geometry candidate complete");
@@ -362,7 +365,12 @@ static void router_deliver_resolved_frame(
 	}
 
 	if (data->state == ROUTER_PASS_ONE) {
-		router_emit(dev, data, 1);
+		if (!travelers_pad_arbiter_prepare_routed_output(
+			snapshot->frame_seq, TRAVELERS_PAD_OWNER_NONE,
+			TRAVELERS_PAD_CAP_POINTER_DELTA)) {
+			return;
+		}
+		router_emit(dev, data, snapshot->frame_seq, 1);
 		data->pointer_stream_open = true;
 	} else {
 		/* Awaiting a two-finger classification must not leak a pointer frame. */

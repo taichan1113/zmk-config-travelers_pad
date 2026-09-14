@@ -84,8 +84,10 @@ int travelers_pad_output_behavior_primary(
  * same transport point so every host-facing REL event is centralized.
  * canonical pointer出力はpointer adapter到達前にrouterで選別済みである。独立した
  * recognizer claimは持たないが、全ホスト向けREL eventを集約するため同じtransportを使う。 */
-int travelers_pad_output_routed_pointer(const struct device *dev, uint8_t type, uint16_t code,
-				 int32_t value, bool sync, const char *producer);
+int travelers_pad_output_routed_pointer(const struct device *dev, uint32_t routed_frame_seq,
+				 enum travelers_pad_owner owner, uint32_t capability,
+				 uint8_t type, uint16_t code, int32_t value, bool sync,
+				 const char *producer);
 
 /* A cancellation makes every broker-owned held button eligible for release.
  * Failed releases remain pending and are retried by the next broker request. */

@@ -54,7 +54,13 @@ fi
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
-    'travelers_pad_arbiter_authorize_output'
+    'travelers_pad_arbiter_prepare_routed_output'
+require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
+    'TRAVELERS_PAD_INPUT_MSC_ROUTED_FRAME_SEQ'
+require_source 'function/iqs9150/core/iqs9150_pointer.c' \
+    'routed_frame_seq'
+require_source 'function/iqs9150/core/iqs9150_pointer.c' \
+    'TRAVELERS_PAD_INPUT_MSC_ROUTED_FRAME_SEQ'
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
     'router_deliver_resolved_frame'
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
@@ -140,6 +146,8 @@ require_source 'function/iqs9150/session/contact_output_broker.c' \
     'emit_guarded'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'travelers_pad_arbiter_end_output'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'travelers_pad_arbiter_begin_routed_output'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
     'travelers_pad_output_behavior_primary'
 require_source 'function/iqs9150/session/contact_output_broker.c' \

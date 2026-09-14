@@ -27,6 +27,7 @@ LOG_MODULE_REGISTER(travelers_pad_arbiter, LOG_LEVEL_INF);
 #define TRAVELERS_PAD_ARBITER_MAX_OUTPUT_RECEIPTS 4
 #define TRAVELERS_PAD_ARBITER_MAX_DECISIONS 16
 #define TRAVELERS_PAD_ARBITER_MAX_TERMINAL_ACTIONS 8
+#define TRAVELERS_PAD_ARBITER_MAX_ROUTED_OUTPUT_PERMITS 16
 
 struct arbiter_output_receipt {
 	enum travelers_pad_recognizer_id recognizer;
@@ -47,6 +48,16 @@ struct arbiter_decision {
 struct terminal_action_record {
 	struct travelers_pad_terminal_action_grant grant;
 	bool consumed;
+};
+
+struct routed_output_permit {
+	uint32_t frame_seq;
+	uint32_t session_id;
+	uint32_t owner_generation;
+	uint32_t lifecycle_epoch;
+	enum travelers_pad_owner owner;
+	uint32_t capabilities;
+	bool valid;
 };
 
 struct arbiter_frame {
@@ -76,6 +87,8 @@ struct arbiter_state {
 	struct arbiter_frame frames[TRAVELERS_PAD_ARBITER_MAX_IN_FLIGHT_FRAMES];
 	struct arbiter_decision decisions[TRAVELERS_PAD_ARBITER_MAX_DECISIONS];
 	struct terminal_action_record terminal_actions[TRAVELERS_PAD_ARBITER_MAX_TERMINAL_ACTIONS];
+	struct routed_output_permit routed_output_permits[
+		TRAVELERS_PAD_ARBITER_MAX_ROUTED_OUTPUT_PERMITS];
 	struct travelers_pad_owner_token token;
 	struct travelers_pad_owner_token post_session;
 	struct {
@@ -97,6 +110,7 @@ struct arbiter_state {
 	} frame_handlers[TRAVELERS_PAD_RECOGNIZER_COUNT];
 	uint8_t next_decision;
 	uint8_t next_terminal_action;
+	uint8_t next_routed_output_permit;
 	uint32_t next_terminal_action_generation;
 };
 
@@ -171,6 +185,16 @@ static void invalidate_decisions_for_session(uint32_t session_id)
 	}
 }
 
+static void invalidate_routed_output_permits_for_session(uint32_t session_id)
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(state.routed_output_permits); i++) {
+		if (state.routed_output_permits[i].valid &&
+		    state.routed_output_permits[i].session_id == session_id) {
+			state.routed_output_permits[i].valid = false;
+		}
+	}
+}
+
 static void revoke_session(uint32_t session_id, const char *reason)
 {
 	bool revoked = false;
@@ -184,6 +208,7 @@ static void revoke_session(uint32_t session_id, const char *reason)
 		revoked = true;
 	}
 	invalidate_decisions_for_session(session_id);
+	invalidate_routed_output_permits_for_session(session_id);
 	if (revoked) {
 		LOG_INF("arbiter session=%u leases revoked reason=%s", session_id, reason);
 	}
@@ -211,6 +236,9 @@ void travelers_pad_arbiter_cancel_all(const char *reason)
 	for (uint8_t index = 0; index < ARRAY_SIZE(state.terminal_actions); index++) {
 		state.terminal_actions[index].grant.valid = false;
 		state.terminal_actions[index].consumed = true;
+	}
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.routed_output_permits); index++) {
+		state.routed_output_permits[index].valid = false;
 	}
 	epoch = state.lifecycle_epoch;
 	k_spin_unlock(&state_lock, key);
@@ -629,6 +657,7 @@ static void resolve_frame(struct arbiter_frame *frame)
 		}
 		state.token.valid = false;
 		invalidate_decisions_for_session(terminal_session_id);
+		invalidate_routed_output_permits_for_session(terminal_session_id);
 	}
 	k_spin_unlock(&state_lock, key);
 }
@@ -840,6 +869,85 @@ bool travelers_pad_arbiter_begin_primary_output(
 		return false;
 	}
 	decision->authoritative_output_verified = true;
+	guard->held = true;
+	return true;
+}
+
+bool travelers_pad_arbiter_prepare_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability)
+{
+	struct arbiter_frame *frame;
+	struct routed_output_permit *permit;
+	bool authorized;
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+
+	frame = frame_for(frame_seq);
+	authorized = frame != NULL && frame->resolved && !frame->snapshot.cancelled &&
+		frame->snapshot.contact_count != 0 && frame->lifecycle_epoch == state.lifecycle_epoch;
+	if (authorized && owner == TRAVELERS_PAD_OWNER_NONE) {
+		authorized = !state.token.valid;
+	} else if (authorized) {
+		authorized = state.token.valid && state.token.kind == TRAVELERS_PAD_TOKEN_COMMITTED &&
+			state.token.session_id == frame->snapshot.session_id &&
+			state.token.lifecycle_epoch == state.lifecycle_epoch &&
+			token_has_capabilities(&state.token, owner, capability);
+	}
+	if (!authorized) {
+		k_spin_unlock(&state_lock, key);
+		return false;
+	}
+	permit = &state.routed_output_permits[
+		state.next_routed_output_permit++ % ARRAY_SIZE(state.routed_output_permits)];
+	*permit = (struct routed_output_permit){
+		.frame_seq = frame_seq,
+		.session_id = frame->snapshot.session_id,
+		.owner_generation = owner == TRAVELERS_PAD_OWNER_NONE ? 0 : state.token.owner_generation,
+		.lifecycle_epoch = state.lifecycle_epoch,
+		.owner = owner,
+		.capabilities = capability,
+		.valid = true,
+	};
+	k_spin_unlock(&state_lock, key);
+	return true;
+}
+
+bool travelers_pad_arbiter_begin_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability,
+	const char *producer, struct travelers_pad_arbiter_output_guard *guard)
+{
+	struct routed_output_permit *permit = NULL;
+	bool authorized = false;
+
+	ARG_UNUSED(producer);
+	if (guard == NULL) {
+		return false;
+	}
+	*guard = (struct travelers_pad_arbiter_output_guard){};
+	guard->key = k_spin_lock(&state_lock);
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.routed_output_permits); index++) {
+		if (state.routed_output_permits[index].valid &&
+		    state.routed_output_permits[index].frame_seq == frame_seq) {
+			permit = &state.routed_output_permits[index];
+			break;
+		}
+	}
+	if (permit != NULL && permit->owner == owner &&
+	    (permit->capabilities & capability) == capability &&
+	    permit->lifecycle_epoch == state.lifecycle_epoch) {
+		if (owner == TRAVELERS_PAD_OWNER_NONE) {
+			authorized = !state.token.valid && state.ending.session_id != permit->session_id;
+		} else {
+			authorized = state.token.valid && state.token.kind == TRAVELERS_PAD_TOKEN_COMMITTED &&
+			state.token.session_id == permit->session_id &&
+			state.token.owner_generation == permit->owner_generation &&
+			state.token.lifecycle_epoch == permit->lifecycle_epoch &&
+			token_has_capabilities(&state.token, owner, capability);
+		}
+	}
+	if (!authorized) {
+		k_spin_unlock(&state_lock, guard->key);
+		return false;
+	}
 	guard->held = true;
 	return true;
 }

@@ -113,6 +113,30 @@ Expected evidence:
 click・continuation・inertia出力が一つでもあれば失敗である。旧work handler待機により
 input streamが停止しないことも確認する。
 
+## Case 6: queued routed-pointer frame / queue済みrouted pointer frame
+
+1. Move a 1F pointer continuously, then trigger sensor recovery/reset while
+   movement is still being reported. Repeat with an axis-locked 2F scroll.
+2. Immediately begin a fresh 1F contact, then a fresh 2F scroll. Repeat the
+   sequence while moving rapidly enough to leave input events queued.
+3. Retain lines containing `routed output denied`, `arbiter global cancel`,
+   `router cancelled`, and the first session/owner line of the fresh contact.
+
+Expected evidence:
+
+- no pointer or wheel movement attributable to the old operation occurs after
+  the reset boundary; a queued stale report may instead log `routed output
+  denied frame=...`
+- the new 1F pointer and new 2F scroll work normally after their own frame
+  permit is issued
+- changing from 1F pointer to committed 2F scroll never leaks a 1F REL report
+  into the scroll session
+
+1F pointerまたはaxis lock済み2F scrollの出力中にresetを行い、直後に新しい1F/2F操作を
+開始する。高速移動でqueueを残す条件も繰り返す。reset境界後に旧操作のpointer/wheelが
+出てはならず、旧frameは必要に応じて`routed output denied frame=...`として破棄される。
+新しい操作の出力が正常で、1F→2F切替時に古い1F RELが漏れないことを確認する。
+
 ## Pass criteria / 合格条件
 
 Each case must preserve the captured log, operation time, USB/BLE state, and
