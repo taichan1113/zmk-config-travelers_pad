@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-14
 Integration target: `main`
-Development branch for this milestone: `feat/arbiter-lifecycle-leases`
+Development branch for this milestone: `feat/pinch-rotate`
 Integrated commit: `06e334f0626d250a3a8b8bc0f16ba6a35cf72c93`
 Independent architecture review: **conditionally approved; continue hardening** /
 独立architecture review: **条件付き承認・hardening継続**
@@ -14,12 +14,15 @@ trackpad implementation for a Seeed XIAO nRF52840. The present milestone was
 to finish the contact-session arbiter migration: every user-visible trackpad
 action must be derived from a normalized contact session and authorized by one
 deterministic owner path. The milestone is functionally complete and hardware
-validated.
+validated. The active follow-up adds host-visible pinch and rotation output;
+its implementation and USB-logging UF2 build are complete, with hardware
+verification pending.
 
 本リポジトリは Seeed XIAO nRF52840 向けZMK firmware設定と、IQS9150EV02
 trackpad実装を提供する。現在の節目は接触session arbiter移行の完了であった。すべての
 ユーザー向けtrackpad操作は正規化済み接触sessionから導出され、決定的な単一所有者経路で
-認可される。機能面でこの節目は完了し、実機検証済みである。
+認可される。機能面でこの節目は完了し、実機検証済みである。現在のfollow-upはホストへ出力する
+ピンチ・回転であり、実装とUSB logging UF2 buildが完了し、実機確認待ちである。
 
 ## 2. Hardware contract / ハードウェア接続
 
@@ -52,6 +55,7 @@ sensorはI2C address `0x56`、製品番号 `0x076a` として検出済みであ�
 | Tip-Tap | Anchored two-finger left/right virtual-key action, repeatable while the anchor remains down |
 | 3/4F gestures | Directional swipes mapped in the keymap |
 | 5F gesture | Independent-coordinate Grasp/Release recognition, keymap action currently configurable |
+| Pinch/rotation | Dedicated primary owner; incremental pinch-in/out and counter-clockwise/clockwise KSCAN actions; default bindings are Ctrl+-/Ctrl+= and F15/F16; hardware verification pending |
 | Edge dial | Per-edge enablement, linear edge trace and local-circle continuation, virtual KSCAN actions |
 | Edge hold continuation | Drag or axis-locked 2F scroll can continue at the forward edge; either scroll finger may trigger continuation |
 | Inertia | Post-session 2F scroll inertia, token-associated with the committed scroll owner |
@@ -67,12 +71,14 @@ flowchart LR
     A --> T[tap / drag]
     A --> TT[Tip-Tap]
     A --> G[3F/4F/5F gesture]
+    A --> X[2F pinch / rotation]
     A --> E[edge dial]
     A --> O[observers\nedge hold / inertia]
     R --> B[contact output broker]
     T --> B
     TT --> B
     G --> B
+    X --> B
     E --> B
     O --> B
     B --> H[HID and virtual KSCAN]
@@ -80,10 +86,12 @@ flowchart LR
 
 - `iqs9150_session` is the only raw normalized-contact subscriber.
   `iqs9150_session` は正規化済み生contactの唯一の購読者である。
-- Five primary recognizers submit proposals for each frame: router, tap/drag,
-  Tip-Tap, multi-finger gesture, and edge dial. The arbiter resolves one owner
+- Six primary recognizers submit proposals for each frame: router, tap/drag,
+  Tip-Tap, multi-finger gesture, edge dial, and transform gesture. The arbiter
+  resolves one owner
   independently of callback registration order.
-  primary recognizerはrouter、tap/drag、Tip-Tap、多指gesture、edge dialの5つである。
+  primary recognizerはrouter、tap/drag、Tip-Tap、多指gesture、edge dial、
+  transform gestureの6つである。
   arbiterはcallback登録順に依存せず、唯一のownerを決定する。
 - The router forwards only after all primary proposals have been resolved.
   `edge_hold_continue` and `scroll_inertia` are observers, never primary owners.
@@ -259,8 +267,8 @@ development base; do not revert the accepted normal-path architecture.
 | 4 | P0 | Add an explicit session/generation-bound auxiliary lease for edge hold / edge holdへsession・generation付きauxiliary leaseを追加 | Hardware smoke passed (user-reported) / 実機smoke確認済み（ユーザー報告） | Preserve drag and scroll continuation serial captures when repeating this test |
 | 5 | P0 | Make the broker own pending button-up and retry state, including terminal click press/release / brokerがterminal clickを含むpending button-upとretryを所有 | Implementation complete; fault injection pending / 実装完了・fault injection未確認 | Inject press success plus release enqueue failure; retry without duplicate release or stuck button |
 | 6 | P1 | Correct Kconfig, init-priority, Devicetree phandle, and KSCAN dependencies; build a feature enable/disable matrix / feature単位の依存関係整理とbuild matrix | Complete — Kconfig dependency gates, structural check, and seven diagnostic overlays; full and all seven profiles produce UF2 / Kconfig依存gate・構造check・7診断overlay、full・全7 profileでUF2生成合格 | Run the matrix when changing a module dependency or diagnostic profile |
-| 7 | P1 | Extract pinch/rotation geometry into a `TRANSFORM_GESTURE` primary owner with `PINCH`, `ROTATE`, and `PINCH_ROTATE` submodes / pinch・rotationを専用primary ownerへ分離 | Implementation complete; full UF2 built, hardware verification pending / 実装完了・full UF2 build合格、実機確認待ち | Once geometry commits, release must never fall back to a 2F tap; verify SCROLL priority evidence |
-| 8 | P1 | Route the optional grid adapter through the output broker before enabling it / 任意grid adapterを有効化前にbroker経由へ移行 | 0% | Grid-only build and KSCAN token/cancel regression |
+| 7 | P1 | Extract pinch/rotation geometry into a `TRANSFORM_GESTURE` primary owner and emit incremental four-direction KSCAN actions / pinch・rotationを専用primary ownerへ分離し、継続可能な4方向KSCAN actionを出力 | Implementation and USB-logging UF2 build complete; hardware verification pending / 実装・USB logging UF2 build合格、実機確認待ち | Verify pinch-in/out, both rotation directions, repeated steps, scroll priority, and no terminal 2F tap in one hardware run |
+| 8 | P1 | Route the optional grid adapter through the output broker before enabling it / 任意grid adapterを有効化前にbroker経由へ移行 | Implemented on sibling branch `feat/arbiter-safety-hardening` at `5737d75`; intentionally excluded from this pinch/rotation branch / sibling branchで実装済み、このbranchからは意図的に除外 | Grid-only build and KSCAN token/cancel regression |
 | 9 | P2 | Decide whether to migrate recognizers from reconstructed input events to one immutable complete `ContactFrame` transaction / immutable完全`ContactFrame`への移行判断・実装 | 0% | Frame completeness, sequence, and no mixed-generation contacts under stress |
 | 10 | Monitor | Investigate the rare post-idle pointer freeze without adding power responsibility to the arbiter / 長時間idle後freezeの監視・診断 | Monitoring / 監視中 | Record last raw receive time, resolved/forward sequence, in-flight count, ack mask, enqueue failures, USB/battery state, and RESET/reconnect recovery |
 | 11 | Later / 後続 | UX tuning such as pointer/scroll acceleration; retain keyboard-side 2F input processors / pointer・scroll加速等のUX調整 | Deferred / 保留 | Full integration test after each tuning change |
@@ -288,7 +296,7 @@ cancel、並行性、出力失敗時安全性、feature独立性を含む全体�
 |---|---:|
 | driver → normalized contact frames / 正規化接触frame | 100% |
 | session boundary and frame numbering / session境界・frame連番 | 85% |
-| five primary recognizer proposals / 5 primary recognizerのproposal | 100% |
+| six primary recognizer proposals / 6 primary recognizerのproposal | 100% |
 | priority arbiter decision / 優先順位付きarbiter決定 | 100% |
 | primary output token gate / primary出力のtoken gate | 85% |
 | single ownership path / 単一の所有権経路 | 80% |

@@ -41,7 +41,7 @@ enum travelers_pad_recognizer_id {
 	TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE,
 	/* Auxiliary observer: proposes no owner and receives frames only so
 	 * inertia can associate a physical release with the arbiter token. The
-	 * preceding five IDs remain the primary recognizers. */
+	 * preceding six IDs remain the primary recognizers. */
 	TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,
 	/* Auxiliary observer: detects edge-hold continuation candidates from raw
 	 * contacts. It has no claim of its own; delayed output is delegated by the
@@ -160,11 +160,11 @@ struct travelers_pad_arbiter_output_guard {
 
 /* A recognizer can defer the semantic action which first establishes its
  * ownership until the resolver has issued a token.  This is needed because
- * the five input listeners run asynchronously: at proposal time the winning
+ * the primary input listeners run asynchronously: at proposal time the winning
  * token does not exist yet.  The callback runs exactly once for a newly
  * committed token, before a terminal frame invalidates it.
  * recognizerは、所有権を最初に確立するsemantic actionを、resolverがtokenを
- * 発行するまで保留できる。5個のinput listenerは非同期なのでproposal時点には
+ * 発行するまで保留できる。primary input listenerは非同期なのでproposal時点には
  * 勝者tokenがまだ存在しないためである。callbackは新規commit tokenごとに一度、
  * terminal frameがtokenを無効化する前に実行される。 */
 typedef void (*travelers_pad_arbiter_resolve_handler_t)(
@@ -182,11 +182,11 @@ typedef void (*travelers_pad_arbiter_frame_handler_t)(
 	void *context, const struct travelers_pad_session_snapshot *snapshot,
 	const struct travelers_pad_owner_token *token);
 
-/* Recognizers register from their DT-backed init function. The five primary
+/* Recognizers register from their DT-backed init function. The six primary
  * recognizers form the decision barrier; edge-hold and inertia are observers
  * and are deliberately excluded from it. All registered functions still
  * acknowledge before the frame storage is reclaimed.
- * recognizerはDT-backed initから登録する。5個のprimary recognizerだけが裁定barrierを
+ * recognizerはDT-backed initから登録する。6個のprimary recognizerだけが裁定barrierを
  * 構成し、edge-holdとinertiaはobserverとして意図的にbarrierから除外する。ただし、frame
  * storageの回収前には登録済み全機能がacknowledgeする。 */
 bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer);

@@ -4,15 +4,16 @@
 
 実機で IQS9150EV02 の初期化、ATI、Event Mode、相対ポインタ、2本指スクロール、1〜3本指の
 タップ／ドラッグ、3〜5本指ジェスチャー、エッジダイヤルを確認済みです。センサドライバは
-最大5点の接触座標を供給し、操作ポリシーは機能モジュールへ分離しています。ピンチ／回転の
-ホスト操作への割り当てと速度・加速チューニングは今後の項目です。2本指スクロールの
+最大5点の接触座標を供給し、操作ポリシーは機能モジュールへ分離しています。ピンチ／回転は
+専用ownerから方向付きKSCAN操作を出力する実装とビルドが完了し、実機確認待ちです。2本指スクロールの
 慣性は、通常のlistener chainを再利用する独立機能モジュールとして実装しています。
 
 Hardware verification covers IQS9150EV02 initialization, ATI, Event Mode,
 relative pointer motion, two-finger scroll, one-to-three-finger tap/drag,
 three-to-five-finger gestures, and the edge dial. The sensor driver provides
 up to five contact coordinates; interaction policy lives in function modules.
-Pinch/rotation host actions and speed/acceleration tuning remain future work.
+Pinch/rotation now emits direction-specific KSCAN actions from its dedicated
+owner; the implementation builds successfully and awaits hardware verification.
 Two-finger scroll inertia is implemented as an independent function module
 that reuses the normal listener chain.
 
@@ -53,13 +54,14 @@ scroll, acceleration, or gesture policy back into the driver.
 | `zmk-input-matrix` + composite KSCAN | 格子操作を標準仮想KSCANへ変換し、多指ジェスチャーと統合 / grid gestures to standard virtual KSCAN, composed with multi-finger gestures | 統合済み、論理割当は未設定 / integrated, logical bindings not assigned yet |
 | `function/iqs9150/grid_adapter/` | 格子・端部タップ試作 / grid and edge-tap prototype | 無効。格子には使用しない / disabled; not used for grid |
 | `function/iqs9150/multifinger_gesture/` | 3〜5本指スワイプを仮想KSCANへ変換 / 3-to-5-finger swipes to virtual KSCAN | 有効 / enabled |
+| `function/iqs9150/transform_gesture/` | 2本指ピンチ・回転を方向付き仮想KSCANへ変換 / two-finger pinch and rotation to directional virtual KSCAN | 実装・ビルド済み、実機確認待ち / implemented and built; hardware verification pending |
 | `function/iqs9150/scroll_inertia/` | 2本指スクロール慣性 / two-finger scroll inertia | 有効 / enabled |
 
 ## 接触arbiter移行状況 / Contact-arbiter migration status
 
 IQS9150 driverの正規化接触フレームを購読するのは `iqs9150_session` だけです。session managerは
-不変のsession境界とframe連番を付け、同じframeを下流へ再配信します。contact arbiterは、5つの
-primary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial）のproposalを収集し、
+不変のsession境界とframe連番を付け、同じframeを下流へ再配信します。contact arbiterは、6つの
+primary recognizer（2本指router、tap/drag、Tip-Tap、多指gesture、edge dial、transform）のproposalを収集し、
 全recognizerのFIFO確認後に、callback登録順と無関係な唯一のwinnerとowner tokenを決定します。
 
 primaryの初回・継続semantic出力は、確定tokenのcapability検査を通過してからHIDまたはKSCANへ
@@ -75,8 +77,8 @@ release・cancel・所有権移行後に停止できます。
 
 Only `iqs9150_session` subscribes to normalized IQS9150 contact frames. It
 adds immutable session/frame metadata and republishes each frame. The contact
-arbiter collects proposals from five primary recognizers—the two-finger router,
-tap/drag, Tip-Tap, multi-finger gesture, and edge dial—and, after every FIFO
+arbiter collects proposals from six primary recognizers—the two-finger router,
+tap/drag, Tip-Tap, multi-finger gesture, edge dial, and transform gesture—and, after every FIFO
 acknowledgement, selects one winner and owner token independently of callback
 registration order.
 
@@ -122,13 +124,13 @@ This avoids wasting the asynchronous input queue and keeps five-contact
 frames safe to process.
 
 二本指スクロールは既存互換フレームの代表座標（Finger 1）と接触数だけを使います。一方、
-ピンチ・回転・二本指の方向整合判定は両方のスロット座標を必要とします。将来のジェスチャー
+ピンチ・回転・二本指の方向整合判定は両方のスロット座標を必要とします。transform recognizerと
 ルーターはこの二経路を排他的に振り分け、ピンチ／回転候補をスクロールへ流しません。
 
 Two-finger scrolling uses only the representative legacy coordinate (Finger 1)
 and contact count. Pinch, rotation, and two-finger direction-coherence checks
-require both slot coordinates. A future gesture router will route these paths
-exclusively, so pinch/rotation candidates do not become scroll output.
+require both slot coordinates. The transform recognizer and router route these
+paths exclusively, so pinch/rotation candidates do not become scroll output.
 
 実機検証時はoverlayの `two-finger-diagnostics` を有効にします。2本指で静止・平行移動・
 指間を広げる／狭める操作を行い、100 msごとの `2F frame` ログで `f1=(x,y,1)` と
@@ -159,14 +161,15 @@ for the next router stage.
 
 ポインタ機能の前にルーターを置き、操作セッションを一度だけ分類します。1本指は直ちに
 ポインタへ渡します。2本指は短時間保留し、平行移動だけをスクロールへ渡します。指間距離の
-変化（ピンチ）または二点ベクトルの回転はジオメトリ操作として確保され、スクロールを出力
-しません。3本・4本指は完了時に仮想KSCANの位置へ変換します。5本指は独立座標による
+変化（ピンチ）または二点ベクトルの回転はtransform ownerが確保し、方向付き仮想KSCANを
+出力します。3本・4本指は完了時に仮想KSCANの位置へ変換します。5本指は独立座標による
 Grasp/Releaseとして、確定時に専用の仮想KSCAN位置へ変換します。
 
 The router sits before the pointer function and classifies each session once.
 One-finger contact passes through immediately. Two-finger contact is briefly
 held: only parallel motion reaches scrolling. Distance change (pinch) or
-two-point-vector rotation is claimed as geometry and produces no scroll.
+two-point-vector rotation is claimed by the transform owner and emits a
+direction-specific virtual KSCAN action instead of scroll.
 Three and four fingers are claimed as swipe candidates and become virtual KSCAN positions on
 release. Five fingers use independent coordinates for Grasp/Release and emit dedicated virtual
 KSCAN positions when confirmed.
@@ -213,7 +216,8 @@ when assigning the final action.
 | --- | --- | --- |
 | 1本指移動 / one-finger move | ルーターログなし / no router log | ポインタ移動 / pointer movement |
 | 2本指平行移動 / parallel two-finger move | `2F route=scroll committed` | スクロールのみ / scroll only |
-| ピンチまたは回転 / pinch or rotation | `2F route=geometry claimed` | スクロールなし / no scroll |
+| ピンチ / pinch | `owner=transform` と `action=PINCH_IN` または `PINCH_OUT` | Ctrl+- / Ctrl+=、スクロール・右クリックなし / zoom key, no scroll or right click |
+| 回転 / rotation | `owner=transform` と `action=ROTATE_COUNTER_CLOCKWISE` または `ROTATE_CLOCKWISE` | F15 / F16、スクロール・右クリックなし / F15 or F16, no scroll or right click |
 | 3〜5本指移動 / three-to-five-finger move | `3F`〜`5F route=multifinger claimed` と終了時の方向 / claim plus direction on release | ポインタ・スクロールなし / no pointer or scroll |
 
 ## タップとダブルタップ・移動開始ドラッグ / Tap and double-tap-move drag
