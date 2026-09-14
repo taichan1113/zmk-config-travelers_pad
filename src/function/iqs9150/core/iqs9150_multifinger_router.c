@@ -150,7 +150,13 @@ static void router_recognize_frame(const struct device *dev)
 	uint32_t distance_squared;
 	uint32_t distance_delta;
 	uint32_t rotation_cross;
-	uint32_t primary_move;
+	int32_t first_dx;
+	int32_t first_dy;
+	int32_t second_dx;
+	int32_t second_dy;
+	int32_t direction_dot;
+	uint32_t first_move;
+	uint32_t second_move;
 	/* Ownership and all host-facing contact output are resolved after every
 	 * primary recognizer has observed this frame. */
 	if (data->sensor_reset || data->fingers == 0 || data->state == ROUTER_TAP_DRAG ||
@@ -220,8 +226,6 @@ static void router_recognize_frame(const struct device *dev)
 		return;
 	}
 
-	primary_move = abs32((int32_t)data->x - data->start_x) +
-		       abs32((int32_t)data->y - data->start_y);
 	if (data->finger2_valid && data->have_geometry) {
 		geometry_x = (int32_t)data->finger2_x - data->x;
 		geometry_y = (int32_t)data->finger2_y - data->y;
@@ -237,7 +241,21 @@ static void router_recognize_frame(const struct device *dev)
 			return;
 		}
 	}
-	if (primary_move >= cfg->scroll_classify_move) {
+	if (!data->finger2_valid || !data->have_geometry) {
+		return;
+	}
+	first_dx = (int32_t)data->x - data->start_x;
+	first_dy = (int32_t)data->y - data->start_y;
+	second_dx = (int32_t)data->finger2_x - data->start_finger2_x;
+	second_dy = (int32_t)data->finger2_y - data->start_finger2_y;
+	first_move = abs32(first_dx) + abs32(first_dy);
+	second_move = abs32(second_dx) + abs32(second_dy);
+	direction_dot = first_dx * second_dx + first_dy * second_dy;
+	/* A scroll is a translation of both contacts in the same general
+	 * direction. Requiring both displacement vectors prevents a slow pinch or
+	 * rotation from committing SCROLL merely because contact 1 moved first. */
+	if (first_move >= cfg->scroll_classify_move &&
+	    second_move >= cfg->scroll_classify_move && direction_dot > 0) {
 		/* The frame callback emits only after every recognizer has observed this
 		 * proposal and the arbiter has made its immutable decision. */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
@@ -247,13 +265,14 @@ static void router_recognize_frame(const struct device *dev)
 			.requested_owner = TRAVELERS_PAD_OWNER_SCROLL,
 			.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
 			.contact_count = data->fingers,
-			.evidence = primary_move,
+			.evidence = MIN(first_move, second_move),
 		})) {
 			LOG_WRN("2F scroll proposal rejected");
 			return;
 		}
 		data->state = ROUTER_SCROLL_TWO;
-		LOG_INF("2F route=scroll proposed; awaiting frame decision");
+		LOG_INF("2F route=scroll proposed move=(%u,%u) dot=%d; awaiting frame decision",
+			first_move, second_move, direction_dot);
 	}
 }
 

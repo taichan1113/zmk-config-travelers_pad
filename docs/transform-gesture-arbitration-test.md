@@ -42,7 +42,7 @@ Keep the same firmware and serial capture for every case.
 | Order | Operation / 操作 | Required result / 合格条件 |
 |---:|---|---|
 | 1 | Move one finger, then make one stationary two-finger tap / 1本指移動後、静止した2本指タップ | Pointer and right-click remain normal. No transform action appears. |
-| 2 | Move two fingers in parallel / 2本指を平行移動 | Log shows `owner=scroll`; scrolling occurs and no transform action appears. |
+| 2 | Move both fingers in parallel / 両方の指を同方向へ平行移動 | Log shows `route=scroll proposed move=(...,...) dot=...` with a positive dot value, followed by `owner=scroll`; scrolling occurs and no transform action appears. |
 | 3 | Pinch inward far enough to cross several steps / 指間を十分に狭める | One `transform=PINCH proposed`, `owner=transform`, and one or more `action=PINCH_IN`; browser zoom decreases. No wheel or right-click occurs. |
 | 4 | Start a new contact and pinch outward across several steps / 新しい接触で指間を十分に広げる | `action=PINCH_OUT` appears one or more times; browser zoom increases. |
 | 5 | Start a new contact and rotate counter-clockwise / 新しい接触で反時計回り | `action=ROTATE_COUNTER_CLOCKWISE`; host receives F15 if observed. |
