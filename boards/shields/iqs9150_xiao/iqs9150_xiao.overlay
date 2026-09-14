@@ -225,6 +225,8 @@
         input-device = <&iqs9150_session>;
         distance-threshold = <30000>;
         rotation-threshold = <30000>;
+        pinch-step-threshold = <30000>;
+        rotation-step-threshold = <30000>;
         status = "okay";
     };
 

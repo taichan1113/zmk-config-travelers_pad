@@ -17,3 +17,11 @@ properties:
     type: int
     default: 30000
     description: Cross-product magnitude required to classify a rotation
+  pinch-step-threshold:
+    type: int
+    default: 30000
+    description: Squared-distance change required for each additional pinch action
+  rotation-step-threshold:
+    type: int
+    default: 30000
+    description: Cross-product magnitude required for each additional rotation action
