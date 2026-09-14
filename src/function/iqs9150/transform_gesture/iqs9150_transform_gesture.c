@@ -3,8 +3,11 @@
 
 #define DT_DRV_COMPAT zmk_travelers_pad_iqs9150_transform_gesture
 
+#include <errno.h>
+
 #include <zephyr/device.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/drivers/kscan.h>
 #include <zephyr/input/input.h>
 #include <zephyr/logging/log.h>
 
@@ -27,6 +30,7 @@ struct transform_config {
 
 struct transform_data {
 	const struct device *dev;
+	kscan_callback_t callback;
 	uint16_t first_x;
 	uint16_t first_y;
 	uint16_t second_x;
@@ -41,6 +45,19 @@ struct transform_data {
 	enum transform_mode mode;
 	bool sensor_reset;
 	uint32_t arbiter_frame_seq;
+};
+
+static int transform_configure(const struct device *dev, kscan_callback_t callback)
+{
+	if (callback == NULL) {
+		return -EINVAL;
+	}
+	((struct transform_data *)dev->data)->callback = callback;
+	return 0;
+}
+
+static const struct kscan_driver_api transform_api = {
+	.config = transform_configure,
 };
 
 static int32_t abs32(int32_t value)
@@ -211,6 +228,7 @@ static int transform_init(const struct device *dev)
 	INPUT_CALLBACK_DEFINE(DEVICE_DT_GET(DT_INST_PHANDLE(n, input_device)),                     \
 			      transform_input_handler_##n);                                                 \
 	DEVICE_DT_INST_DEFINE(n, transform_init, NULL, &transform_data_##n, &transform_config_##n, \
-			      POST_KERNEL, CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY, NULL);
+			      POST_KERNEL, CONFIG_TRAVELERS_PAD_IQS9150_FUNCTION_INIT_PRIORITY,       \
+			      &transform_api);
 
 DT_INST_FOREACH_STATUS_OKAY(TRANSFORM_INST)

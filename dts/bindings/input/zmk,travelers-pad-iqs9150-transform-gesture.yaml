@@ -2,7 +2,7 @@ description: Travelers Pad IQS9150 two-finger pinch and rotation primary recogni
 
 compatible: "zmk,travelers-pad-iqs9150-transform-gesture"
 
-include: base.yaml
+include: [kscan.yaml, base.yaml]
 
 properties:
   input-device:

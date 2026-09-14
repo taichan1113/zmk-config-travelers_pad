@@ -101,10 +101,12 @@ config TRAVELERS_PAD_IQS9150_TRANSFORM_GESTURE
     default y
     depends on IQS9150_EV02_DRIVER && TRAVELERS_PAD_IQS9150_CONTACT_SESSION && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TRANSFORM_GESTURE_ENABLED
     select INPUT
+    select KSCAN
     help
       Own two-finger pinch, rotation, and combined transform geometry before
       the router may commit a two-finger scroll. This module provides primary
-      arbitration and diagnostics; host behavior bindings remain policy.
+      arbitration and emits configurable virtual KSCAN actions for pinch-in,
+      pinch-out, counter-clockwise rotation, and clockwise rotation.
 
 config TRAVELERS_PAD_IQS9150_MULTIFINGER_ROUTER
     bool "IQS9150 exclusive multi-finger gesture router"
