@@ -120,14 +120,26 @@ require_source 'function/iqs9150/session/contact_arbiter.c' \
     'arbiter post-session lease'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'snapshot->cancelled'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'travelers_pad_arbiter_cancel_all'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'lifecycle_epoch'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'state_lock'
+require_source 'function/iqs9150/session/contact_session_manager.c' \
+    'sensor-reset-event'
 require_source 'function/iqs9150/core/iqs9150_multifinger_router.c' \
     'retaining scroll owner'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
-    'travelers_pad_arbiter_authorize_output'
+    'travelers_pad_arbiter_begin_primary_output'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
-    'travelers_pad_arbiter_authorize_auxiliary_output'
+    'travelers_pad_arbiter_begin_auxiliary_output'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
-    'travelers_pad_arbiter_authorize_post_session_output'
+    'travelers_pad_arbiter_begin_post_session_output'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'emit_guarded'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'travelers_pad_arbiter_end_output'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
     'travelers_pad_output_behavior_primary'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
@@ -136,16 +148,35 @@ require_source 'function/iqs9150/session/contact_output_broker.c' \
     'remember_held_button'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
     'take_held_button'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'retry_pending_button_ups'
+require_source 'function/iqs9150/session/contact_output_broker.c' \
+    'travelers_pad_output_cancel_all'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'travelers_pad_arbiter_issue_terminal_action'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'travelers_pad_arbiter_consume_terminal_action'
 require_source 'function/iqs9150/session/contact_output_broker.c' \
-    'travelers_pad_arbiter_consume_terminal_action'
+    'travelers_pad_arbiter_begin_terminal_action_output'
 require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
     'travelers_pad_output_terminal_click'
 require_source 'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
     'resolved terminal owner'
+require_source 'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
+    'travelers_pad_arbiter_acquire_auxiliary_lease'
+require_source 'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
+    'drag_work_generation'
+require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
+    'work_generation'
+for delayed_worker in \
+    'function/iqs9150/tap_drag/iqs9150_tap_drag.c' \
+    'function/iqs9150/edge_hold_continue/iqs9150_edge_hold_continue.c' \
+    'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c'; do
+    require_source "$delayed_worker" 'k_work_cancel_delayable_sync'
+    if rg --fixed-strings --quiet -- 'k_work_cancel_delayable(' "$source_root/$delayed_worker"; then
+        fail "delayed worker still replaces state after asynchronous cancel: $delayed_worker"
+    fi
+done
 
 if rg --fixed-strings --quiet -- 'travelers_pad_output_terminal_tap' "$source_root" "$include_root"; then
     fail 'retired ungranted terminal tap transport remains'

@@ -15,6 +15,7 @@
  */
 
 #include <zephyr/logging/log.h>
+#include <zephyr/spinlock.h>
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
@@ -50,6 +51,7 @@ struct terminal_action_record {
 
 struct arbiter_frame {
 	struct travelers_pad_session_snapshot snapshot;
+	uint32_t lifecycle_epoch;
 	struct travelers_pad_arbiter_proposal proposals[TRAVELERS_PAD_ARBITER_MAX_PROPOSALS];
 	struct arbiter_output_receipt output_receipts[TRAVELERS_PAD_ARBITER_MAX_OUTPUT_RECEIPTS];
 	uint32_t observed_mask;
@@ -82,6 +84,7 @@ struct arbiter_state {
 	} ending;
 	uint32_t cancelled_session_id;
 	uint32_t next_owner_generation;
+	uint32_t lifecycle_epoch;
 	uint32_t registered_mask;
 	uint32_t primary_registered_mask;
 	struct {
@@ -98,6 +101,10 @@ struct arbiter_state {
 };
 
 static struct arbiter_state state;
+/* Input callbacks resolve frames in FIFO order, while delayable work can ask
+ * for token/grant authority concurrently. Guard every authority transition and
+ * authority check so a cancel cannot interleave with a successful check. */
+static struct k_spinlock state_lock;
 
 static bool is_primary_recognizer(enum travelers_pad_recognizer_id recognizer)
 {
@@ -180,6 +187,35 @@ static void revoke_session(uint32_t session_id, const char *reason)
 	if (revoked) {
 		LOG_INF("arbiter session=%u leases revoked reason=%s", session_id, reason);
 	}
+}
+
+void travelers_pad_arbiter_cancel_all(const char *reason)
+{
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	uint32_t epoch;
+	/* This is intentionally independent of session_id. A runtime sensor reset
+	 * can arrive after the terminal snapshot has cleared, while inertia, a
+	 * terminal click, or an edge-hold work item is still pending. */
+	state.lifecycle_epoch++;
+	if (state.lifecycle_epoch == 0U) {
+		state.lifecycle_epoch = 1U;
+	}
+	state.token.valid = false;
+	state.post_session.valid = false;
+	state.ending.session_id = 0;
+	state.ending.owner = TRAVELERS_PAD_OWNER_NONE;
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.decisions); index++) {
+		state.decisions[index].valid = false;
+		state.decisions[index].token.valid = false;
+	}
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.terminal_actions); index++) {
+		state.terminal_actions[index].grant.valid = false;
+		state.terminal_actions[index].consumed = true;
+	}
+	epoch = state.lifecycle_epoch;
+	k_spin_unlock(&state_lock, key);
+	LOG_WRN("arbiter global cancel epoch=%u reason=%s", epoch,
+		reason == NULL ? "unspecified" : reason);
 }
 
 bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer)
@@ -269,10 +305,20 @@ static bool proposal_wins_over(enum travelers_pad_owner candidate_owner,
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot)
 {
 	struct arbiter_frame *frame = NULL;
+	k_spinlock_key_t key;
 
-	if (snapshot == NULL || snapshot->session_id == 0) {
+	if (snapshot == NULL) {
 		return;
 	}
+	/* A cancellation is authoritative even when the session manager has already
+	 * cleared the active snapshot and consequently reports session_id == 0. */
+	if (snapshot->cancelled) {
+		travelers_pad_arbiter_cancel_all("sensor-reset-frame");
+	}
+	if (snapshot->session_id == 0) {
+		return;
+	}
+	key = k_spin_lock(&state_lock);
 	/* Cancellation is a lifecycle boundary, not an ordinary zero-contact
 	 * release. Revoke every authority for the affected session before queued
 	 * recognizers observe the cancellation frame, so delayed work can never
@@ -297,13 +343,16 @@ void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapsh
 		}
 	}
 	if (frame == NULL) {
+		k_spin_unlock(&state_lock, key);
 		LOG_ERR("arbiter frame queue overflow seq=%u", snapshot->frame_seq);
 		return;
 	}
 	*frame = (struct arbiter_frame){
 		.snapshot = *snapshot,
+		.lifecycle_epoch = state.lifecycle_epoch,
 		.active = true,
 	};
+	k_spin_unlock(&state_lock, key);
 }
 
 static bool frame_accepts_recognizer(const struct arbiter_frame *frame,
@@ -316,12 +365,15 @@ uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recog
 {
 	const struct arbiter_frame *next = NULL;
 	uint32_t bit;
+	k_spinlock_key_t key;
 
 	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT) {
 		return 0;
 	}
 	bit = 1U << recognizer;
+	key = k_spin_lock(&state_lock);
 	if ((state.registered_mask & bit) == 0U) {
+		k_spin_unlock(&state_lock, key);
 		return 0;
 	}
 	for (uint8_t i = 0; i < ARRAY_SIZE(state.frames); i++) {
@@ -334,28 +386,35 @@ uint32_t travelers_pad_arbiter_next_frame(enum travelers_pad_recognizer_id recog
 			next = frame;
 		}
 	}
-	return next == NULL ? 0 : next->snapshot.frame_seq;
+	uint32_t frame_seq = next == NULL ? 0 : next->snapshot.frame_seq;
+	k_spin_unlock(&state_lock, key);
+	return frame_seq;
 }
 
 bool travelers_pad_arbiter_submit(const struct travelers_pad_arbiter_proposal *proposal)
 {
 	struct arbiter_frame *frame;
+	k_spinlock_key_t key;
 
 	if (proposal == NULL ||
 	    proposal->recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
 	    proposal->requested_owner == TRAVELERS_PAD_OWNER_NONE) {
 		return false;
 	}
+	key = k_spin_lock(&state_lock);
 	frame = frame_for(proposal->frame_seq);
 	if (!frame_accepts_recognizer(frame, proposal->recognizer)) {
+		k_spin_unlock(&state_lock, key);
 		LOG_WRN("arbiter proposal from unregistered recognizer=%u", proposal->recognizer);
 		return false;
 	}
 	if (frame->proposal_count >= ARRAY_SIZE(frame->proposals)) {
+		k_spin_unlock(&state_lock, key);
 		LOG_ERR("arbiter proposal queue overflow session=%u", frame->snapshot.session_id);
 		return false;
 	}
 	frame->proposals[frame->proposal_count++] = *proposal;
+	k_spin_unlock(&state_lock, key);
 	return true;
 }
 
@@ -416,23 +475,33 @@ static void validate_receipts(const struct arbiter_frame *frame,
 static void dispatch_frame_handler(struct arbiter_frame *frame,
 				   enum travelers_pad_recognizer_id recognizer)
 {
+	struct travelers_pad_owner_token token_copy;
 	const struct travelers_pad_owner_token *token = NULL;
+	travelers_pad_arbiter_frame_handler_t handler;
+	void *context;
+	struct travelers_pad_session_snapshot snapshot;
 	uint32_t bit;
 
 	if (recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT) {
 		return;
 	}
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
 	bit = 1U << recognizer;
 	if ((frame->frame_handler_mask & bit) != 0U ||
 	    state.frame_handlers[recognizer].handler == NULL) {
+		k_spin_unlock(&state_lock, key);
 		return;
 	}
 	if (state.token.valid && state.token.session_id == frame->snapshot.session_id) {
-		token = &state.token;
+		token_copy = state.token;
+		token = &token_copy;
 	}
 	frame->frame_handler_mask |= bit;
-	state.frame_handlers[recognizer].handler(state.frame_handlers[recognizer].context,
-						  &frame->snapshot, token);
+	handler = state.frame_handlers[recognizer].handler;
+	context = state.frame_handlers[recognizer].context;
+	snapshot = frame->snapshot;
+	k_spin_unlock(&state_lock, key);
+	handler(context, &snapshot, token);
 }
 
 static void dispatch_frame_handlers(struct arbiter_frame *frame)
@@ -447,8 +516,12 @@ static void dispatch_frame_handlers(struct arbiter_frame *frame)
 	for (uint8_t recognizer = 0; recognizer < TRAVELERS_PAD_RECOGNIZER_COUNT;
 	     recognizer++) {
 		uint32_t bit = 1U << recognizer;
+		bool dispatch;
+		k_spinlock_key_t key = k_spin_lock(&state_lock);
 
-		if (is_primary_recognizer(recognizer) || (frame->observed_mask & bit) != 0U) {
+		dispatch = is_primary_recognizer(recognizer) || (frame->observed_mask & bit) != 0U;
+		k_spin_unlock(&state_lock, key);
+		if (dispatch) {
 			dispatch_frame_handler(frame, recognizer);
 		}
 	}
@@ -460,12 +533,17 @@ static void resolve_frame(struct arbiter_frame *frame)
 	bool new_token = false;
 	bool terminal_scroll = false;
 	uint32_t terminal_session_id;
+	travelers_pad_arbiter_resolve_handler_t resolve_handler = NULL;
+	void *resolve_context = NULL;
+	struct travelers_pad_owner_token resolved_token = {};
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
 
-	if (frame->snapshot.cancelled ||
+	if (frame->lifecycle_epoch != state.lifecycle_epoch || frame->snapshot.cancelled ||
 	    state.cancelled_session_id == frame->snapshot.session_id) {
 		/* Claims arriving from an older queued frame may never resurrect an
 		 * owner after this session has been cancelled. */
 		revoke_session(frame->snapshot.session_id, "cancelled-frame");
+		k_spin_unlock(&state_lock, key);
 		dispatch_frame_handlers(frame);
 		return;
 	}
@@ -479,8 +557,9 @@ static void resolve_frame(struct arbiter_frame *frame)
 	winner = select_winner(frame);
 	if (winner != NULL && !state.token.valid) {
 		state.token = (struct travelers_pad_owner_token){
-			.session_id = frame->snapshot.session_id,
-			.owner_generation = ++state.next_owner_generation,
+				.session_id = frame->snapshot.session_id,
+				.owner_generation = ++state.next_owner_generation,
+				.lifecycle_epoch = state.lifecycle_epoch,
 			.owner = winner->requested_owner,
 			.capabilities = winner->capabilities,
 			.kind = TRAVELERS_PAD_TOKEN_COMMITTED,
@@ -499,6 +578,9 @@ static void resolve_frame(struct arbiter_frame *frame)
 	}
 
 	if (new_token) {
+		resolved_token = state.token;
+		resolve_handler = state.handlers[winner->recognizer].handler;
+		resolve_context = state.handlers[winner->recognizer].context;
 		LOG_INF("arbiter session=%u frame=%u winner=%s recognizer=%u caps=0x%x",
 			frame->snapshot.session_id, frame->snapshot.frame_seq,
 			owner_name(state.token.owner), winner->recognizer, state.token.capabilities);
@@ -506,11 +588,6 @@ static void resolve_frame(struct arbiter_frame *frame)
 		 * frame was unresolved. Dispatch it only after the immutable decision is
 		 * in the ledger. / 未解決frame中に勝者recognizerが保留した初回semantic
 		 * actionを、不変decisionをledgerへ記録した後だけdispatchする。 */
-		if (state.handlers[winner->recognizer].handler != NULL) {
-			state.handlers[winner->recognizer].handler(
-				state.handlers[winner->recognizer].context, &state.token,
-				frame->snapshot.frame_seq);
-		}
 	}
 	if (frame->output_receipt_count != 0) {
 		validate_receipts(frame, winner == NULL ? TRAVELERS_PAD_RECOGNIZER_COUNT :
@@ -519,13 +596,18 @@ static void resolve_frame(struct arbiter_frame *frame)
 	/* Terminal grants are minted only during complete-frame delivery, while the
 	 * final owner token (if any) is still live. */
 	frame->terminal_action_open = frame->snapshot.contact_count == 0;
+	k_spin_unlock(&state_lock, key);
+	if (resolve_handler != NULL) {
+		resolve_handler(resolve_context, &resolved_token, frame->snapshot.frame_seq);
+	}
 	dispatch_frame_handlers(frame);
+	key = k_spin_lock(&state_lock);
 	frame->terminal_action_open = false;
 
 	/* A terminal frame may still carry a proposal or terminal release record.
 	 * Preserve the result until validation is complete, then invalidate it so no later
 	 * work can mistake it for a live-session token. */
-	if (frame->snapshot.contact_count == 0) {
+	if (frame->lifecycle_epoch == state.lifecycle_epoch && frame->snapshot.contact_count == 0) {
 		terminal_session_id = frame->snapshot.session_id;
 		state.ending.session_id = frame->snapshot.session_id;
 		state.ending.owner = state.token.valid ? state.token.owner : TRAVELERS_PAD_OWNER_NONE;
@@ -533,8 +615,9 @@ static void resolve_frame(struct arbiter_frame *frame)
 			state.token.owner == TRAVELERS_PAD_OWNER_SCROLL && !frame->snapshot.cancelled;
 		if (terminal_scroll) {
 			state.post_session = (struct travelers_pad_owner_token){
-				.session_id = terminal_session_id,
-				.owner_generation = ++state.next_owner_generation,
+					.session_id = terminal_session_id,
+					.owner_generation = ++state.next_owner_generation,
+					.lifecycle_epoch = state.lifecycle_epoch,
 				.owner = TRAVELERS_PAD_OWNER_SCROLL,
 				.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
 				.kind = TRAVELERS_PAD_TOKEN_POST_SESSION,
@@ -547,6 +630,7 @@ static void resolve_frame(struct arbiter_frame *frame)
 		state.token.valid = false;
 		invalidate_decisions_for_session(terminal_session_id);
 	}
+	k_spin_unlock(&state_lock, key);
 }
 
 enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t frame_seq)
@@ -584,14 +668,22 @@ bool travelers_pad_arbiter_issue_terminal_action(
 	enum travelers_pad_owner owner, uint32_t capability,
 	struct travelers_pad_terminal_action_grant *grant)
 {
-	struct arbiter_frame *frame = frame_for(frame_seq);
+	struct arbiter_frame *frame;
 	struct terminal_action_record *record;
 	bool owner_allowed;
+	k_spinlock_key_t key;
+	uint32_t session_id;
+	uint32_t generation;
 
 	if (grant == NULL || recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
-	    capability == TRAVELERS_PAD_CAP_NONE || frame == NULL || !frame->resolved ||
-	    !frame->terminal_action_open || frame->snapshot.cancelled ||
-	    frame->snapshot.contact_count != 0) {
+	    capability == TRAVELERS_PAD_CAP_NONE) {
+		return false;
+	}
+	key = k_spin_lock(&state_lock);
+	frame = frame_for(frame_seq);
+	if (frame == NULL || !frame->resolved || !frame->terminal_action_open ||
+	    frame->snapshot.cancelled || frame->snapshot.contact_count != 0) {
+		k_spin_unlock(&state_lock, key);
 		return false;
 	}
 	/* A bare tap may be granted only if no primary recognizer owns the session.
@@ -606,6 +698,7 @@ bool travelers_pad_arbiter_issue_terminal_action(
 			state.token.owner == owner && token_has_capabilities(&state.token, owner, capability);
 	}
 	if (!owner_allowed) {
+		k_spin_unlock(&state_lock, key);
 		LOG_WRN("terminal action denied session=%u frame=%u recognizer=%u owner=%s",
 			frame->snapshot.session_id, frame_seq, recognizer, owner_name(owner));
 		return false;
@@ -615,8 +708,9 @@ bool travelers_pad_arbiter_issue_terminal_action(
 		state.next_terminal_action++ % ARRAY_SIZE(state.terminal_actions)];
 	*record = (struct terminal_action_record){
 		.grant = {
-			.session_id = frame->snapshot.session_id,
-			.grant_generation = ++state.next_terminal_action_generation,
+				.session_id = frame->snapshot.session_id,
+				.grant_generation = ++state.next_terminal_action_generation,
+				.lifecycle_epoch = state.lifecycle_epoch,
 			.recognizer = recognizer,
 			.owner = owner,
 			.capability = capability,
@@ -624,8 +718,11 @@ bool travelers_pad_arbiter_issue_terminal_action(
 		},
 	};
 	*grant = record->grant;
+	session_id = grant->session_id;
+	generation = grant->grant_generation;
+	k_spin_unlock(&state_lock, key);
 	LOG_INF("terminal action granted session=%u frame=%u generation=%u recognizer=%u owner=%s",
-		grant->session_id, frame_seq, grant->grant_generation, recognizer, owner_name(owner));
+		session_id, frame_seq, generation, recognizer, owner_name(owner));
 	return true;
 }
 
@@ -634,16 +731,23 @@ bool travelers_pad_arbiter_consume_terminal_action(
 	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
 	uint32_t capability, const char *producer)
 {
+	k_spinlock_key_t key;
+	bool consumed = false;
+	uint32_t session_id = 0;
+	uint32_t generation = 0;
+
 	if (grant == NULL || !grant->valid || recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT ||
 	    grant->recognizer != recognizer || grant->owner != owner ||
 	    (grant->capability & capability) != capability) {
 		return false;
 	}
+	key = k_spin_lock(&state_lock);
 	for (uint8_t index = 0; index < ARRAY_SIZE(state.terminal_actions); index++) {
 		struct terminal_action_record *record = &state.terminal_actions[index];
 
 		if (!record->grant.valid || record->consumed ||
-		    record->grant.grant_generation != grant->grant_generation ||
+			    record->grant.grant_generation != grant->grant_generation ||
+			    record->grant.lifecycle_epoch != grant->lifecycle_epoch ||
 		    record->grant.session_id != grant->session_id ||
 		    record->grant.recognizer != recognizer || record->grant.owner != owner ||
 		    (record->grant.capability & capability) != capability) {
@@ -651,11 +755,17 @@ bool travelers_pad_arbiter_consume_terminal_action(
 		}
 		record->consumed = true;
 		grant->valid = false;
-		LOG_INF("terminal action consumed session=%u generation=%u producer=%s",
-			grant->session_id, grant->grant_generation, producer);
-		return true;
+		session_id = grant->session_id;
+		generation = grant->grant_generation;
+		consumed = true;
+		break;
 	}
-	return false;
+	k_spin_unlock(&state_lock, key);
+	if (consumed) {
+		LOG_INF("terminal action consumed session=%u generation=%u producer=%s",
+			session_id, generation, producer);
+	}
+	return consumed;
 }
 
 bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
@@ -663,7 +773,7 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 					    enum travelers_pad_owner requested_owner,
 					    uint32_t capability, const char *producer)
 {
-	struct arbiter_decision *decision = decision_for(ownership_frame_seq);
+	struct arbiter_decision *decision;
 	struct arbiter_output_receipt receipt = {
 		.recognizer = recognizer,
 		.requested_owner = requested_owner,
@@ -671,36 +781,150 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 		.producer = producer,
 	};
 
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	/* decision_for() above only returns stable in-flight storage; re-read it
+	 * while holding the lock before relying on its authority fields. */
+	decision = decision_for(ownership_frame_seq);
 	if (decision == NULL ||
 	    !decision_allows(&decision->token, decision->recognizer, &receipt) ||
 	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
 	    state.token.session_id != decision->token.session_id ||
-	    state.token.owner_generation != decision->token.owner_generation) {
+		    state.token.owner_generation != decision->token.owner_generation ||
+		    state.token.lifecycle_epoch != decision->token.lifecycle_epoch ||
+		    state.token.lifecycle_epoch != state.lifecycle_epoch) {
+		k_spin_unlock(&state_lock, key);
 		LOG_ERR("arbiter output rejected producer=%s ownership-frame=%u owner=%s caps=0x%x",
 			producer, ownership_frame_seq, owner_name(requested_owner), capability);
 		return false;
 	}
+	bool first_authorization = !decision->authoritative_output_verified;
 	if (!decision->authoritative_output_verified) {
 		decision->authoritative_output_verified = true;
+	}
+	k_spin_unlock(&state_lock, key);
+	if (first_authorization) {
 		LOG_INF("arbiter output authorized ownership-frame=%u winner=%s producer=%s",
-			ownership_frame_seq, owner_name(decision->token.owner), producer);
+			ownership_frame_seq, owner_name(requested_owner), producer);
 	}
 	return true;
 }
 
+bool travelers_pad_arbiter_begin_primary_output(
+	uint32_t ownership_frame_seq, enum travelers_pad_recognizer_id recognizer,
+	enum travelers_pad_owner requested_owner, uint32_t capability, const char *producer,
+	struct travelers_pad_arbiter_output_guard *guard)
+{
+	struct arbiter_decision *decision;
+	struct arbiter_output_receipt receipt = {
+		.recognizer = recognizer,
+		.requested_owner = requested_owner,
+		.capability = capability,
+		.producer = producer,
+	};
+	if (guard == NULL) {
+		return false;
+	}
+	*guard = (struct travelers_pad_arbiter_output_guard){};
+	guard->key = k_spin_lock(&state_lock);
+	decision = decision_for(ownership_frame_seq);
+	if (decision == NULL ||
+	    !decision_allows(&decision->token, decision->recognizer, &receipt) ||
+	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
+	    state.token.session_id != decision->token.session_id ||
+	    state.token.owner_generation != decision->token.owner_generation ||
+	    state.token.lifecycle_epoch != decision->token.lifecycle_epoch ||
+	    state.token.lifecycle_epoch != state.lifecycle_epoch) {
+		k_spin_unlock(&state_lock, guard->key);
+		LOG_ERR("arbiter output rejected producer=%s ownership-frame=%u owner=%s caps=0x%x",
+			producer, ownership_frame_seq, owner_name(requested_owner), capability);
+		return false;
+	}
+	decision->authoritative_output_verified = true;
+	guard->held = true;
+	return true;
+}
+
+bool travelers_pad_arbiter_acquire_auxiliary_lease(
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, struct travelers_pad_auxiliary_lease *lease)
+{
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	if (lease == NULL || auxiliary >= TRAVELERS_PAD_AUXILIARY_COUNT ||
+	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
+	    state.token.phase != TRAVELERS_PAD_OWNER_PHASE_ACTIVE ||
+	    state.token.lifecycle_epoch != state.lifecycle_epoch ||
+	    !token_has_capabilities(&state.token, required_owner, capability)) {
+		k_spin_unlock(&state_lock, key);
+		return false;
+	}
+	*lease = (struct travelers_pad_auxiliary_lease){
+		.session_id = state.token.session_id,
+		.owner_generation = state.token.owner_generation,
+		.lifecycle_epoch = state.token.lifecycle_epoch,
+		.auxiliary = auxiliary,
+		.owner = required_owner,
+		.capabilities = capability,
+		.valid = true,
+	};
+	k_spin_unlock(&state_lock, key);
+	return true;
+}
+
 bool travelers_pad_arbiter_authorize_auxiliary_output(
+	const struct travelers_pad_auxiliary_lease *lease,
 	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
 	uint32_t capability, const char *producer)
 {
 	ARG_UNUSED(producer);
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	bool authorized;
 
 	/* Auxiliary output has no independent owner. The only authorization is the
 	 * live primary token, so a delayed timer cannot continue after release,
 	 * cancellation, or a higher-priority ownership hand-off. */
-	return auxiliary < TRAVELERS_PAD_AUXILIARY_COUNT && state.token.valid &&
+	authorized = lease != NULL && lease->valid && auxiliary < TRAVELERS_PAD_AUXILIARY_COUNT &&
+	       lease->auxiliary == auxiliary && lease->owner == required_owner &&
+	       lease->lifecycle_epoch == state.lifecycle_epoch &&
+	       (lease->capabilities & capability) == capability && state.token.valid &&
 	       state.token.kind == TRAVELERS_PAD_TOKEN_COMMITTED &&
 	       state.token.phase == TRAVELERS_PAD_OWNER_PHASE_ACTIVE &&
+	       state.token.session_id == lease->session_id &&
+	       state.token.owner_generation == lease->owner_generation &&
+	       state.token.lifecycle_epoch == lease->lifecycle_epoch &&
 	       token_has_capabilities(&state.token, required_owner, capability);
+	k_spin_unlock(&state_lock, key);
+	return authorized;
+}
+
+bool travelers_pad_arbiter_begin_auxiliary_output(
+	const struct travelers_pad_auxiliary_lease *lease,
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard)
+{
+	ARG_UNUSED(producer);
+	bool authorized;
+
+	if (guard == NULL) {
+		return false;
+	}
+	*guard = (struct travelers_pad_arbiter_output_guard){};
+	guard->key = k_spin_lock(&state_lock);
+	authorized = lease != NULL && lease->valid && auxiliary < TRAVELERS_PAD_AUXILIARY_COUNT &&
+		lease->auxiliary == auxiliary && lease->owner == required_owner &&
+		lease->lifecycle_epoch == state.lifecycle_epoch &&
+		(lease->capabilities & capability) == capability && state.token.valid &&
+		state.token.kind == TRAVELERS_PAD_TOKEN_COMMITTED &&
+		state.token.phase == TRAVELERS_PAD_OWNER_PHASE_ACTIVE &&
+		state.token.session_id == lease->session_id &&
+		state.token.owner_generation == lease->owner_generation &&
+		state.token.lifecycle_epoch == lease->lifecycle_epoch &&
+		token_has_capabilities(&state.token, required_owner, capability);
+	if (!authorized) {
+		k_spin_unlock(&state_lock, guard->key);
+		return false;
+	}
+	guard->held = true;
+	return true;
 }
 
 bool travelers_pad_arbiter_activate_owner(uint32_t ownership_frame_seq,
@@ -708,7 +932,7 @@ bool travelers_pad_arbiter_activate_owner(uint32_t ownership_frame_seq,
 					  enum travelers_pad_owner requested_owner,
 					  const char *producer)
 {
-	struct arbiter_decision *decision = decision_for(ownership_frame_seq);
+	struct arbiter_decision *decision;
 	struct arbiter_output_receipt receipt = {
 		.recognizer = recognizer,
 		.requested_owner = requested_owner,
@@ -716,18 +940,26 @@ bool travelers_pad_arbiter_activate_owner(uint32_t ownership_frame_seq,
 		.producer = producer,
 	};
 
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	decision = decision_for(ownership_frame_seq);
 	if (decision == NULL || !decision_allows(&decision->token, decision->recognizer, &receipt) ||
 	    !state.token.valid || state.token.kind != TRAVELERS_PAD_TOKEN_COMMITTED ||
 	    state.token.session_id != decision->token.session_id ||
 	    state.token.owner_generation != decision->token.owner_generation ||
+	    state.token.lifecycle_epoch != decision->token.lifecycle_epoch ||
+	    state.token.lifecycle_epoch != state.lifecycle_epoch ||
 	    state.token.phase != TRAVELERS_PAD_OWNER_PHASE_RESERVED) {
+		k_spin_unlock(&state_lock, key);
 		LOG_ERR("arbiter activation rejected producer=%s ownership-frame=%u owner=%s",
 			producer, ownership_frame_seq, owner_name(requested_owner));
 		return false;
 	}
 	state.token.phase = TRAVELERS_PAD_OWNER_PHASE_ACTIVE;
+	uint32_t session_id = state.token.session_id;
+	uint32_t generation = state.token.owner_generation;
+	k_spin_unlock(&state_lock, key);
 	LOG_INF("arbiter owner active session=%u generation=%u owner=%s producer=%s",
-		state.token.session_id, state.token.owner_generation, owner_name(state.token.owner), producer);
+		session_id, generation, owner_name(requested_owner), producer);
 	return true;
 }
 
@@ -735,13 +967,17 @@ bool travelers_pad_arbiter_acquire_post_session_lease(
 	uint32_t session_id, enum travelers_pad_owner required_owner, uint32_t capability,
 	struct travelers_pad_owner_token *lease)
 {
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
 	if (lease == NULL || !state.post_session.valid ||
 	    state.post_session.kind != TRAVELERS_PAD_TOKEN_POST_SESSION ||
 	    state.post_session.session_id != session_id ||
-	    !token_has_capabilities(&state.post_session, required_owner, capability)) {
+		    state.post_session.lifecycle_epoch != state.lifecycle_epoch ||
+		    !token_has_capabilities(&state.post_session, required_owner, capability)) {
+		k_spin_unlock(&state_lock, key);
 		return false;
 	}
 	*lease = state.post_session;
+	k_spin_unlock(&state_lock, key);
 	return true;
 }
 
@@ -750,20 +986,123 @@ bool travelers_pad_arbiter_authorize_post_session_output(
 	uint32_t capability, const char *producer)
 {
 	ARG_UNUSED(producer);
+	k_spinlock_key_t key = k_spin_lock(&state_lock);
+	bool authorized;
 
-	return lease != NULL && lease->valid && lease->kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
+	authorized = lease != NULL && lease->valid && lease->kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
 	       token_has_capabilities(lease, required_owner, capability) &&
 	       state.post_session.valid && state.post_session.kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
 	       state.post_session.session_id == lease->session_id &&
 	       state.post_session.owner_generation == lease->owner_generation &&
+	       state.post_session.lifecycle_epoch == lease->lifecycle_epoch &&
+	       state.post_session.lifecycle_epoch == state.lifecycle_epoch &&
 	       token_has_capabilities(&state.post_session, required_owner, capability);
+	k_spin_unlock(&state_lock, key);
+	return authorized;
+}
+
+bool travelers_pad_arbiter_begin_post_session_output(
+	const struct travelers_pad_owner_token *lease, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard)
+{
+	ARG_UNUSED(producer);
+	bool authorized;
+
+	if (guard == NULL) {
+		return false;
+	}
+	*guard = (struct travelers_pad_arbiter_output_guard){};
+	guard->key = k_spin_lock(&state_lock);
+	authorized = lease != NULL && lease->valid && lease->kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
+		token_has_capabilities(lease, required_owner, capability) && state.post_session.valid &&
+		state.post_session.kind == TRAVELERS_PAD_TOKEN_POST_SESSION &&
+		state.post_session.session_id == lease->session_id &&
+		state.post_session.owner_generation == lease->owner_generation &&
+		state.post_session.lifecycle_epoch == lease->lifecycle_epoch &&
+		state.post_session.lifecycle_epoch == state.lifecycle_epoch &&
+		token_has_capabilities(&state.post_session, required_owner, capability);
+	if (!authorized) {
+		k_spin_unlock(&state_lock, guard->key);
+		return false;
+	}
+	guard->held = true;
+	return true;
+}
+
+bool travelers_pad_arbiter_begin_terminal_action_output(
+	struct travelers_pad_terminal_action_grant *grant,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard)
+{
+	bool consumed = false;
+	if (guard == NULL || grant == NULL || !grant->valid ||
+		recognizer >= TRAVELERS_PAD_RECOGNIZER_COUNT || grant->recognizer != recognizer ||
+		grant->owner != owner || (grant->capability & capability) != capability) {
+		return false;
+	}
+	*guard = (struct travelers_pad_arbiter_output_guard){};
+	guard->key = k_spin_lock(&state_lock);
+	for (uint8_t index = 0; index < ARRAY_SIZE(state.terminal_actions); index++) {
+		struct terminal_action_record *record = &state.terminal_actions[index];
+
+		if (!record->grant.valid || record->consumed ||
+		    record->grant.grant_generation != grant->grant_generation ||
+		    record->grant.lifecycle_epoch != grant->lifecycle_epoch ||
+		    record->grant.lifecycle_epoch != state.lifecycle_epoch ||
+		    record->grant.session_id != grant->session_id ||
+		    record->grant.recognizer != recognizer || record->grant.owner != owner ||
+		    (record->grant.capability & capability) != capability) {
+			continue;
+		}
+		record->consumed = true;
+		grant->valid = false;
+		consumed = true;
+		break;
+	}
+	if (!consumed) {
+		k_spin_unlock(&state_lock, guard->key);
+		return false;
+	}
+	guard->held = true;
+	guard->terminal_action_consumed = true;
+	guard->terminal_action_session_id = grant->session_id;
+	guard->terminal_action_generation = grant->grant_generation;
+	guard->terminal_action_producer = producer;
+	return true;
+}
+
+void travelers_pad_arbiter_end_output(struct travelers_pad_arbiter_output_guard *guard)
+{
+	bool terminal_action_consumed;
+	uint32_t session_id;
+	uint32_t generation;
+	const char *producer;
+
+	if (guard != NULL && guard->held) {
+		terminal_action_consumed = guard->terminal_action_consumed;
+		session_id = guard->terminal_action_session_id;
+		generation = guard->terminal_action_generation;
+		producer = guard->terminal_action_producer;
+		guard->held = false;
+		k_spin_unlock(&state_lock, guard->key);
+		if (terminal_action_consumed) {
+			LOG_INF("terminal action consumed session=%u generation=%u producer=%s", session_id,
+				generation, producer);
+		}
+	}
 }
 
 void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer, uint32_t frame_seq)
 {
 	struct arbiter_frame *frame = frame_for(frame_seq);
+	bool resolve = false;
+	bool dispatch_observer = false;
+	k_spinlock_key_t key;
 
+	key = k_spin_lock(&state_lock);
+	frame = frame_for(frame_seq);
 	if (!frame_accepts_recognizer(frame, recognizer)) {
+		k_spin_unlock(&state_lock, key);
 		return;
 	}
 	frame->observed_mask |= 1U << recognizer;
@@ -775,6 +1114,11 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
 	if (!frame->resolved &&
 	    (frame->observed_mask & state.primary_registered_mask) == state.primary_registered_mask) {
 		frame->resolved = true;
+		resolve = true;
+	}
+	dispatch_observer = frame->resolved && !is_primary_recognizer(recognizer);
+	k_spin_unlock(&state_lock, key);
+	if (resolve) {
 		resolve_frame(frame);
 	}
 	/* An observer may be called after primary resolution, or it may have
@@ -782,13 +1126,15 @@ void travelers_pad_arbiter_observed(enum travelers_pad_recognizer_id recognizer,
 	 * cases dispatch exactly once only when both facts are true.
 	 * observerはprimary裁定後に呼ばれる場合と、最終primary acknowledgement前に生frameを
 	 * 消費済みの場合がある。両方の条件が満たされた時だけ一度dispatchする。 */
-	if (frame->resolved && !is_primary_recognizer(recognizer)) {
+	if (dispatch_observer || (resolve && !is_primary_recognizer(recognizer))) {
 		dispatch_frame_handler(frame, recognizer);
 	}
 	/* Keep the immutable frame available to late observer callbacks. */
+	key = k_spin_lock(&state_lock);
 	if ((frame->observed_mask & state.registered_mask) == state.registered_mask) {
 		frame->active = false;
 	}
+	k_spin_unlock(&state_lock, key);
 }
 
 bool travelers_pad_arbiter_note_terminal_output(uint32_t ownership_frame_seq,

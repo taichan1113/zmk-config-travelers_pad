@@ -35,6 +35,7 @@ int travelers_pad_output_primary(const struct device *dev, uint32_t ownership_fr
 /* An auxiliary output is emitted only while the delegated active owner is
  * current. / auxiliary出力は委譲されたactive ownerが現行の間だけ送る。 */
 int travelers_pad_output_auxiliary(const struct device *dev,
+				  const struct travelers_pad_auxiliary_lease *lease,
 				  enum travelers_pad_auxiliary_id auxiliary,
 				  enum travelers_pad_owner owner, uint32_t capability,
 				  uint8_t type, uint16_t code, int32_t value, bool sync,
@@ -85,5 +86,9 @@ int travelers_pad_output_behavior_primary(
  * recognizer claimは持たないが、全ホスト向けREL eventを集約するため同じtransportを使う。 */
 int travelers_pad_output_routed_pointer(const struct device *dev, uint8_t type, uint16_t code,
 				 int32_t value, bool sync, const char *producer);
+
+/* A cancellation makes every broker-owned held button eligible for release.
+ * Failed releases remain pending and are retried by the next broker request. */
+void travelers_pad_output_cancel_all(const char *producer);
 
 #endif

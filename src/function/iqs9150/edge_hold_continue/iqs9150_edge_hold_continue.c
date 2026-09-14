@@ -68,11 +68,17 @@ struct edge_hold_data {
 	bool scroll_repeat_armed;
 	struct k_work_delayable drag_repeat_work;
 	struct k_work_delayable scroll_repeat_work;
+	struct k_work_sync drag_repeat_sync;
+	struct k_work_sync scroll_repeat_sync;
+	struct travelers_pad_auxiliary_lease drag_lease;
+	struct travelers_pad_auxiliary_lease scroll_lease;
 	int16_t scroll_horizontal;
 	int16_t scroll_vertical;
 	int16_t scroll_direction_horizontal;
 	int16_t scroll_direction_vertical;
 	uint32_t arbiter_frame_seq;
+	uint32_t drag_work_generation;
+	uint32_t scroll_work_generation;
 };
 
 static const char *edge_name(enum edge_hold_edge edge)
@@ -146,8 +152,12 @@ static void stop_drag_repeat(const struct device *dev)
 {
 	struct edge_hold_data *data = dev->data;
 
-	k_work_cancel_delayable(&data->drag_repeat_work);
+	/* State and lease are replaced only after the running callback has exited;
+	 * asynchronous cancel alone would let an old callback observe a new lease. */
+	(void)k_work_cancel_delayable_sync(&data->drag_repeat_work, &data->drag_repeat_sync);
+	data->drag_work_generation++;
 	data->drag_repeat_armed = false;
+	data->drag_lease.valid = false;
 }
 
 static void drag_repeat_work_handler(struct k_work *work)
@@ -158,13 +168,16 @@ static void drag_repeat_work_handler(struct k_work *work)
 	int16_t dx = 0;
 	int16_t dy = 0;
 	int rc;
+	uint32_t generation = data->drag_work_generation;
+	struct travelers_pad_auxiliary_lease lease = data->drag_lease;
 
 	/* The tap/drag module owns the button. This module only adds motion while
 	 * the arbiter still holds the matching drag token.
 	 * ボタン状態はtap/dragモジュールが所有する。本モジュールはarbiterが同じ
 	 * drag tokenを保持する間だけ移動を追加する。 */
 	if (data->drag_fingers == 0 || data->drag_edge == EDGE_HOLD_NONE ||
-	    !travelers_pad_arbiter_authorize_auxiliary_output(
+	    generation != data->drag_work_generation ||
+	    !travelers_pad_arbiter_authorize_auxiliary_output(&lease,
 		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
 		TRAVELERS_PAD_CAP_POINTER_DELTA, "edge-hold-drag")) {
 		data->drag_repeat_armed = false;
@@ -189,13 +202,13 @@ static void drag_repeat_work_handler(struct k_work *work)
 	}
 
 	if (dx != 0) {
-		rc = travelers_pad_output_auxiliary(
-			data->dev, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+			rc = travelers_pad_output_auxiliary(
+			data->dev, &lease, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
 			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_X, dx, true,
 			"edge-hold-drag-x");
 	} else {
-		rc = travelers_pad_output_auxiliary(
-			data->dev, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+			rc = travelers_pad_output_auxiliary(
+			data->dev, &lease, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
 			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_Y, dy, true,
 			"edge-hold-drag-y");
 	}
@@ -206,7 +219,9 @@ static void drag_repeat_work_handler(struct k_work *work)
 		}
 		LOG_ERR("drag continuation report failed: %d", rc);
 	}
-	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_repeat_ms));
+	if (generation == data->drag_work_generation) {
+		k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_repeat_ms));
+	}
 }
 
 static void start_drag_repeat(const struct device *dev)
@@ -214,10 +229,14 @@ static void start_drag_repeat(const struct device *dev)
 	const struct edge_hold_config *cfg = dev->config;
 	struct edge_hold_data *data = dev->data;
 
-	if (data->drag_repeat_armed) {
+	if (data->drag_repeat_armed ||
+	    !travelers_pad_arbiter_acquire_auxiliary_lease(
+		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
+		TRAVELERS_PAD_CAP_POINTER_DELTA, &data->drag_lease)) {
 		return;
 	}
-	k_work_cancel_delayable(&data->drag_repeat_work);
+	(void)k_work_cancel_delayable_sync(&data->drag_repeat_work, &data->drag_repeat_sync);
+	data->drag_work_generation++;
 	data->drag_repeat_armed = true;
 	k_work_schedule(&data->drag_repeat_work, K_MSEC(cfg->drag_start_delay_ms));
 	LOG_INF("drag continuation started edge=%s delay=%ums period=%ums delta=%d",
@@ -229,10 +248,12 @@ static void stop_scroll_repeat(const struct device *dev)
 {
 	struct edge_hold_data *data = dev->data;
 
-	k_work_cancel_delayable(&data->scroll_repeat_work);
+	(void)k_work_cancel_delayable_sync(&data->scroll_repeat_work, &data->scroll_repeat_sync);
+	data->scroll_work_generation++;
 	data->scroll_repeat_armed = false;
 	data->scroll_horizontal = 0;
 	data->scroll_vertical = 0;
+	data->scroll_lease.valid = false;
 }
 
 static void scroll_repeat_work_handler(struct k_work *work)
@@ -241,13 +262,16 @@ static void scroll_repeat_work_handler(struct k_work *work)
 						     scroll_repeat_work.work);
 	const struct edge_hold_config *cfg = data->dev->config;
 	int rc;
+	uint32_t generation = data->scroll_work_generation;
+	struct travelers_pad_auxiliary_lease lease = data->scroll_lease;
 
 	if (data->scroll_fingers != 2 || data->scroll_edge == EDGE_HOLD_NONE ||
 	    (data->scroll_horizontal == 0 && data->scroll_vertical == 0)) {
 		data->scroll_repeat_armed = false;
 		return;
 	}
-	if (!travelers_pad_arbiter_authorize_auxiliary_output(
+	if (generation != data->scroll_work_generation ||
+	    !travelers_pad_arbiter_authorize_auxiliary_output(&lease,
 		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_SCROLL,
 		TRAVELERS_PAD_CAP_SCROLL_DELTA, "edge-hold-scroll")) {
 		data->scroll_repeat_armed = false;
@@ -255,13 +279,13 @@ static void scroll_repeat_work_handler(struct k_work *work)
 	}
 
 	if (data->scroll_horizontal != 0) {
-		rc = travelers_pad_output_auxiliary(
-			cfg->scroll_output_device, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
+			rc = travelers_pad_output_auxiliary(
+			cfg->scroll_output_device, &lease, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
 			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL,
 			INPUT_REL_HWHEEL, data->scroll_horizontal, true, "edge-hold-scroll-hwheel");
 	} else {
-		rc = travelers_pad_output_auxiliary(
-			cfg->scroll_output_device, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
+			rc = travelers_pad_output_auxiliary(
+			cfg->scroll_output_device, &lease, TRAVELERS_PAD_AUXILIARY_EDGE_HOLD,
 			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL,
 			INPUT_REL_WHEEL, data->scroll_vertical, true, "edge-hold-scroll-wheel");
 	}
@@ -272,7 +296,9 @@ static void scroll_repeat_work_handler(struct k_work *work)
 		}
 		LOG_ERR("scroll continuation report failed: %d", rc);
 	}
-	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_repeat_ms));
+	if (generation == data->scroll_work_generation) {
+		k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_repeat_ms));
+	}
 }
 
 static void start_scroll_repeat(const struct device *dev, int16_t horizontal, int16_t vertical)
@@ -281,7 +307,10 @@ static void start_scroll_repeat(const struct device *dev, int16_t horizontal, in
 	struct edge_hold_data *data = dev->data;
 
 	if ((horizontal == 0 && vertical == 0) || data->scroll_edge == EDGE_HOLD_NONE ||
-	    data->scroll_fingers != 2 || data->scroll_repeat_armed) {
+	    data->scroll_fingers != 2 || data->scroll_repeat_armed ||
+	    !travelers_pad_arbiter_acquire_auxiliary_lease(
+		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_SCROLL,
+		TRAVELERS_PAD_CAP_SCROLL_DELTA, &data->scroll_lease)) {
 		return;
 	}
 
@@ -293,7 +322,8 @@ static void start_scroll_repeat(const struct device *dev, int16_t horizontal, in
 				  (horizontal > 0 ? cfg->scroll_repeat_delta : -cfg->scroll_repeat_delta);
 	data->scroll_vertical = vertical == 0 ? 0 :
 				(vertical > 0 ? cfg->scroll_repeat_delta : -cfg->scroll_repeat_delta);
-	k_work_cancel_delayable(&data->scroll_repeat_work);
+	(void)k_work_cancel_delayable_sync(&data->scroll_repeat_work, &data->scroll_repeat_sync);
+	data->scroll_work_generation++;
 	data->scroll_repeat_armed = true;
 	k_work_schedule(&data->scroll_repeat_work, K_MSEC(cfg->scroll_start_delay_ms));
 	LOG_INF("scroll continuation started edge=%s delay=%ums period=%ums delta=%d axis=%s",
@@ -329,10 +359,7 @@ static void detect_drag_edge(const struct device *dev)
 	}
 	/* The owner may have been committed after this detector first saw the edge.
 	 * Retry arm-on-entry without requiring the finger to leave and re-enter. */
-	if (data->drag_edge != EDGE_HOLD_NONE && !data->drag_repeat_armed &&
-	    travelers_pad_arbiter_authorize_auxiliary_output(
-		TRAVELERS_PAD_AUXILIARY_EDGE_HOLD, TRAVELERS_PAD_OWNER_DRAG,
-		TRAVELERS_PAD_CAP_POINTER_DELTA, "edge-hold-drag-arm")) {
+	if (data->drag_edge != EDGE_HOLD_NONE && !data->drag_repeat_armed) {
 		start_drag_repeat(dev);
 	}
 }

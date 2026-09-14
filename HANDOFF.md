@@ -1,6 +1,6 @@
 # Travelers Pad handoff / 引継ぎ書
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 Integration target: `main`
 Development branch for this milestone: `feat/arbiter-lifecycle-leases`
 Integrated commit: `06e334f0626d250a3a8b8bc0f16ba6a35cf72c93`
@@ -253,11 +253,11 @@ development base; do not revert the accepted normal-path architecture.
 
 | Order / 順序 | Priority / 優先度 | Task / タスク | Completion / 完了度 | Required verification / 必須検証 |
 |---:|---|---|---:|---|
-| 1 | P0 | Add a global lifecycle epoch and `arbiter_cancel_all()` that invalidate the current token, terminal grant, post-session lease, auxiliary lease, and observer/work generations even when no session is active / session外resetでも全token・lease・work世代を失効するglobal epochと`cancel_all` | 0% | Sensor reset during scroll inertia; reset after normal release but before delayed output |
-| 2 | P0 | Synchronize arbiter state or serialize every state mutation/output request in one execution context / arbiter stateをlock保護するか単一実行contextへ直列化 | 0% | Concurrent terminal-grant consumption and cancel; callback-order permutation tests |
-| 3 | P0 | Give tap/drag, edge hold, and inertia work items captured generations; stop reinitializing work after asynchronous cancel / 各delayable workへ取得時generationを持たせ、非同期cancel後にworkを再初期化しない | 0% | Cancel exactly at tap timer boundary; old work executing after a new session starts |
-| 4 | P0 | Add an explicit session/generation-bound auxiliary lease for edge hold / edge holdへsession・generation付きauxiliary leaseを追加 | 0% | Old edge-hold work during a following DRAG and a following SCROLL session |
-| 5 | P0 | Make the broker own pending button-up and retry state, including terminal click press/release / brokerがterminal clickを含むpending button-upとretryを所有 | 0% | Inject press success plus release enqueue failure; retry without duplicate release or stuck button |
+| 1 | P0 | Add a global lifecycle epoch and `arbiter_cancel_all()` that invalidate the current token, terminal grant, post-session lease, auxiliary lease, and observer/work generations even when no session is active / session外resetでも全token・lease・work世代を失効するglobal epochと`cancel_all` | Hardware smoke passed (user-reported) / 実機smoke確認済み（ユーザー報告） | Preserve the serial capture with the reset timing when repeating this test |
+| 2 | P0 | Synchronize arbiter state or serialize every state mutation/output request in one execution context / arbiter stateをlock保護するか単一実行contextへ直列化 | Partial: state transitions plus direct HID authorization-to-enqueue are atomic; queued routed-pointer output and arbitrary virtual-KSCAN callbacks remain / 部分実装: state遷移と直接HIDの認可〜enqueueは原子的。queue経由pointer出力と任意virtual-KSCAN callbackが残る | Reset racing direct output; then design a frame-bound transport for routed pointer and KSCAN |
+| 3 | P0 | Give tap/drag, edge hold, and inertia work items captured generations; stop reinitializing work after asynchronous cancel / 各delayable workへ取得時generationを持たせ、非同期cancel後にworkを再初期化しない | Implementation complete: generations are invalidated and input-side cancellation synchronously quiesces old handlers before state replacement / 実装完了: 世代を失効し、入力側cancelは旧handler停止を待ってからstateを置換 | Cancel exactly at tap timer boundary; old work executing after a new session starts |
+| 4 | P0 | Add an explicit session/generation-bound auxiliary lease for edge hold / edge holdへsession・generation付きauxiliary leaseを追加 | Hardware smoke passed (user-reported) / 実機smoke確認済み（ユーザー報告） | Preserve drag and scroll continuation serial captures when repeating this test |
+| 5 | P0 | Make the broker own pending button-up and retry state, including terminal click press/release / brokerがterminal clickを含むpending button-upとretryを所有 | Implementation complete; fault injection pending / 実装完了・fault injection未確認 | Inject press success plus release enqueue failure; retry without duplicate release or stuck button |
 | 6 | P1 | Correct Kconfig, init-priority, Devicetree phandle, and KSCAN dependencies; build a feature enable/disable matrix / feature単位の依存関係整理とbuild matrix | 0% | Build router-only, tap-only, router+tap, gesture-only, Tip-Tap-only, observer combinations, and the shipped full configuration |
 | 7 | P1 | Extract pinch/rotation geometry into a `TRANSFORM_GESTURE` primary owner with `PINCH`, `ROTATE`, and `PINCH_ROTATE` submodes / pinch・rotationを専用primary ownerへ分離 | 0% | Once geometry commits, release must never fall back to a 2F tap; verify SCROLL priority evidence |
 | 8 | P1 | Route the optional grid adapter through the output broker before enabling it / 任意grid adapterを有効化前にbroker経由へ移行 | 0% | Grid-only build and KSCAN token/cancel regression |
@@ -279,10 +279,10 @@ lifecycle失効はstate accessの同期なしには保証できないため、1�
 
 Normal user-visible paths: **100%**.
 Overall migration including cancel, concurrency, output-failure safety, and
-feature isolation: **65%**.
+feature isolation: **70%**.
 
 通常のユーザー操作経路: **100%**。
-cancel、並行性、出力失敗時安全性、feature独立性を含む全体移行度: **65%**。
+cancel、並行性、出力失敗時安全性、feature独立性を含む全体移行度: **70%**。
 
 | Area / 領域状態 | Completion / 完了度 |
 |---|---:|
@@ -290,9 +290,9 @@ cancel、並行性、出力失敗時安全性、feature独立性を含む全体�
 | session boundary and frame numbering / session境界・frame連番 | 85% |
 | five primary recognizer proposals / 5 primary recognizerのproposal | 100% |
 | priority arbiter decision / 優先順位付きarbiter決定 | 100% |
-| primary output token gate / primary出力のtoken gate | 75% |
-| single ownership path / 単一の所有権経路 | 75% |
-| edge hold and inertia arbiter integration / edge hold・inertiaのarbiter統合 | 65% |
+| primary output token gate / primary出力のtoken gate | 85% |
+| single ownership path / 単一の所有権経路 | 80% |
+| edge hold and inertia arbiter integration / edge hold・inertiaのarbiter統合 | 80% |
 | output failure recovery / 出力失敗時復旧 | 35% |
 | feature-level disable independence / feature単位の無効化独立性 | 20% |
 | immutable complete ContactFrame / immutable完全ContactFrame | 0% |

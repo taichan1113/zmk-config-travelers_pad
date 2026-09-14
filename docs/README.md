@@ -44,6 +44,7 @@ integration failure. The full integration test remains the release gate.
 | Edge-hold 2F scroll continuation / エッジホールド・2本指スクロール継続 | [edge-hold-scroll-continuation-test.md](edge-hold-scroll-continuation-test.md) |
 | 2F scroll inertia / 2本指スクロール慣性 | [two-finger-scroll-inertia-test.md](two-finger-scroll-inertia-test.md) |
 | Arbiter lifecycle and leases / Arbiter lifecycle・lease | [arbiter-lifecycle-lease-test.md](arbiter-lifecycle-lease-test.md) |
+| Arbiter safety hardening / Arbiter安全性強化 | [arbiter-safety-hardening-test.md](arbiter-safety-hardening-test.md) |
 | Arbiter output broker / Arbiter output broker | [arbiter-output-broker-test.md](arbiter-output-broker-test.md) |
 | Arbiter complete-frame routing / Arbiter完全frame routing | [arbiter-complete-frame-routing-test.md](arbiter-complete-frame-routing-test.md) |
 | Primary decision and observer boundary / Primary裁定とobserver境界 | [arbiter-observer-boundary-test.md](arbiter-observer-boundary-test.md) |
