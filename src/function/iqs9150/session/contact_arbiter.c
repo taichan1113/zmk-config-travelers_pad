@@ -122,7 +122,20 @@ static struct k_spinlock state_lock;
 
 static bool is_primary_recognizer(enum travelers_pad_recognizer_id recognizer)
 {
-	return recognizer <= TRAVELERS_PAD_RECOGNIZER_TIP_TAP;
+	switch (recognizer) {
+	case TRAVELERS_PAD_RECOGNIZER_ROUTER:
+	case TRAVELERS_PAD_RECOGNIZER_TAP_DRAG:
+	case TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE:
+	case TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL:
+	case TRAVELERS_PAD_RECOGNIZER_TIP_TAP:
+	case TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE:
+		return true;
+	case TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA:
+	case TRAVELERS_PAD_RECOGNIZER_EDGE_HOLD:
+	case TRAVELERS_PAD_RECOGNIZER_COUNT:
+	default:
+		return false;
+	}
 }
 
 static const char *owner_name(enum travelers_pad_owner owner)
@@ -132,6 +145,8 @@ static const char *owner_name(enum travelers_pad_owner owner)
 		return "drag";
 	case TRAVELERS_PAD_OWNER_SCROLL:
 		return "scroll";
+	case TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE:
+		return "transform";
 	case TRAVELERS_PAD_OWNER_MULTI_GESTURE:
 		return "gesture";
 	case TRAVELERS_PAD_OWNER_EDGE_DIAL:
@@ -156,6 +171,8 @@ static uint8_t owner_priority(enum travelers_pad_owner owner)
 		return 100;
 	case TRAVELERS_PAD_OWNER_DRAG:
 		return 90;
+	case TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE:
+		return 85;
 	case TRAVELERS_PAD_OWNER_MULTI_GESTURE:
 		return 80;
 	case TRAVELERS_PAD_OWNER_SCROLL:

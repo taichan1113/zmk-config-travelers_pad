@@ -12,6 +12,7 @@
 };
 
 &iqs9150_gesture_kscan { status = "disabled"; };
+&iqs9150_transform_gesture { status = "disabled"; };
 &iqs9150_tip_tap { status = "disabled"; };
 &iqs9150_edge_dial { status = "disabled"; };
 &iqs9150_tap_drag { status = "disabled"; };

@@ -24,6 +24,7 @@ enum travelers_pad_owner {
 	TRAVELERS_PAD_OWNER_NONE,
 	TRAVELERS_PAD_OWNER_DRAG,
 	TRAVELERS_PAD_OWNER_SCROLL,
+	TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE,
 	TRAVELERS_PAD_OWNER_MULTI_GESTURE,
 	TRAVELERS_PAD_OWNER_EDGE_DIAL,
 	TRAVELERS_PAD_OWNER_TIP_TAP,
@@ -35,6 +36,9 @@ enum travelers_pad_recognizer_id {
 	TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 	TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 	TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+	/* Two-finger pinch/rotation geometry is a primary recognizer. Once it
+	 * claims a transform, the same session cannot fall back to scroll or tap. */
+	TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE,
 	/* Auxiliary observer: proposes no owner and receives frames only so
 	 * inertia can associate a physical release with the arbiter token. The
 	 * preceding five IDs remain the primary recognizers. */

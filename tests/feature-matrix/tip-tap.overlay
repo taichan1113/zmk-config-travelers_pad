@@ -10,6 +10,7 @@
 };
 
 &iqs9150_gesture_kscan { status = "disabled"; };
+&iqs9150_transform_gesture { status = "disabled"; };
 &iqs9150_edge_dial { status = "disabled"; };
 &iqs9150_router { status = "disabled"; };
 &iqs9150_pointer { status = "disabled"; };

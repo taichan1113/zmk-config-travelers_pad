@@ -209,6 +209,17 @@
         status = "okay";
     };
 
+    /* Pinch/rotation has a dedicated primary owner. It deliberately receives
+     * normalized session frames directly, so a transform can suppress both
+     * pointer routing and a terminal two-finger tap. */
+    iqs9150_transform_gesture: iqs9150_transform_gesture {
+        compatible = "zmk,travelers-pad-iqs9150-transform-gesture";
+        input-device = <&iqs9150_session>;
+        distance-threshold = <30000>;
+        rotation-threshold = <30000>;
+        status = "okay";
+    };
+
     /* Function module: normalized session frames are classified before pointer
      * handling. / 正規化session frameをポインタ処理前にジェスチャー種別へ
      * 振り分ける。 */

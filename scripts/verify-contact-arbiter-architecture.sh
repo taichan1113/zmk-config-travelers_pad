@@ -74,6 +74,8 @@ require_source 'function/iqs9150/session/contact_arbiter.c' \
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'is_primary_recognizer'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
+    'TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE'
+require_source 'function/iqs9150/session/contact_arbiter.c' \
     'frame->resolved'
 require_source 'function/iqs9150/session/contact_arbiter.c' \
     'frame_handler_mask'
@@ -95,6 +97,10 @@ require_source 'function/iqs9150/tip_tap/iqs9150_tip_tap_kscan.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/tip_tap/iqs9150_tip_tap_kscan.c' \
     'travelers_pad_output_behavior_primary'
+require_source 'function/iqs9150/transform_gesture/iqs9150_transform_gesture.c' \
+    'TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE'
+require_source 'function/iqs9150/transform_gesture/iqs9150_transform_gesture.c' \
+    'TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE'
 require_source 'function/iqs9150/multifinger_gesture/iqs9150_multifinger_gesture_kscan.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/multifinger_gesture/iqs9150_multifinger_gesture_kscan.c' \

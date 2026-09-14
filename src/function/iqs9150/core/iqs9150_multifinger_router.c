@@ -303,7 +303,8 @@ static void router_deliver_resolved_frame(
 		}
 		return;
 	}
-	if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
+	if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE ||
+	    owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
 		router_suppress_pointer(dev, data);
 		data->state = ROUTER_CLAIM_MULTIFINGER;
 		if (snapshot->contact_count == 0) {

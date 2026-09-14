@@ -36,6 +36,7 @@ integration failure. The full integration test remains the release gate.
 |---|---|
 | Pointer baseline / ポインタ基本動作 | [pointer-isolated-test.md](pointer-isolated-test.md) |
 | Router hand-off / ルーター受け渡し | [router-pointer-isolated-test.md](router-pointer-isolated-test.md) |
+| Pinch/rotation × scroll/tap / pinch・rotation × scroll/tap | [transform-gesture-arbitration-test.md](transform-gesture-arbitration-test.md) |
 | Tap and drag / タップ・ドラッグ | [tap-drag-isolated-test.md](tap-drag-isolated-test.md) |
 | 3–5F gestures / 3〜5本指ジェスチャー | [multifinger-gesture-integration-test.md](multifinger-gesture-integration-test.md) |
 | Edge circle continuation / エッジ円継続 | [edge-dial-circle-isolated-test.md](edge-dial-circle-isolated-test.md) |

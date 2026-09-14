@@ -34,6 +34,7 @@ require "$kconfig" 'IQS9150_EV02_DRIVER && TRAVELERS_PAD_IQS9150_CONTACT_SESSION
 require "$kconfig" 'IQS9150_EV02_DRIVER && TRAVELERS_PAD_IQS9150_CONTACT_SESSION && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TIP_TAP_KSCAN_ENABLED'
 require "$kconfig" 'select KSCAN'
 require "$kconfig" 'IQS9150_EV02_DRIVER && TRAVELERS_PAD_IQS9150_CONTACT_SESSION && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_MULTIFINGER_GESTURE_KSCAN_ENABLED'
+require "$kconfig" 'IQS9150_EV02_DRIVER && TRAVELERS_PAD_IQS9150_CONTACT_SESSION && DT_HAS_ZMK_TRAVELERS_PAD_IQS9150_TRANSFORM_GESTURE_ENABLED'
 
 # Session-owned sources must remain compiled as a unit. A partial session
 # build would leave producers with an arbiter/broker declaration but no owner.
