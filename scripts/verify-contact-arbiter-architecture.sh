@@ -101,6 +101,10 @@ require_source 'function/iqs9150/transform_gesture/iqs9150_transform_gesture.c' 
     'TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE'
 require_source 'function/iqs9150/transform_gesture/iqs9150_transform_gesture.c' \
     'TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE'
+require_source 'function/iqs9150/transform_gesture/iqs9150_transform_gesture.c' \
+    'travelers_pad_output_behavior_primary'
+require "$overlay" 'kscan = <&iqs9150_transform_gesture>;'
+require "$overlay" 'row-offset = <20>;'
 require_source 'function/iqs9150/multifinger_gesture/iqs9150_multifinger_gesture_kscan.c' \
     'travelers_pad_arbiter_submit'
 require_source 'function/iqs9150/multifinger_gesture/iqs9150_multifinger_gesture_kscan.c' \
