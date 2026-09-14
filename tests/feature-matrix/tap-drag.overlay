@@ -1,0 +1,23 @@
+/* Diagnostic profile: session -> tap/drag only.
+ * 診断profile: session -> tap/drag のみ。 */
+
+/ {
+    /* See router-pointer.overlay for why omitted composite children are
+     * redirected to mock KSCAN instead of being disabled. */
+    iqs9150_composite_kscan {
+        matrix_grid { kscan = <&iqs9150_kscan>; };
+        multifinger_gesture { kscan = <&iqs9150_kscan>; };
+        edge_dial { kscan = <&iqs9150_kscan>; };
+        tip_tap { kscan = <&iqs9150_kscan>; };
+    };
+};
+
+&iqs9150_gesture_kscan { status = "disabled"; };
+&iqs9150_tip_tap { status = "disabled"; };
+&iqs9150_edge_dial { status = "disabled"; };
+&iqs9150_router { status = "disabled"; };
+&iqs9150_pointer { status = "disabled"; };
+&iqs9150_pointer_listener { status = "disabled"; };
+&iqs9150_edge_hold_continue { status = "disabled"; };
+&iqs9150_edge_hold_continue_listener { status = "disabled"; };
+&iqs9150_scroll_inertia { status = "disabled"; };

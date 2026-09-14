@@ -14,6 +14,8 @@ used only when an integration failure needs to be localized.
 | Document / 文書 | Use it when / 使用タイミング |
 |---|---|
 | [`scripts/verify-contact-arbiter-architecture.sh`](../scripts/verify-contact-arbiter-architecture.sh) | Run before every release build; checks the single-owner source invariants / リリースビルド前に実行し、単一所有権のソース不変条件を検査 |
+| [`scripts/verify-contact-feature-dependencies.sh`](../scripts/verify-contact-feature-dependencies.sh) | Before making a feature-limited diagnostic UF2; checks supported module dependencies / 機能限定の診断UF2作成前に実行し、対応するmodule依存を検査 |
+| [feature-dependency-matrix.md](feature-dependency-matrix.md) | To select a supported isolated feature profile / 対応する単体機能profileを選ぶ時 |
 | [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
 | [startup-ati-recovery-test.md](startup-ati-recovery-test.md) | After IQS9150 initialization or ATI changes / IQS9150初期化またはATI変更後 |

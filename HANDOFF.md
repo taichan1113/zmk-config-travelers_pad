@@ -258,7 +258,7 @@ development base; do not revert the accepted normal-path architecture.
 | 3 | P0 | Give tap/drag, edge hold, and inertia work items captured generations; stop reinitializing work after asynchronous cancel / 各delayable workへ取得時generationを持たせ、非同期cancel後にworkを再初期化しない | Implementation complete: generations are invalidated and input-side cancellation synchronously quiesces old handlers before state replacement / 実装完了: 世代を失効し、入力側cancelは旧handler停止を待ってからstateを置換 | Cancel exactly at tap timer boundary; old work executing after a new session starts |
 | 4 | P0 | Add an explicit session/generation-bound auxiliary lease for edge hold / edge holdへsession・generation付きauxiliary leaseを追加 | Hardware smoke passed (user-reported) / 実機smoke確認済み（ユーザー報告） | Preserve drag and scroll continuation serial captures when repeating this test |
 | 5 | P0 | Make the broker own pending button-up and retry state, including terminal click press/release / brokerがterminal clickを含むpending button-upとretryを所有 | Implementation complete; fault injection pending / 実装完了・fault injection未確認 | Inject press success plus release enqueue failure; retry without duplicate release or stuck button |
-| 6 | P1 | Correct Kconfig, init-priority, Devicetree phandle, and KSCAN dependencies; build a feature enable/disable matrix / feature単位の依存関係整理とbuild matrix | 0% | Build router-only, tap-only, router+tap, gesture-only, Tip-Tap-only, observer combinations, and the shipped full configuration |
+| 6 | P1 | Correct Kconfig, init-priority, Devicetree phandle, and KSCAN dependencies; build a feature enable/disable matrix / feature単位の依存関係整理とbuild matrix | Complete — Kconfig dependency gates, structural check, and seven diagnostic overlays; full and all seven profiles produce UF2 / Kconfig依存gate・構造check・7診断overlay、full・全7 profileでUF2生成合格 | Run the matrix when changing a module dependency or diagnostic profile |
 | 7 | P1 | Extract pinch/rotation geometry into a `TRANSFORM_GESTURE` primary owner with `PINCH`, `ROTATE`, and `PINCH_ROTATE` submodes / pinch・rotationを専用primary ownerへ分離 | 0% | Once geometry commits, release must never fall back to a 2F tap; verify SCROLL priority evidence |
 | 8 | P1 | Route the optional grid adapter through the output broker before enabling it / 任意grid adapterを有効化前にbroker経由へ移行 | 0% | Grid-only build and KSCAN token/cancel regression |
 | 9 | P2 | Decide whether to migrate recognizers from reconstructed input events to one immutable complete `ContactFrame` transaction / immutable完全`ContactFrame`への移行判断・実装 | 0% | Frame completeness, sequence, and no mixed-generation contacts under stress |
@@ -294,7 +294,7 @@ cancel、並行性、出力失敗時安全性、feature独立性を含む全体�
 | single ownership path / 単一の所有権経路 | 80% |
 | edge hold and inertia arbiter integration / edge hold・inertiaのarbiter統合 | 80% |
 | output failure recovery / 出力失敗時復旧 | 35% |
-| feature-level disable independence / feature単位の無効化独立性 | 20% |
+| feature-level disable independence / feature単位の無効化独立性 | 75% |
 | immutable complete ContactFrame / immutable完全ContactFrame | 0% |
 | documentation and regression coverage / 文書と回帰試験の整備 | 70% |
 
