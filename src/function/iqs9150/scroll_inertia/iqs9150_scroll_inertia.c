@@ -49,6 +49,8 @@ struct scroll_inertia_data {
 	uint32_t post_session_id;
 	struct travelers_pad_owner_token post_session_lease;
 	struct k_work_delayable work;
+	struct k_work_sync work_sync;
+	uint32_t work_generation;
 };
 
 static int16_t absolute_int16(int16_t value)
@@ -72,11 +74,8 @@ static int16_t decay_velocity(int16_t value, const struct scroll_inertia_config 
 	return (int16_t)(((int32_t)value * cfg->decay_numerator) / cfg->decay_denominator);
 }
 
-static void stop_inertia(const struct device *dev)
+static void clear_inertia_state(struct scroll_inertia_data *data)
 {
-	struct scroll_inertia_data *data = dev->data;
-
-	k_work_cancel_delayable(&data->work);
 	data->horizontal_velocity = 0;
 	data->vertical_velocity = 0;
 	data->release_pending = false;
@@ -85,14 +84,35 @@ static void stop_inertia(const struct device *dev)
 	data->post_session_lease = (struct travelers_pad_owner_token){};
 }
 
+/* Contact input can replace the lease and velocity while the system workqueue
+ * is delivering a glide tick. Quiesce that handler first so an old invocation
+ * cannot observe state belonging to a following contact. This is intentionally
+ * never called by inertia_work_handler(): waiting for the current work item
+ * from its own handler is undefined. */
+static void stop_inertia(const struct device *dev)
+{
+	struct scroll_inertia_data *data = dev->data;
+
+	(void)k_work_cancel_delayable_sync(&data->work, &data->work_sync);
+	data->work_generation++;
+	clear_inertia_state(data);
+}
+
+static void stop_inertia_from_work(struct scroll_inertia_data *data)
+{
+	data->work_generation++;
+	clear_inertia_state(data);
+}
+
 static void inertia_work_handler(struct k_work *work)
 {
 	struct scroll_inertia_data *data = CONTAINER_OF(work, struct scroll_inertia_data, work.work);
 	const struct scroll_inertia_config *cfg = data->dev->config;
 	int rc;
+	uint32_t generation = data->work_generation;
 
-	if (data->contact_fingers != 0) {
-		stop_inertia(data->dev);
+	if (generation != data->work_generation || data->contact_fingers != 0) {
+		stop_inertia_from_work(data);
 		return;
 	}
 	if (!data->post_session_lease.valid) {
@@ -101,7 +121,7 @@ static void inertia_work_handler(struct k_work *work)
 			    data->post_session_id, TRAVELERS_PAD_OWNER_SCROLL,
 			    TRAVELERS_PAD_CAP_SCROLL_DELTA, &data->post_session_lease)) {
 			LOG_DBG("scroll inertia cancelled: no normal-end lease");
-			stop_inertia(data->dev);
+			stop_inertia_from_work(data);
 			return;
 		}
 		data->post_session_pending = false;
@@ -114,7 +134,7 @@ static void inertia_work_handler(struct k_work *work)
 	if (absolute_int16(data->horizontal_velocity) < cfg->stop_delta &&
 	    absolute_int16(data->vertical_velocity) < cfg->stop_delta) {
 		LOG_INF("scroll inertia stopped");
-		stop_inertia(data->dev);
+		stop_inertia_from_work(data);
 		return;
 	}
 
@@ -127,7 +147,7 @@ static void inertia_work_handler(struct k_work *work)
 		if (rc != 0) {
 			if (rc == -EACCES) {
 				LOG_DBG("scroll inertia cancelled: lease revoked");
-				stop_inertia(data->dev);
+				stop_inertia_from_work(data);
 				return;
 			}
 			LOG_ERR("inertia horizontal report failed: %d", rc);
@@ -141,14 +161,16 @@ static void inertia_work_handler(struct k_work *work)
 		if (rc != 0) {
 			if (rc == -EACCES) {
 				LOG_DBG("scroll inertia cancelled: lease revoked");
-				stop_inertia(data->dev);
+				stop_inertia_from_work(data);
 				return;
 			}
 			LOG_ERR("inertia vertical report failed: %d", rc);
 		}
 	}
 	data->emitting = false;
-	k_work_schedule(&data->work, K_MSEC(cfg->repeat_ms));
+	if (generation == data->work_generation) {
+		k_work_schedule(&data->work, K_MSEC(cfg->repeat_ms));
+	}
 }
 
 static void inertia_handle_contact(const struct device *dev, struct input_event *evt)

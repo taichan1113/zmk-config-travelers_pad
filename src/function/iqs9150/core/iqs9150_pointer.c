@@ -16,6 +16,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_output_broker.h>
+#include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_pointer, LOG_LEVEL_INF);
 
@@ -41,6 +42,7 @@ struct pointer_data {
 	uint16_t previous_y;
 	bool have_position;
 	bool scroll_session;
+	uint32_t routed_frame_seq;
 	enum scroll_axis scroll_axis;
 	int32_t scroll_probe_x;
 	int32_t scroll_probe_y;
@@ -59,26 +61,32 @@ static void reset_scroll_state(struct pointer_data *data)
 	data->scroll_probe_y = 0;
 }
 
-static void report_motion(const struct device *dev, int16_t dx, int16_t dy) {
+static void report_motion(const struct device *dev, const struct pointer_data *data,
+			  int16_t dx, int16_t dy) {
 	int rc;
 
 	if (dx != 0) {
-		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_X, dx,
-						  dy == 0, "pointer-x");
+		rc = travelers_pad_output_routed_pointer(
+			dev, data->routed_frame_seq, TRAVELERS_PAD_OWNER_NONE,
+			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_X, dx,
+			dy == 0, "pointer-x");
 		if (rc != 0) {
 			LOG_ERR("pointer X report failed: %d", rc);
 		}
 	}
 	if (dy != 0) {
-		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_Y, dy, true,
-						  "pointer-y");
+		rc = travelers_pad_output_routed_pointer(
+			dev, data->routed_frame_seq, TRAVELERS_PAD_OWNER_NONE,
+			TRAVELERS_PAD_CAP_POINTER_DELTA, INPUT_EV_REL, INPUT_REL_Y, dy, true,
+			"pointer-y");
 		if (rc != 0) {
 			LOG_ERR("pointer Y report failed: %d", rc);
 		}
 	}
 }
 
-static void report_scroll(const struct device *dev, int16_t dx, int16_t dy) {
+static void report_scroll(const struct device *dev, const struct pointer_data *data,
+			  int16_t dx, int16_t dy) {
 	int rc;
 
 	/* The input processor attached to this device owns user-facing inversion
@@ -90,15 +98,19 @@ static void report_scroll(const struct device *dev, int16_t dx, int16_t dy) {
 	int16_t vertical = -dy;
 
 	if (horizontal != 0) {
-		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal,
-						  vertical == 0, "pointer-hwheel");
+		rc = travelers_pad_output_routed_pointer(
+			dev, data->routed_frame_seq, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal,
+			vertical == 0, "pointer-hwheel");
 		if (rc != 0) {
 			LOG_ERR("horizontal scroll report failed: %d", rc);
 		}
 	}
 	if (vertical != 0) {
-		rc = travelers_pad_output_routed_pointer(dev, INPUT_EV_REL, INPUT_REL_WHEEL, -vertical,
-						  true, "pointer-wheel");
+		rc = travelers_pad_output_routed_pointer(
+			dev, data->routed_frame_seq, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA, INPUT_EV_REL, INPUT_REL_WHEEL, -vertical,
+			true, "pointer-wheel");
 		if (rc != 0) {
 			LOG_ERR("vertical scroll report failed: %d", rc);
 		}
@@ -159,7 +171,7 @@ static void process_scroll_delta(const struct device *dev, const struct pointer_
 		x = 0;
 	}
 	if (x != 0 || y != 0) {
-		report_scroll(dev, (int16_t)x, (int16_t)y);
+		report_scroll(dev, data, (int16_t)x, (int16_t)y);
 	}
 }
 
@@ -176,6 +188,7 @@ static void process_frame(const struct device *dev) {
 		data->scroll_session = false;
 		reset_scroll_state(data);
 		data->reset_frame = false;
+		data->routed_frame_seq = 0;
 		/* The router uses this internal marker to end provisional pointer
 		 * processing before it hands a contact to multi-finger logic. This is
 		 * normal routing, not necessarily a physical sensor reset.
@@ -206,7 +219,7 @@ static void process_frame(const struct device *dev) {
 			if (data->scroll_session) {
 				process_scroll_delta(dev, cfg, dx, dy);
 			} else {
-				report_motion(dev, dx, dy);
+				report_motion(dev, data, dx, dy);
 			}
 		}
 		data->previous_x = data->x;
@@ -234,6 +247,11 @@ static void pointer_handle_input(const struct device *dev, struct input_event *e
 	struct pointer_data *data = dev->data;
 
 	switch (evt->type) {
+	case INPUT_EV_MSC:
+		if (evt->code == TRAVELERS_PAD_INPUT_MSC_ROUTED_FRAME_SEQ) {
+			data->routed_frame_seq = evt->value;
+		}
+		break;
 	case INPUT_EV_ABS:
 		if (evt->code == INPUT_ABS_X) {
 			data->x = evt->value;

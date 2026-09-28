@@ -23,6 +23,7 @@ flowchart TD
     TAP[Tap / double-tap drag<br/>タップ / ダブルタップドラッグ]
     TIP[Two-finger Tip-Tap<br/>2本指Tip-Tap]
     MF[3/4 swipe + 5F grasp/release<br/>3/4本指スワイプ + 5本指Grasp/Release]
+    TRANSFORM[2F pinch / rotation<br/>2本指ピンチ / 回転]
     EDGE[Edge dial<br/>エッジダイヤル]
     INERTIA[Scroll inertia observer<br/>スクロール慣性observer]
     HOLD[Edge-hold observer<br/>エッジホールドobserver]
@@ -37,6 +38,7 @@ flowchart TD
     SESSION --> TAP
     SESSION --> TIP
     SESSION --> MF
+    SESSION --> TRANSFORM
     SESSION --> EDGE
     SESSION --> INERTIA
     SESSION --> HOLD
@@ -45,6 +47,7 @@ flowchart TD
     TAP -. proposal / token .-> ARB
     TIP -. proposal / token .-> ARB
     MF -. proposal / token .-> ARB
+    TRANSFORM -. proposal / token .-> ARB
     EDGE -. proposal / token .-> ARB
     ARB -. delegated token .-> INERTIA
     ARB -. delegated token .-> HOLD
@@ -54,6 +57,7 @@ flowchart TD
     HOLD --> OUT
     TIP --> COMP
     MF --> COMP --> KEYMAP --> HOST
+    TRANSFORM --> OUT --> COMP
     EDGE --> COMP
     GRID -. optional .-> COMP
     KEYMAP -->|&msc macro| HID
@@ -61,20 +65,20 @@ flowchart TD
 
 `iqs9150_session` is the sole raw-frame subscriber and republishes normalized
 frames to every function. Its contact arbiter is the single authority for
-contact ownership: the five primary recognizers submit proposals, it waits for
+contact ownership: the six primary recognizers submit proposals, it waits for
 their queued-frame acknowledgements, then emits one deterministic owner token.
 The router receives a complete-frame callback only after that decision, so it
 cannot forward a pointer or scroll contact frame while a later recognizer may
 still claim the same raw frame. Primary first and continuation output is
 capability-gated by that token. The contact output broker is the only
 host-facing `REL_*`/mouse-button transport and primary virtual-KSCAN pulse
-transport for pointer, tap/drag, edge-hold, inertia, edge dial, Tip-Tap, and
-multi-finger gesture paths. It checks the matching primary token, auxiliary
+transport for pointer, tap/drag, edge-hold, inertia, edge dial, Tip-Tap,
+multi-finger gesture, and transform paths. It checks the matching primary token, auxiliary
 delegation, post-session lease, or a one-shot terminal action grant immediately
 before emitting. A terminal grant is minted only from a fully resolved normal
 release and is consumed exactly once for a tap or double-click.
 
-There is no provisional-owner token or pass-through owner: until the five
+There is no provisional-owner token or pass-through owner: until the six
 primary proposals resolve, a frame has no owner. A consumer which needs the
 new decision must use its resolved-frame callback.
 
@@ -97,7 +101,7 @@ that release by input device, ownership frame, recognizer, owner, and button,
 so a stale trackpad path cannot release a matching button held elsewhere.
 
 `iqs9150_session` は唯一の生frame購読者であり、正規化frameを全機能へ再配信します。
-contact arbiterが接触所有権の唯一のauthorityである。5つのprimary recognizerがproposalを
+contact arbiterが接触所有権の唯一のauthorityである。6つのprimary recognizerがproposalを
 提出し、queue経由の全frame確認後に、決定的なowner tokenを一つ発行する。routerはその決定後
 だけcomplete-frame callbackを受け取るため、後から呼ばれるrecognizerが同じ生frameをclaim
 できる間はポインタ／scroll接触frameをforwardしない。primaryの初回・継続出力は、このtokenの
@@ -108,7 +112,7 @@ primary仮想KSCAN pulse transportであり、
 terminal-action grantを検査する。terminal grantは完全に裁定された通常releaseからだけ発行され、
 tapまたはdouble-clickのために一度だけ消費される。
 
-暫定owner tokenやpass-through ownerは存在しない。5 primary proposalの裁定が終わるまでは、
+暫定owner tokenやpass-through ownerは存在しない。6 primary proposalの裁定が終わるまでは、
 frameにownerは存在しない。新しい決定を必要とするconsumerは、裁定済みframe callbackを使う。
 
 `iqs9150_scroll_inertia` と `iqs9150_edge_hold_continue` はprimary裁定barrierへ参加しない。
@@ -207,7 +211,7 @@ issues.
 | Edge recognition / エッジ認識 | Surface size, `edge-size`, linear/circle movement thresholds, local circle entry/corner position / 面サイズ、辺幅、直線・円の移動閾値、局所円の進入・中心位置 | `&iqs9150_edge_dial` in overlay | Edge module only / エッジのみ |
 | Edge hold continuation / エッジホールド継続 | Surface size, `edge-size`, drag/scroll start delay, repeat interval and delta / 面サイズ、`edge-size`、ドラッグ／スクロールの開始遅延、繰返し周期・移動量 | `&iqs9150_edge_hold_continue` + listener in overlay | Drag and axis-locked 2F scroll; either finger may reach only the forward, axis-matching edge; wheel output re-enters the normal pointer listener chain / ドラッグと軸ロック済み2本指スクロール。いずれかの指が軸・進行方向に対応する辺へ達すると有効。ホイール出力は通常ポインタのlistener chainへ再入力 |
 | Grid / 格子 | Grid settle time, transform, key bindings / 格子安定化時間、transform、キー割当 | Optional module overlay + keymap | Disabled unless explicitly enabled / 明示的に有効化するまで無効 |
-| Pinch/rotation / ピンチ・回転 | Router geometry detection thresholds exist; no host action is assigned / ルーターのジオメトリ検出閾値はあるが、ホスト動作未割当 | `&iqs9150_router`; future function module/keymap | Routing suppression only; dedicated arbiter owner remains future work / routing抑止のみ。専用arbiter ownerは今後の作業 |
+| Pinch/rotation / ピンチ・回転 | Classification thresholds, incremental step thresholds, and four direction bindings / 分類閾値、継続step閾値、4方向binding | Recognition: `&iqs9150_transform_gesture`; host action: `config/iqs9150_xiao.keymap` | Dedicated transform owner; pinch defaults to Ctrl+-/Ctrl+= and rotation to F15/F16 / 専用transform owner。pinch既定値はCtrl+-/Ctrl+=、rotationはF15/F16 |
 
 ## Important boundary rules / 重要な境界ルール
 
@@ -229,15 +233,12 @@ issues.
 
 ## Explicitly not implemented / 現時点で未実装
 
-- User-visible pinch action / ユーザー可視のピンチ操作
-- User-visible rotation action / ユーザー可視の回転操作
 - Configurable 2F scroll acceleration / 設定可能な2本指スクロール加速
 - Enabled and mapped 3×3 grid mode / 有効化・割当済みの3×3格子モード
 
-The router already claims two-finger geometry so it does not leak into pointer
-or scroll output. A future pinch/rotation module should consume that claimed
-path and publish its own KSCAN or input events.
+The transform module claims two-finger geometry before it can leak into pointer
+or scroll output, then emits broker-authorized KSCAN actions. Recognition and
+repeat thresholds remain Devicetree properties; host meaning remains keymap policy.
 
-ルーターは既に2本指ジオメトリを取得し、ポインタ・スクロールへ漏れないようにして
-います。将来のピンチ・回転モジュールはこの取得済み経路を利用し、独自のKSCANまたは
-input eventを出力します。
+transform moduleは2本指ジオメトリがpointer・scrollへ漏れる前に所有権を取得し、broker認可済みの
+KSCAN actionを出力する。認識・繰返し閾値はDevicetree property、ホスト側の意味はkeymap policyである。

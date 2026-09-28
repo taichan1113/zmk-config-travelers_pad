@@ -14,6 +14,8 @@ used only when an integration failure needs to be localized.
 | Document / 文書 | Use it when / 使用タイミング |
 |---|---|
 | [`scripts/verify-contact-arbiter-architecture.sh`](../scripts/verify-contact-arbiter-architecture.sh) | Run before every release build; checks the single-owner source invariants / リリースビルド前に実行し、単一所有権のソース不変条件を検査 |
+| [`scripts/verify-contact-feature-dependencies.sh`](../scripts/verify-contact-feature-dependencies.sh) | Before making a feature-limited diagnostic UF2; checks supported module dependencies / 機能限定の診断UF2作成前に実行し、対応するmodule依存を検査 |
+| [feature-dependency-matrix.md](feature-dependency-matrix.md) | To select a supported isolated feature profile / 対応する単体機能profileを選ぶ時 |
 | [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module / 出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
 | [startup-ati-recovery-test.md](startup-ati-recovery-test.md) | After IQS9150 initialization or ATI changes / IQS9150初期化またはATI変更後 |
@@ -34,6 +36,7 @@ integration failure. The full integration test remains the release gate.
 |---|---|
 | Pointer baseline / ポインタ基本動作 | [pointer-isolated-test.md](pointer-isolated-test.md) |
 | Router hand-off / ルーター受け渡し | [router-pointer-isolated-test.md](router-pointer-isolated-test.md) |
+| Pinch/rotation × scroll/tap / pinch・rotation × scroll/tap | [transform-gesture-arbitration-test.md](transform-gesture-arbitration-test.md) |
 | Tap and drag / タップ・ドラッグ | [tap-drag-isolated-test.md](tap-drag-isolated-test.md) |
 | 3–5F gestures / 3〜5本指ジェスチャー | [multifinger-gesture-integration-test.md](multifinger-gesture-integration-test.md) |
 | Edge circle continuation / エッジ円継続 | [edge-dial-circle-isolated-test.md](edge-dial-circle-isolated-test.md) |
@@ -44,6 +47,7 @@ integration failure. The full integration test remains the release gate.
 | Edge-hold 2F scroll continuation / エッジホールド・2本指スクロール継続 | [edge-hold-scroll-continuation-test.md](edge-hold-scroll-continuation-test.md) |
 | 2F scroll inertia / 2本指スクロール慣性 | [two-finger-scroll-inertia-test.md](two-finger-scroll-inertia-test.md) |
 | Arbiter lifecycle and leases / Arbiter lifecycle・lease | [arbiter-lifecycle-lease-test.md](arbiter-lifecycle-lease-test.md) |
+| Arbiter safety hardening / Arbiter安全性強化 | [arbiter-safety-hardening-test.md](arbiter-safety-hardening-test.md) |
 | Arbiter output broker / Arbiter output broker | [arbiter-output-broker-test.md](arbiter-output-broker-test.md) |
 | Arbiter complete-frame routing / Arbiter完全frame routing | [arbiter-complete-frame-routing-test.md](arbiter-complete-frame-routing-test.md) |
 | Primary decision and observer boundary / Primary裁定とobserver境界 | [arbiter-observer-boundary-test.md](arbiter-observer-boundary-test.md) |

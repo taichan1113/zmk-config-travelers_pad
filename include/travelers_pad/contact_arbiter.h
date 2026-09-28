@@ -16,12 +16,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <zephyr/spinlock.h>
+
 #include <travelers_pad/contact_session.h>
 
 enum travelers_pad_owner {
 	TRAVELERS_PAD_OWNER_NONE,
 	TRAVELERS_PAD_OWNER_DRAG,
 	TRAVELERS_PAD_OWNER_SCROLL,
+	TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE,
 	TRAVELERS_PAD_OWNER_MULTI_GESTURE,
 	TRAVELERS_PAD_OWNER_EDGE_DIAL,
 	TRAVELERS_PAD_OWNER_TIP_TAP,
@@ -33,9 +36,12 @@ enum travelers_pad_recognizer_id {
 	TRAVELERS_PAD_RECOGNIZER_MULTIFINGER_GESTURE,
 	TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,
 	TRAVELERS_PAD_RECOGNIZER_TIP_TAP,
+	/* Two-finger pinch/rotation geometry is a primary recognizer. Once it
+	 * claims a transform, the same session cannot fall back to scroll or tap. */
+	TRAVELERS_PAD_RECOGNIZER_TRANSFORM_GESTURE,
 	/* Auxiliary observer: proposes no owner and receives frames only so
 	 * inertia can associate a physical release with the arbiter token. The
-	 * preceding five IDs remain the primary recognizers. */
+	 * preceding six IDs remain the primary recognizers. */
 	TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA,
 	/* Auxiliary observer: detects edge-hold continuation candidates from raw
 	 * contacts. It has no claim of its own; delayed output is delegated by the
@@ -96,6 +102,9 @@ struct travelers_pad_arbiter_proposal {
 struct travelers_pad_owner_token {
 	uint32_t session_id;
 	uint32_t owner_generation;
+	/* Global cancellation generation. A reset outside an active contact session
+	 * changes this value, invalidating copied leases and grants as well. */
+	uint32_t lifecycle_epoch;
 	enum travelers_pad_owner owner;
 	uint32_t capabilities;
 	enum travelers_pad_token_kind kind;
@@ -113,19 +122,49 @@ struct travelers_pad_owner_token {
 struct travelers_pad_terminal_action_grant {
 	uint32_t session_id;
 	uint32_t grant_generation;
+	uint32_t lifecycle_epoch;
 	enum travelers_pad_recognizer_id recognizer;
 	enum travelers_pad_owner owner;
 	uint32_t capability;
 	bool valid;
 };
 
+/* An auxiliary lease is deliberately a copy of the exact primary token that
+ * armed delayed output. It prevents an old edge-hold work item from attaching
+ * itself to a later DRAG or SCROLL owner of the same kind. */
+struct travelers_pad_auxiliary_lease {
+	uint32_t session_id;
+	uint32_t owner_generation;
+	uint32_t lifecycle_epoch;
+	enum travelers_pad_auxiliary_id auxiliary;
+	enum travelers_pad_owner owner;
+	uint32_t capabilities;
+	bool valid;
+};
+
+/* A broker-held guard keeps the authority check and a non-blocking HID report
+ * in one cancellation-atomic interval. It is an internal transport contract:
+ * while held, callers must only perform an IRQ-safe, non-blocking report and
+ * must release it immediately. It must not cover arbitrary behavior callbacks.
+ * broker保持guardは、authority照合とnon-blocking HID reportを一つのcancel原子的な
+ * 区間にする内部transport契約である。保持中はIRQ-safeかつnon-blockingなreportだけを
+ * 行い、直ちに解放する。任意のbehavior callbackを囲んではならない。 */
+struct travelers_pad_arbiter_output_guard {
+	k_spinlock_key_t key;
+	bool held;
+	bool terminal_action_consumed;
+	uint32_t terminal_action_session_id;
+	uint32_t terminal_action_generation;
+	const char *terminal_action_producer;
+};
+
 /* A recognizer can defer the semantic action which first establishes its
  * ownership until the resolver has issued a token.  This is needed because
- * the five input listeners run asynchronously: at proposal time the winning
+ * the primary input listeners run asynchronously: at proposal time the winning
  * token does not exist yet.  The callback runs exactly once for a newly
  * committed token, before a terminal frame invalidates it.
  * recognizerは、所有権を最初に確立するsemantic actionを、resolverがtokenを
- * 発行するまで保留できる。5個のinput listenerは非同期なのでproposal時点には
+ * 発行するまで保留できる。primary input listenerは非同期なのでproposal時点には
  * 勝者tokenがまだ存在しないためである。callbackは新規commit tokenごとに一度、
  * terminal frameがtokenを無効化する前に実行される。 */
 typedef void (*travelers_pad_arbiter_resolve_handler_t)(
@@ -143,11 +182,11 @@ typedef void (*travelers_pad_arbiter_frame_handler_t)(
 	void *context, const struct travelers_pad_session_snapshot *snapshot,
 	const struct travelers_pad_owner_token *token);
 
-/* Recognizers register from their DT-backed init function. The five primary
+/* Recognizers register from their DT-backed init function. The six primary
  * recognizers form the decision barrier; edge-hold and inertia are observers
  * and are deliberately excluded from it. All registered functions still
  * acknowledge before the frame storage is reclaimed.
- * recognizerはDT-backed initから登録する。5個のprimary recognizerだけが裁定barrierを
+ * recognizerはDT-backed initから登録する。6個のprimary recognizerだけが裁定barrierを
  * 構成し、edge-holdとinertiaはobserverとして意図的にbarrierから除外する。ただし、frame
  * storageの回収前には登録済み全機能がacknowledgeする。 */
 bool travelers_pad_arbiter_register(enum travelers_pad_recognizer_id recognizer);
@@ -160,6 +199,10 @@ bool travelers_pad_arbiter_bind_frame_handler(
 
 /* Called by the session manager around one synchronously forwarded frame. */
 void travelers_pad_arbiter_begin_frame(const struct travelers_pad_session_snapshot *snapshot);
+/* Invalidate all authority, including authority that survived a normal
+ * release. The session manager calls this as soon as the sensor reports a
+ * reset, before any queued recognizer can observe that reset frame. */
+void travelers_pad_arbiter_cancel_all(const char *reason);
 /* Each recognizer receives session-manager frames in FIFO order. Obtain its
  * earliest unacknowledged frame immediately before processing an input sync.
  * 各recognizerはsession manager由来frameをFIFO順で受ける。input syncを処理する
@@ -225,6 +268,24 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
 					    enum travelers_pad_owner requested_owner,
 					    uint32_t capability, const char *producer);
 
+/* Begin an atomic authorization-to-HID-report interval. Use only from the
+ * output broker, then call travelers_pad_arbiter_end_output() immediately
+ * after the K_NO_WAIT input report. */
+bool travelers_pad_arbiter_begin_primary_output(
+	uint32_t ownership_frame_seq, enum travelers_pad_recognizer_id recognizer,
+	enum travelers_pad_owner requested_owner, uint32_t capability, const char *producer,
+	struct travelers_pad_arbiter_output_guard *guard);
+
+/* The router labels an internally forwarded contact frame before it enters the
+ * asynchronous pointer adapter. The adapter must present the exact frame
+ * sequence to begin_routed_output() before emitting a resulting REL report.
+ * This prevents a queued old contact frame from borrowing later authority. */
+bool travelers_pad_arbiter_prepare_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability);
+bool travelers_pad_arbiter_begin_routed_output(
+	uint32_t frame_seq, enum travelers_pad_owner owner, uint32_t capability,
+	const char *producer, struct travelers_pad_arbiter_output_guard *guard);
+
 /* An auxiliary function may extend an already-committed primary action, but
  * may not establish ownership itself. This validates its delayed output
  * against the live token. It is intentionally quiet on a mismatch because
@@ -233,8 +294,17 @@ bool travelers_pad_arbiter_authorize_output(uint32_t ownership_frame_seq,
  * 遅延出力をlive tokenに対して検証する。通常の解放・所有権移行後にもtimerが
  * 起き得るため、不一致は意図的に静かに扱う。 */
 bool travelers_pad_arbiter_authorize_auxiliary_output(
+	const struct travelers_pad_auxiliary_lease *lease,
 	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
 	uint32_t capability, const char *producer);
+bool travelers_pad_arbiter_begin_auxiliary_output(
+	const struct travelers_pad_auxiliary_lease *lease,
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard);
+
+bool travelers_pad_arbiter_acquire_auxiliary_lease(
+	enum travelers_pad_auxiliary_id auxiliary, enum travelers_pad_owner required_owner,
+	uint32_t capability, struct travelers_pad_auxiliary_lease *lease);
 
 /* Promote a reserved committed owner only after its primary output succeeded.
  * Auxiliary output is restricted to ACTIVE owners, so a stationary double-tap
@@ -259,5 +329,16 @@ bool travelers_pad_arbiter_acquire_post_session_lease(
 bool travelers_pad_arbiter_authorize_post_session_output(
 	const struct travelers_pad_owner_token *lease, enum travelers_pad_owner required_owner,
 	uint32_t capability, const char *producer);
+bool travelers_pad_arbiter_begin_post_session_output(
+	const struct travelers_pad_owner_token *lease, enum travelers_pad_owner required_owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard);
+
+/* Atomically consume a terminal grant and retain the output guard for the
+ * complete non-blocking click pulse. */
+bool travelers_pad_arbiter_begin_terminal_action_output(
+	struct travelers_pad_terminal_action_grant *grant,
+	enum travelers_pad_recognizer_id recognizer, enum travelers_pad_owner owner,
+	uint32_t capability, const char *producer, struct travelers_pad_arbiter_output_guard *guard);
+void travelers_pad_arbiter_end_output(struct travelers_pad_arbiter_output_guard *guard);
 
 #endif
