@@ -19,6 +19,7 @@
 #include <zephyr/sys/util.h>
 
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/multitouch.h>
 
 LOG_MODULE_REGISTER(travelers_pad_router, LOG_LEVEL_INF);
 
@@ -59,7 +60,6 @@ struct router_data {
 	uint32_t start_distance_squared;
 	bool sensor_reset;
 	uint32_t arbiter_frame_seq;
-	uint32_t scroll_ownership_frame_seq;
 	bool scroll_extra_contact;
 	/* Router contact output is deferred until the arbiter has observed every
 	 * primary recognizer for this frame. Track whether the pointer adapter has
@@ -80,9 +80,13 @@ static uint32_t squared_distance(int32_t x, int32_t y)
 	return (uint32_t)(x * x + y * y);
 }
 
-static void router_emit(const struct device *dev, const struct router_data *data, uint8_t fingers)
+static void router_emit(const struct device *dev, const struct router_data *data,
+			uint32_t frame_seq, uint8_t fingers)
 {
-	int rc = input_report_abs(dev, INPUT_ABS_X, data->x, false, K_NO_WAIT);
+	int rc = input_report(dev, INPUT_EV_MSC, TRAVELERS_PAD_INPUT_MSC_ROUTED_FRAME_SEQ,
+			      frame_seq, false, K_NO_WAIT);
+
+	rc |= input_report_abs(dev, INPUT_ABS_X, data->x, false, K_NO_WAIT);
 
 	rc |= input_report_abs(dev, INPUT_ABS_Y, data->y, false, K_NO_WAIT);
 	rc |= input_report_abs(dev, INPUT_ABS_RX, data->finger2_x, false, K_NO_WAIT);
@@ -146,7 +150,13 @@ static void router_recognize_frame(const struct device *dev)
 	uint32_t distance_squared;
 	uint32_t distance_delta;
 	uint32_t rotation_cross;
-	uint32_t primary_move;
+	int32_t first_dx;
+	int32_t first_dy;
+	int32_t second_dx;
+	int32_t second_dy;
+	int32_t direction_dot;
+	uint32_t first_move;
+	uint32_t second_move;
 	/* Ownership and all host-facing contact output are resolved after every
 	 * primary recognizer has observed this frame. */
 	if (data->sensor_reset || data->fingers == 0 || data->state == ROUTER_TAP_DRAG ||
@@ -216,8 +226,6 @@ static void router_recognize_frame(const struct device *dev)
 		return;
 	}
 
-	primary_move = abs32((int32_t)data->x - data->start_x) +
-		       abs32((int32_t)data->y - data->start_y);
 	if (data->finger2_valid && data->have_geometry) {
 		geometry_x = (int32_t)data->finger2_x - data->x;
 		geometry_y = (int32_t)data->finger2_y - data->y;
@@ -233,7 +241,21 @@ static void router_recognize_frame(const struct device *dev)
 			return;
 		}
 	}
-	if (primary_move >= cfg->scroll_classify_move) {
+	if (!data->finger2_valid || !data->have_geometry) {
+		return;
+	}
+	first_dx = (int32_t)data->x - data->start_x;
+	first_dy = (int32_t)data->y - data->start_y;
+	second_dx = (int32_t)data->finger2_x - data->start_finger2_x;
+	second_dy = (int32_t)data->finger2_y - data->start_finger2_y;
+	first_move = abs32(first_dx) + abs32(first_dy);
+	second_move = abs32(second_dx) + abs32(second_dy);
+	direction_dot = first_dx * second_dx + first_dy * second_dy;
+	/* A scroll is a translation of both contacts in the same general
+	 * direction. Requiring both displacement vectors prevents a slow pinch or
+	 * rotation from committing SCROLL merely because contact 1 moved first. */
+	if (first_move >= cfg->scroll_classify_move &&
+	    second_move >= cfg->scroll_classify_move && direction_dot > 0) {
 		/* The frame callback emits only after every recognizer has observed this
 		 * proposal and the arbiter has made its immutable decision. */
 		if (!travelers_pad_arbiter_submit(&(struct travelers_pad_arbiter_proposal){
@@ -243,14 +265,14 @@ static void router_recognize_frame(const struct device *dev)
 			.requested_owner = TRAVELERS_PAD_OWNER_SCROLL,
 			.capabilities = TRAVELERS_PAD_CAP_SCROLL_DELTA,
 			.contact_count = data->fingers,
-			.evidence = primary_move,
+			.evidence = MIN(first_move, second_move),
 		})) {
 			LOG_WRN("2F scroll proposal rejected");
 			return;
 		}
-		data->scroll_ownership_frame_seq = data->arbiter_frame_seq;
 		data->state = ROUTER_SCROLL_TWO;
-		LOG_INF("2F route=scroll proposed; awaiting frame decision");
+		LOG_INF("2F route=scroll proposed move=(%u,%u) dot=%d; awaiting frame decision",
+			first_move, second_move, direction_dot);
 	}
 }
 
@@ -300,7 +322,8 @@ static void router_deliver_resolved_frame(
 		}
 		return;
 	}
-	if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
+	if (owner == TRAVELERS_PAD_OWNER_TIP_TAP || owner == TRAVELERS_PAD_OWNER_TRANSFORM_GESTURE ||
+	    owner == TRAVELERS_PAD_OWNER_MULTI_GESTURE) {
 		router_suppress_pointer(dev, data);
 		data->state = ROUTER_CLAIM_MULTIFINGER;
 		if (snapshot->contact_count == 0) {
@@ -312,28 +335,28 @@ static void router_deliver_resolved_frame(
 	if (owner == TRAVELERS_PAD_OWNER_SCROLL) {
 		data->state = ROUTER_SCROLL_TWO;
 		if (snapshot->contact_count == 0) {
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			data->pointer_stream_open = false;
 			data->state = ROUTER_IDLE;
 			data->max_fingers = 0;
 			return;
 		}
-		if (!travelers_pad_arbiter_authorize_output(
-			data->scroll_ownership_frame_seq, TRAVELERS_PAD_RECOGNIZER_ROUTER,
-			TRAVELERS_PAD_OWNER_SCROLL, TRAVELERS_PAD_CAP_SCROLL_DELTA,
-			"router-scroll")) {
+		if (!travelers_pad_arbiter_prepare_routed_output(
+			snapshot->frame_seq, TRAVELERS_PAD_OWNER_SCROLL,
+			TRAVELERS_PAD_CAP_SCROLL_DELTA)) {
 			return;
 		}
 		/* The pointer adapter consumes a logical two-contact scroll stream, even
 		 * when a third physical contact arrives during an owned scroll. */
-		router_emit(dev, data, snapshot->contact_count >= 2 ? 2 : snapshot->contact_count);
+		router_emit(dev, data, snapshot->frame_seq,
+			snapshot->contact_count >= 2 ? 2 : snapshot->contact_count);
 		data->pointer_stream_open = snapshot->contact_count != 0;
 		return;
 	}
 
 	if (snapshot->contact_count == 0) {
 		if (data->state == ROUTER_PASS_ONE || data->state == ROUTER_SCROLL_TWO) {
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			data->pointer_stream_open = false;
 		} else if (data->state == ROUTER_AWAIT_TWO) {
 			/* A held-still 2F session becomes a right-click candidate only on
@@ -343,8 +366,8 @@ static void router_deliver_resolved_frame(
 			data->finger2_x = data->start_finger2_x;
 			data->finger2_y = data->start_finger2_y;
 			data->finger2_valid = data->have_geometry;
-			router_emit(dev, data, 2);
-			router_emit(dev, data, 0);
+			router_emit(dev, data, snapshot->frame_seq, 2);
+			router_emit(dev, data, snapshot->frame_seq, 0);
 			LOG_INF("2F route=tap candidate");
 		} else if (data->state == ROUTER_CLAIM_GEOMETRY) {
 			LOG_INF("2F route=geometry candidate complete");
@@ -362,7 +385,12 @@ static void router_deliver_resolved_frame(
 	}
 
 	if (data->state == ROUTER_PASS_ONE) {
-		router_emit(dev, data, 1);
+		if (!travelers_pad_arbiter_prepare_routed_output(
+			snapshot->frame_seq, TRAVELERS_PAD_OWNER_NONE,
+			TRAVELERS_PAD_CAP_POINTER_DELTA)) {
+			return;
+		}
+		router_emit(dev, data, snapshot->frame_seq, 1);
 		data->pointer_stream_open = true;
 	} else {
 		/* Awaiting a two-finger classification must not leak a pointer frame. */

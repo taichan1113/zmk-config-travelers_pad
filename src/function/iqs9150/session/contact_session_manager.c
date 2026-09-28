@@ -16,6 +16,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <travelers_pad/contact_arbiter.h>
+#include <travelers_pad/contact_output_broker.h>
 #include <travelers_pad/contact_session.h>
 
 LOG_MODULE_REGISTER(travelers_pad_session, LOG_LEVEL_INF);
@@ -78,6 +79,11 @@ static void session_input(const struct device *dev, struct input_event *evt)
 		data->snapshot.contact_count = evt->value;
 	} else if (evt->type == INPUT_EV_ABS && evt->code == INPUT_ABS_RZ && evt->value) {
 		data->reset_pending = true;
+		/* Do not wait for a session-bound cancellation frame: the active snapshot
+		 * may already have been cleared after a normal release while post-session
+		 * output is still pending. */
+		travelers_pad_arbiter_cancel_all("sensor-reset-event");
+		travelers_pad_output_cancel_all("sensor-reset-event");
 	}
 	if (evt->sync) {
 		/* frame_seq is global rather than per-session so it can identify a

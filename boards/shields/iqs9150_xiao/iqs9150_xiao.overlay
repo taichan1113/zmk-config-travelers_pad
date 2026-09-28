@@ -75,15 +75,17 @@
 
     /* Rows 0--14 are reserved for zmk-input-matrix's 5 x 3x3 gesture grid.
      * Rows 15/16 are 3/4-finger left/right/up/down. Row 17 columns 0/1 are
-     * 5F Grasp/Release, and row 18 columns 0--7 are edge-dial directions.
+     * 5F Grasp/Release, row 18 columns 0--7 are edge-dial directions, row 19
+     * is Tip-Tap, and row 20 contains the four transform directions.
      * The grid remains unmapped, so importing it cannot trigger an action yet.
      * 行0--14はzmk-input-matrixの5種類 x 3x3格子用に予約する。行15/16は
      * 3/4本指の左/右/上/下、行17の列0/1は5本指Grasp/Releaseである。現時点
-     * と行18の列0〜7はエッジダイヤル方向である。格子は未割当のままなので、
+     * 行18の列0〜7はエッジダイヤル方向、行19はTip-Tap、行20はtransformの
+     * 4方向である。格子は未割当のままなので、
      * 格子を導入しても操作は発火しない。 */
     iqs9150_composite_transform: composite_transform {
         compatible = "zmk,matrix-transform";
-        rows = <20>;
+        rows = <21>;
         columns = <8>;
         /* RC(17, 2) through RC(17, 7) deliberately have no logical position.
          * ZMK matrix transforms may omit unused physical matrix positions.
@@ -94,7 +96,8 @@
                RC(17, 0) RC(17, 1)
                RC(18, 0) RC(18, 1) RC(18, 2) RC(18, 3)
                RC(18, 4) RC(18, 5) RC(18, 6) RC(18, 7)
-               RC(19, 0) RC(19, 1)>;
+               RC(19, 0) RC(19, 1)
+               RC(20, 0) RC(20, 1) RC(20, 2) RC(20, 3)>;
     };
 
     iqs9150_grid_transform: grid_transform {
@@ -167,7 +170,7 @@
     iqs9150_composite_kscan: iqs9150_composite_kscan {
         compatible = "zmk,kscan-composite";
         status = "okay";
-        rows = <20>;
+        rows = <21>;
         columns = <8>;
 
         matrix_grid {
@@ -188,6 +191,11 @@
             kscan = <&iqs9150_tip_tap>;
             row-offset = <19>;
         };
+
+        transform_gesture {
+            kscan = <&iqs9150_transform_gesture>;
+            row-offset = <20>;
+        };
     };
 
     iqs9150_gesture_kscan: iqs9150_gesture_kscan {
@@ -206,6 +214,19 @@
         second-contact-timeout-ms = <180>;
         contact-slop = <75>;
         minimum-horizontal-separation = <160>;
+        status = "okay";
+    };
+
+    /* Pinch/rotation has a dedicated primary owner. It deliberately receives
+     * normalized session frames directly, so a transform can suppress both
+     * pointer routing and a terminal two-finger tap. */
+    iqs9150_transform_gesture: iqs9150_transform_gesture {
+        compatible = "zmk,travelers-pad-iqs9150-transform-gesture";
+        input-device = <&iqs9150_session>;
+        distance-threshold = <30000>;
+        rotation-threshold = <30000>;
+        pinch-step-threshold = <30000>;
+        rotation-step-threshold = <30000>;
         status = "okay";
     };
 

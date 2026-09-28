@@ -16,7 +16,7 @@ arbiterは、有効な**primary** recognizerすべてがframeを観測した時�
 `scroll_inertia` と `edge_hold_continue` は不変lifecycle snapshotを読む登録済みframe observerの
 ままだが、owner選択およびrouterの接触frame forwardingを遅らせない。
 
-observer handlerは、5 primaryの裁定完了と、そのobserver自身による同じ生frameの消費という二条件が
+observer handlerは、6 primaryの裁定完了と、そのobserver自身による同じ生frameの消費という二条件が
 そろった後だけに実行される。これによりedge holdは完全なslot座標を使い、inertiaは通常releaseの
 最終ownerだけを分類できる。
 

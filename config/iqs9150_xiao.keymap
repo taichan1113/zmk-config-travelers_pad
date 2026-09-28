@@ -61,13 +61,16 @@
              * 4F: Win+Left / Right / Up / Down
              * 5F: Win+M / Win+Shift+M
              * Edge: left brightness down/up, right scroll down/up,
-             *       top volume up/down, bottom scroll right/left. */
+             *       top volume up/down, bottom scroll right/left.
+             * Transform: pinch in/out = Ctrl+-/Ctrl+= (zoom out/in),
+             *            counter-clockwise/clockwise = F15/F16. */
             bindings = <&mkp MB4         &mkp MB5          &kp PG_UP       &kp PG_DN
                         &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
                         &kp LG(M)        &kp LS(LG(M))
                         &kp C_BRI_DN     &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
                         &kp C_VOL_UP     &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
-                        &kp F13          &kp F14>;
+                        &kp F13          &kp F14
+                        &kp LC(MINUS)    &kp LC(EQUAL)     &kp F15         &kp F16>;
         };
     };
 };

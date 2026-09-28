@@ -12,7 +12,7 @@ properties:
   scroll-classify-move:
     type: int
     default: 35
-    description: Minimum primary-contact movement before committing two-finger scroll
+    description: Minimum movement required from each direction-coherent contact before committing two-finger scroll
   geometry-distance-threshold:
     type: int
     default: 30000

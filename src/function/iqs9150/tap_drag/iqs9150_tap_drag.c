@@ -20,6 +20,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
+#include <string.h>
 
 #include <travelers_pad/multitouch.h>
 #include <travelers_pad/contact_arbiter.h>
@@ -41,6 +42,7 @@ struct tap_drag_config {
 struct tap_drag_data {
 	const struct device *dev;
 	struct k_work_delayable deferred_click_work;
+	struct k_work_sync deferred_click_sync;
 	uint16_t x;
 	uint16_t y;
 	uint8_t slot;
@@ -273,6 +275,41 @@ static void deferred_click_work(struct k_work *work)
 	}
 }
 
+/* All callers run in the input/arbiter thread, never in deferred_click_work.
+ * Waiting here makes the generation invalidation a true ownership hand-off:
+ * no old timer can observe rewritten tap or terminal-grant state. */
+static void cancel_deferred_click_work(struct tap_drag_data *data)
+{
+	(void)k_work_cancel_delayable_sync(&data->deferred_click_work,
+					  &data->deferred_click_sync);
+	data->tap_generation++;
+	data->deferred_click_generation = 0;
+}
+
+static void cancel_tap_drag_after_reset(struct tap_drag_data *data)
+{
+	/* Do not overwrite recognizer state until a pending timer has quiesced. */
+	cancel_deferred_click_work(data);
+	data->first_valid = false;
+	data->first_tap_grant.valid = false;
+	data->second_tap = false;
+	data->button_down = false;
+	data->drag_motion_active = false;
+	data->drag_claim_authorized = false;
+	data->drag_start_pending = false;
+	data->terminal_pending = false;
+	data->session_suppressed = false;
+	data->suppressed_owner = TRAVELERS_PAD_OWNER_NONE;
+	data->fingers = 0;
+	data->previous_fingers = 0;
+	data->max_fingers = 0;
+	data->drag_fingers = 0;
+	data->drag_position_valid = false;
+	data->sensor_reset = false;
+	memset(data->slot_valid, 0, sizeof(data->slot_valid));
+	memset(data->reference_slot_valid, 0, sizeof(data->reference_slot_valid));
+}
+
 static void request_drag_claim(struct tap_drag_data *data)
 {
 	/* Claim the candidate now, but keep HID silent until motion crosses the
@@ -338,8 +375,7 @@ static bool matches_first_tap(const struct tap_drag_data *data, const struct tap
 static void start_double_tap_candidate(struct tap_drag_data *data)
 {
 	data->second_tap = true;
-	k_work_cancel_delayable(&data->deferred_click_work);
-	data->tap_generation++;
+	cancel_deferred_click_work(data);
 	data->drag_claim_authorized = false;
 	data->first_valid = false;
 	data->drag_fingers = data->fingers;
@@ -405,12 +441,12 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 	if (terminal_token != NULL && terminal_token->valid &&
 	    terminal_token->owner != TRAVELERS_PAD_OWNER_NONE &&
 	    terminal_token->owner != TRAVELERS_PAD_OWNER_DRAG) {
+		cancel_deferred_click_work(data);
 		LOG_INF("%uF tap suppressed: resolved terminal owner=%u", data->max_fingers,
 			terminal_token->owner);
 		data->first_valid = false;
 		data->first_tap_grant.valid = false;
 		data->second_tap = false;
-		k_work_cancel_delayable(&data->deferred_click_work);
 		return;
 	}
 	bool valid_tap = !data->moved && data->max_fingers >= 1 && data->max_fingers <= 3 &&
@@ -450,6 +486,9 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 			}
 		}
 	} else if (valid_tap) {
+		/* Quiesce an expired/racing prior timer before replacing the terminal
+		 * grant it could otherwise consume. */
+		cancel_deferred_click_work(data);
 		LOG_INF("%uF tap released centroid=(%u,%u), duration=%lld ms", data->max_fingers,
 			data->start_x, data->start_y, now - data->started_ms);
 		data->first_tap_grant = (struct travelers_pad_terminal_action_grant){};
@@ -470,11 +509,11 @@ static void finish_contact(const struct device *dev, const struct tap_drag_confi
 		data->deferred_click_generation = data->tap_generation;
 		k_work_schedule(&data->deferred_click_work, K_MSEC(cfg->double_tap_max_gap_ms));
 	} else {
+		cancel_deferred_click_work(data);
 		LOG_INF("%uF tap rejected: duration=%lld ms moved=%d limit-ms=%u", data->max_fingers,
 			now - data->started_ms, data->moved, cfg->tap_max_ms);
 		data->first_valid = false;
 		data->first_tap_grant.valid = false;
-		k_work_cancel_delayable(&data->deferred_click_work);
 	}
 	data->second_tap = false;
 }
@@ -510,12 +549,10 @@ static void process_frame(const struct device *dev)
 	}
 
 	if (data->sensor_reset) {
-		k_work_cancel_delayable(&data->deferred_click_work);
 		if (data->button_down) {
 			report_button(data, false);
 		}
-		*data = (struct tap_drag_data){.dev = dev};
-		k_work_init_delayable(&data->deferred_click_work, deferred_click_work);
+		cancel_tap_drag_after_reset(data);
 		LOG_WRN("tap/drag session cancelled after sensor reset");
 		return;
 	}
