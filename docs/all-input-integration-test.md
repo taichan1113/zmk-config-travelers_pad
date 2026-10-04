@@ -68,28 +68,37 @@ below.
    全方向、5本指Grasp/Releaseを行う。設定済み動作だけが起こり、ポインタ、スクロール、
    クリックが混入しないことを確認する。
 
+7. Perform pinch-in/out and clockwise/counter-clockwise rotation, then release
+   and resume ordinary pointer/scroll. Confirm only the transform actions occur,
+   including repeated steps, with no wheel or terminal right-click leakage.
+   ピンチ内/外、時計/反時計回りを行い、離して通常pointer/scrollへ戻る。
+   継続stepを含むtransform actionだけが出て、wheel・解放時右clickが混入しないことを確認する。
+   Detailed procedure / 詳細: [transform-gesture-arbitration-test.md](transform-gesture-arbitration-test.md).
+
 ## Expected ownership / 期待する所有権
 
 | Operation / 操作 | Expected owner and output / 期待するownerと出力 |
 | --- | --- |
 | 1F pointer / 1本指ポインタ | Router pointer path → pointer HID / routerポインタ経路 → pointer HID |
-| 1–3F tap or drag / 1〜3本指タップ・ドラッグ | `drag` token → mouse HID / `drag` token → mouse HID |
+| 1–3F tap / 1〜3本指タップ | Terminal action grant → mouse HID / terminal action grant → mouse HID |
+| 1–3F drag / 1〜3本指ドラッグ | `drag` token → mouse HID / `drag` token → mouse HID |
 | 2F axis-locked scroll / 2本指軸ロックスクロール | `scroll` token → pointer wheel → listener processors / `scroll` token → pointer wheel → listener processor |
 | 3–5F gesture / 3〜5本指ジェスチャー | `gesture` token → KSCAN → keymap / `gesture` token → KSCAN → keymap |
 | Edge dial / エッジダイヤル | `edge-dial` token → KSCAN → keymap / `edge-dial` token → KSCAN → keymap |
 | Tip-Tap / Tip-Tap | `tip-tap` token → KSCAN → keymap / `tip-tap` token → KSCAN → keymap |
+| Pinch/rotation / ピンチ・回転 | `transform` token → KSCAN → keymap / `transform` token → KSCAN → keymap |
 | Edge hold / エッジホールド | Observer output delegated by live `drag` or `scroll` token / liveな `drag` または `scroll` tokenからobserver出力を委譲 |
 
 ## Evidence and failure rule / 判定ログと失敗基準
 
 Save a serial log covering every failed operation. The expected ownership lines
-are `arbiter session=... winner=drag|scroll|gesture|edge-dial|tip-tap`. A test
+are `arbiter session=... winner=drag|scroll|gesture|edge-dial|tip-tap|transform`. A test
 fails if it contains `arbiter output rejected`, `arbiter frame queue overflow`,
 `proposal ... rejected`, an unexpected `session=... cancelled`, or a contact
 report failure. The known QSPI JEDEC warning is outside this trackpad test.
 
 失敗した操作ごとにシリアルログを保存する。期待する所有権ログは
-`arbiter session=... winner=drag|scroll|gesture|edge-dial|tip-tap` である。
+`arbiter session=... winner=drag|scroll|gesture|edge-dial|tip-tap|transform` である。
 `arbiter output rejected`、`arbiter frame queue overflow`、`proposal ... rejected`、
 意図しない `session=... cancelled`、接触レポート失敗があれば不合格とする。既知のQSPI
 JEDEC warningは本トラックパッド試験の対象外である。

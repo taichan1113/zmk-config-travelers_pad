@@ -3,6 +3,7 @@
 
 / {
     iqs9150_composite_kscan {
+        transform_gesture { kscan = <&iqs9150_kscan>; };
         matrix_grid { kscan = <&iqs9150_kscan>; };
         edge_dial { kscan = <&iqs9150_kscan>; };
         tip_tap { kscan = <&iqs9150_kscan>; };

@@ -277,15 +277,17 @@ will join this same composite as another child.
 ## 配線とDTS / Wiring and DTS
 
 Use the XIAO's right-hand header as follows: GND→EV02 GND, 3V3→EV02 VDD,
-P1.14→SDA, P1.13→SCL, P1.15→RDY, and P1.12 remains unused (MCLR is not driven).
+P1.15 (xiao_11 / D10)→SDA, P1.14 (xiao_10 / D9)→SCL,
+P1.13 (xiao_9 / D8)→RDY, and P1.12 remains unused (MCLR is not driven).
 Do not supply the EV02 from USB VBUS (5 V). Add the node in
 the actual build overlay is `boards/shields/iqs9150_xiao/iqs9150_xiao.overlay`.
-It remaps I2C0 from the board default pins to P1.14/P1.13 and disables SPI2,
+It remaps I2C0 from the board default pins to P1.15/P1.14 and disables SPI2,
 which otherwise uses P1.13--P1.15. `rdy-gpios` has no internal pull-up:
 IQS9150 RDY is active-low open-drain, and the EV02 pull-up should be used when
 fitted.
 
-配線は変更しません。GND→GND、3V3→VDD、P1.14→SDA、P1.13→SCL、P1.15→RDYです。
+現在の配線はGND→GND、3V3→VDD、P1.15（xiao_11 / D10）→SDA、
+P1.14（xiao_10 / D9）→SCL、P1.13（xiao_9 / D8）→RDYです。
 P1.12は未接続のままにします。EV02へ5 Vを供給しないでください。
 
 Add this repository as a ZMK module (or put it under `config/`), then enable:

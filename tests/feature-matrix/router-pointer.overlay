@@ -7,6 +7,7 @@
      * including disabled ones, so replace omitted sources with inert mock
      * KSCAN rather than removing their child nodes. */
     iqs9150_composite_kscan {
+        transform_gesture { kscan = <&iqs9150_kscan>; };
         matrix_grid { kscan = <&iqs9150_kscan>; };
         multifinger_gesture { kscan = <&iqs9150_kscan>; };
         edge_dial { kscan = <&iqs9150_kscan>; };

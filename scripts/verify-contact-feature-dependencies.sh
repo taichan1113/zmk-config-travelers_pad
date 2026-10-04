@@ -42,4 +42,13 @@ require "$cmake" 'CONFIG_TRAVELERS_PAD_IQS9150_CONTACT_SESSION src/function/iqs9
 require "$cmake" 'CONFIG_TRAVELERS_PAD_IQS9150_CONTACT_SESSION src/function/iqs9150/session/contact_arbiter.c'
 require "$cmake" 'CONFIG_TRAVELERS_PAD_IQS9150_CONTACT_SESSION src/function/iqs9150/session/contact_output_broker.c'
 
+# Every existing diagnostic profile disables transform. The composite driver
+# still constructs its child, so the phandle must target the inert mock.
+# 診断profileでtransformを外す場合もcomposite childは構築されるためmockへ差し替える。
+for overlay in "$repo_root"/tests/feature-matrix/*.overlay; do
+    if rg --quiet 'iqs9150_transform_gesture.*status = "disabled"' "$overlay"; then
+        require "$overlay" 'transform_gesture { kscan = <&iqs9150_kscan>; };'
+    fi
+done
+
 printf 'PASS: Travelers Pad feature dependency checks\n'

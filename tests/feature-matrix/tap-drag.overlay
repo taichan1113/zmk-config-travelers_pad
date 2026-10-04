@@ -5,6 +5,7 @@
     /* See router-pointer.overlay for why omitted composite children are
      * redirected to mock KSCAN instead of being disabled. */
     iqs9150_composite_kscan {
+        transform_gesture { kscan = <&iqs9150_kscan>; };
         matrix_grid { kscan = <&iqs9150_kscan>; };
         multifinger_gesture { kscan = <&iqs9150_kscan>; };
         edge_dial { kscan = <&iqs9150_kscan>; };

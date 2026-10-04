@@ -1,7 +1,9 @@
 /* IQS9150EV02 / Seeed XIAO nRF52840 wiring (XIAO top view, right header):
  * GND -> EV02 GND       3V3 -> EV02 VDD
- * P1.14 -> EV02 SDA     P1.13 -> EV02 SCL
- * P1.15 -> EV02 RDY
+ * xiao_11 / D10 / P1.15 -> EV02 SDA
+ * xiao_10 / D9  / P1.14 -> EV02 SCL
+ * xiao_9  / D8  / P1.13 -> EV02 RDY
+ * IQS背面パッドへSDA=P1.15、SCL=P1.14、RDY=P1.13を接続する。
  *
  * P1.12 is deliberately unused by the current firmware. Do not connect it to MCLR:
  * the firmware must not reset an EV02 whose GUI configuration is being kept.
@@ -14,15 +16,15 @@
 
 &i2c0_default {
     group1 {
-        psels = <NRF_PSEL(TWIM_SDA, 1, 14)>,
-                <NRF_PSEL(TWIM_SCL, 1, 13)>;
+        psels = <NRF_PSEL(TWIM_SDA, 1, 15)>,
+                <NRF_PSEL(TWIM_SCL, 1, 14)>;
     };
 };
 
 &i2c0_sleep {
     group1 {
-        psels = <NRF_PSEL(TWIM_SDA, 1, 14)>,
-                <NRF_PSEL(TWIM_SCL, 1, 13)>;
+        psels = <NRF_PSEL(TWIM_SDA, 1, 15)>,
+                <NRF_PSEL(TWIM_SCL, 1, 14)>;
         low-power-enable;
     };
 };
@@ -34,7 +36,7 @@
     iqs9150: trackpad@56 {
         compatible = "azoteq,iqs9150";
         reg = <0x56>;
-        rdy-gpios = <&gpio1 15 GPIO_ACTIVE_LOW>;
+        rdy-gpios = <&gpio1 13 GPIO_ACTIVE_LOW>;
         /* Temporary validation aid: report independent two-finger coordinates
          * at INFO level. 実機検証用に2点座標をINFOログへ出力する。 */
         two-finger-diagnostics;

@@ -1,9 +1,9 @@
 # Travelers Pad handoff / 引継ぎ書
 
-Last updated: 2026-09-14
+Last updated: 2026-10-04
 Integration target: `main`
 Development branch for this milestone: `feat/pinch-rotate`
-Integrated commit: `06e334f0626d250a3a8b8bc0f16ba6a35cf72c93`
+Integrated commit: `c76e3e02cad944fb9025cf36930c4d2cc7852f5f` (main merge of feat/pinch-rotate)
 Independent architecture review: **conditionally approved; continue hardening** /
 独立architecture review: **条件付き承認・hardening継続**
 
@@ -32,9 +32,9 @@ The established XIAO-to-IQS9150 assignment is:
 |---|---|
 | `3V3` | VDD |
 | `GND` | GND |
-| `P1.14` | I2C SDA |
-| `P1.13` | I2C SCL |
-| `P1.15` | RDY (active-low) |
+| `xiao_11 / D10 / P1.15` | I2C SDA |
+| `xiao_10 / D9 / P1.14` | I2C SCL |
+| `xiao_9 / D8 / P1.13` | RDY (active-low) |
 | `P1.12` | Unused; do **not** connect to EV02 MCLR / 未使用。EV02のMCLRへ接続しない |
 
 Do not use the XIAO `5V` pin for the trackpad. The sensor has been detected at
@@ -284,6 +284,61 @@ lifecycle失効はstate accessの同期なしには保証できないため、1�
 任意機能は安全性milestone完了後に進める。
 
 ## 11. Architecture migration score / アーキテクチャ移行度
+
+2026-09-28 local audit: full USB-logging firmware builds successfully. The
+first feature-matrix build exposed a missed transform composite phandle in all
+seven diagnostic overlays; these now redirect the disabled transform child to
+mock KSCAN. The dependency check now covers this regression. The full input
+integration procedure now includes transform and distinguishes terminal tap
+grants from drag owner tokens. Pinch/rotation hardware acceptance remains pending.
+
+2026-09-28のこのPCでの点検: full USB logging buildは成功。診断matrixで7 overlayすべての
+transform composite phandle差し替え漏れを検出し、無効transform childをmockへ変更した。
+依存検査へ回帰防止を追加。全入力試験へtransformを追加し、終了tap grantとdrag tokenの違いを
+修正した。pinch/rotation実機受入は未完了である。
+
+For another IC, start with [docs/two-finger-interaction-flow.md](docs/two-finger-interaction-flow.md).
+別ICへの移植は同文書から開始する。immutable完全frameは現行APIではなく未達設計である。
+
+After the local overlay fix, all seven feature-matrix profiles passed clean builds
+on this PC. Full USB-logging UF2 is saved as
+`C:\Users\takec\Downloads\travelers-pad-transform-review.uf2`.
+SHA-256: `0a7e5073c63218bf40ea3f41d5e1b5bbf28cd7f2b56003bf23e63efb003132ca`.
+Build logs: `/tmp/travelers-pad-transform-build.log` and
+`/tmp/travelers-pad-feature-matrix.log` (local temporary evidence, not versioned).
+修正後、7 profileすべてこのPCでクリーンビルド合格。full USB logging UF2は上記Windows
+Downloadsへ保存済み。まずtransformの8操作を実機確認し、続いてtap-drag・Tip-Tap・observerを
+統合回帰確認する。ユーザー所有review artifact 2件はcommit対象から除外する。
+
+### Production wiring acceptance / 本番機配線の受入（2026-10-04）
+
+SDA/SCL/RDY now use P1.15/P1.14/P1.13 respectively (xiao_11/xiao_10/xiao_9).
+The USB-logging firmware passed a pristine build, and generated DTS confirms
+both I2C pinctrl states and the active-low RDY mapping. The user flashed the
+production unit and confirmed operation. This accepts the wiring change;
+dedicated pinch/rotation and failure-injection acceptance remain pending.
+
+SDA/SCL/RDYをP1.15/P1.14/P1.13（xiao_11/xiao_10/xiao_9）へ変更した。
+USB logging firmwareのクリーンビルドと生成DTSの確認に合格し、ユーザーが本番機へ
+書き込んで動作確認した。配線変更は受入済み。pinch/rotation個別試験と異常系試験は未完了。
+
+UF2: `C:\Users\takec\Downloads\travelers-pad-pin-remap-20261004.uf2`
+SHA-256: `9c5fbfe88a1ad93d632abd7d06de73a791ce46eb53638136fa4efce0664eb746`.
+
+### Next work / 次の作業
+
+| Priority / 優先度 | Remaining task / 残タスク | Acceptance / 完了条件 |
+|---|---|---|
+| P0 | RDY logical-level checks / RDY論理極性確認 | `GPIO_ACTIVE_LOW` makes physical low logical 1; audit startup/recovery checks currently comparing against 0, then test cold boot, RESET, early touch and reconnect / 起動・復旧の0比較を点検し、起動・RESET・早期接触・再接続を確認 |
+| P0 | Atomic virtual-KSCAN authorization and dispatch / KSCAN認可〜出力の競合対策 | No old action after cancel/reset between authorization and callback / 認可とcallbackの間にcancel/resetしても旧操作が出ない |
+| P0 | Button release failure recovery / button-up失敗時復旧 | Fault-inject a failed release enqueue; verify retry even without later input and no stuck button / release enqueue失敗を注入し、その後入力なしでも復旧し押下が残らない |
+| P1 | Pinch/rotation hardware acceptance / ピンチ・回転の実機受入 | Both directions, repeated actions and transitions; no scroll/right-click leakage / 両方向・反復・操作切替でscroll/右clickが混入しない |
+| P1 | Delayed-work boundary regression / 遅延work境界の回帰 | Cancel at timer boundaries; old tap/inertia/edge-hold work cannot affect a new session / timer境界cancelで旧workが新sessionへ影響しない |
+| P1 | Optional grid broker integration / 任意gridのbroker統合 | Review sibling-branch change before enabling; build and cancel tests / 別branchの変更を確認し、有効化前にbuild・cancel試験 |
+| P2 | Immutable complete ContactFrame decision / 不変完全frameへの移行判断 | Document contract and test completeness, sequence and contact identity / 契約と完全性・連番・指IDを検証 |
+| P2 | Documentation consistency / 文書整合 | Distinguish seven-contact implementation from five-finger hardware coverage / 最大7点の実装と5本指の検証範囲を区別 |
+| Monitor / 監視 | Post-idle freeze / idle後freeze | Capture diagnostics if it recurs / 再発時に診断ログ取得 |
+| Later / 後続 | Acceleration, UI snapshots, strength/area diagnostics / 加速・可視化・接触強度/面積診断 | Separate milestones after safety and transform acceptance / 安全性・transform受入後に別段階で実施 |
 
 Normal user-visible paths: **100%**.
 Overall migration including cancel, concurrency, output-failure safety, and
