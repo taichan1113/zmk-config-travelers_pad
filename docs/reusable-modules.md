@@ -9,7 +9,7 @@
 | Keyboard config / キーボード設定 | 配線、使用機能、チューニング、listener processor、KSCAN統合、キー割当 / integration and tuning | ドライバーや認識器のソース変更 / driver/recognizer implementation |
 
 Driver and functions are now separate Git repositories and Zephyr modules:
-`module/zmk-driver-iqs9150` and `module/zmk-input-travelers-pad`.
+`module/zmk-driver-iqs9150` and `module/zmk-features-trackpad`.
 Each owns its CMake, Kconfig, public headers and bindings. Public compatibles,
 CONFIG names and contact ABI are unchanged. The keyboard's own module now only
 provides its shield/platform diagnostics. See [migration status](external-module-migration.md).
@@ -17,7 +17,7 @@ provides its shield/platform diagnostics. See [migration status](external-module
 driverと機能群は上記2つの独立Git repository／Zephyr moduleへ切り出した。
 各moduleがCMake・Kconfig・公開header・bindingを所有する。
 公開compatible・CONFIG名・接触ABIは維持。本repoのmoduleはshield/platform診断だけを提供する。
-公開は行っていない。取得元と確認状況は上記リンク参照。
+GitHubのprivate repoへ保存済み。取得元と確認状況は上記リンク参照。
 
 The driver is EV02-specific. Functions still have IQS9150-named CONFIG dependencies
 and a specific contact-frame contract; do not assume they work with another IC
@@ -29,15 +29,15 @@ merely by changing a phandle. Multiple pads and peripheral transport are not ver
 ## Import / 取り込み
 
 Add both external projects to the keyboard's west manifest and run `west update`.
-Their local source URLs and pinned revisions are recorded in `config/west.yml`.
+Their private GitHub URLs and pinned revisions are recorded in `config/west.yml`.
 This repository does not supply the implementation via `ZMK_EXTRA_MODULES` any more;
 another keyboard normally does not import it. Its own keyboard configuration stays
-in control. Publication and portable URLs are deliberately deferred.
+in control. Authenticated Git access is required for the private repositories.
 
 キーボードのwest manifestへ外部2projectを追加し、`west update`を実行する。
-ローカル取得元と固定revisionは本repoの`config/west.yml`に記録。
+private GitHub取得元と固定revisionは本repoの`config/west.yml`に記録。
 本repoを`ZMK_EXTRA_MODULES`へ追加しても実装は供給しないため、別キーボードでは通常取り込まない。
-接続先自身の設定を維持する。公開・他PC向けURL化はユーザー指示待ち。
+接続先自身の設定を維持する。private取得には認証済みGitアクセスが必要。
 
 ### Driver only / ドライバーだけ
 

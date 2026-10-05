@@ -3,20 +3,22 @@
 ## Target and status / 目標と状態
 
 Travelers Pad uses independent driver and function projects under the ZMK workspace's
-`module/`, acquired by west. User instruction: local repositories only; no GitHub
-creation or push. User hardware approval was received on 2026-10-06: behavior is
+`module/`, acquired by west. Both modules are now private GitHub repositories;
+the function module is named `zmk-features-trackpad`. User hardware approval
+was received on 2026-10-06 for the extraction: behavior is
 unchanged from the previous firmware. Local extraction and west integration are complete.
 
 Travelers Padはworkspaceの`module/`にある独立driver・機能projectをwestで取り込む。
-ユーザー指定によりローカルrepoのみ。GitHub作成・pushは行わない。
+両moduleはユーザー指示によりprivate GitHub repoへ保存済み。
+機能module名は`zmk-features-trackpad`に確定。
 2026-10-06、従来と同様に動作するとのユーザー実機合格を受領。
 ローカル切り出しとwest統合は完了。
 
 | Repository / repo | Responsibility / 責務 | Pinned commit / 固定commit |
 | --- | --- | --- |
-| `module/zmk-driver-iqs9150` | Driver, EV02 init, sensor binding, contact ABI / driver・初期化・センサbinding・接触ABI | `fe8c69a48b24d43b63111db49ac6925be24c5d8c` |
-| `module/zmk-input-travelers-pad` | All function implementations, arbiter, bindings, shared profile / 全機能実装・arbiter・binding・共通profile | `819fce3da423c33bda7d3efba83f1572b2843351` |
-| `config/zmk-config-travelers_pad` | Hardware wiring, config, virtual matrix, keymap, diagnostics/tests / 配線・設定・仮想matrix・keymap・診断／試験 | Branch `refactor/external-trackpad-modules` |
+| `module/zmk-driver-iqs9150` | Driver, EV02 init, sensor binding, contact ABI / driver・初期化・センサbinding・接触ABI | `b86127ab125b96dcd222b357ee4cc6893ea4bfdf` |
+| `module/zmk-features-trackpad` | All function implementations, arbiter, bindings, shared profile / 全機能実装・arbiter・binding・共通profile | `b9f70c4245759a7eed25803bbecb88ff7d3cfd66` |
+| `config/zmk-config-travelers_pad` | Hardware wiring, config, virtual matrix, keymap, diagnostics/tests / 配線・設定・仮想matrix・keymap・診断／試験 | Keyboard configuration / キーボード設定 |
 
 The driver owns `include/travelers_pad/multitouch.h`; the function module consumes
 it without a duplicate. The keyboard no longer contains driver/function C files,
@@ -29,14 +31,15 @@ from the keyboard's `b0ad83d` checkpoint and now tracked in the external reposit
 
 ## west / 取り込み
 
-`config/west.yml` pins the projects using local `file:///home/takec/zmk-workspace/module/...`
-URLs. Existing workspace manifest generation was refreshed to include these projects.
+`config/west.yml` pins projects from `https://github.com/taichan1113/zmk-driver-iqs9150.git`
+and `https://github.com/taichan1113/zmk-features-trackpad.git`. The generated workspace
+manifest uses the same names, paths and revisions.
 
-本repoのmanifestはローカルURLでprojectを固定している。workspace側の生成manifestも更新済み。
+manifestは上記private GitHub URLのcommitを固定する。workspace生成manifestも同じ名前・配置・revisionへ更新済み。
 
 ```sh
 # From zmk-workspace / workspaceから
-nix develop --command west update zmk-driver-iqs9150 zmk-input-travelers-pad
+nix develop --command west update zmk-driver-iqs9150 zmk-features-trackpad
 ```
 
 west normally checks out modules in detached HEAD state. Before changing a module,
@@ -48,15 +51,16 @@ westは通常detached HEADでmoduleをcheckoutする。module改修時はmodule�
 commit後にキーボードmanifestのrevisionを更新し、`just init`で生成manifestも更新する。
 checkoutだけの変更では再現可能な統合にはならない。
 
-Local-only limitations: the source and working checkout currently share the same
-path; keep the source repositories and their pinned commits. Another PC must copy
-both Git repositories and adapt the file URLs, or later use published URLs after
-explicit authorization. Do not remove `module/` assuming west can redownload it
-from GitHub. This extraction has not published any repository.
+Both repositories are PRIVATE. On another PC, authenticate Git for an account
+with repository access before running `west update` (for GitHub CLI HTTPS access,
+`gh auth login` and `gh auth setup-git`). CI likewise needs read credentials with
+access to both projects; a public/anonymous build cannot fetch them. Do not commit
+tokens to manifests. Local uncommitted work must still be backed up separately.
 
-ローカル限定の制約：取得元と作業checkoutは同じ場所。取得元Git repoと固定commitを保持する。
-別PCでは両Git repoのコピーとfile URLの調整が必要。公開URLへの変更は後日明示的な指示後に行う。
-GitHubから再取得できる前提で`module/`を削除しない。今回repo公開は一切していない。
+両repoはprivate。別PCではアクセス権のあるアカウントでGit認証を設定してから取得する。
+GitHub CLIのHTTPS取得では上記authコマンドを利用できる。
+CIにも両repoを読める認証情報が必要で、匿名buildでは取得できない。
+tokenはmanifestへ記録しない。ローカル未commitの作業は引き続き別途保存する。
 
 ## Verification / 検証
 

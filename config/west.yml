@@ -5,16 +5,16 @@ manifest:
     - name: amgskobo
       url-base: https://github.com/amgskobo
   projects:
-    # Local extraction stage; replace URLs after publication.
-    # ローカル切り出し段階。公開後にURLのみを置き換える。
+    # Private module repositories; authenticated Git access is required.
+    # private module取得には認証済みGitアクセスが必要。
     - name: zmk-driver-iqs9150
-      url: file:///home/takec/zmk-workspace/module/zmk-driver-iqs9150
-      revision: fe8c69a48b24d43b63111db49ac6925be24c5d8c
+      url: https://github.com/taichan1113/zmk-driver-iqs9150.git
+      revision: b86127ab125b96dcd222b357ee4cc6893ea4bfdf
       path: module/zmk-driver-iqs9150
-    - name: zmk-input-travelers-pad
-      url: file:///home/takec/zmk-workspace/module/zmk-input-travelers-pad
-      revision: 819fce3da423c33bda7d3efba83f1572b2843351
-      path: module/zmk-input-travelers-pad
+    - name: zmk-features-trackpad
+      url: https://github.com/taichan1113/zmk-features-trackpad.git
+      revision: b9f70c4245759a7eed25803bbecb88ff7d3cfd66
+      path: module/zmk-features-trackpad
     - name: zmk
       remote: zmkfirmware
       revision: v0.3

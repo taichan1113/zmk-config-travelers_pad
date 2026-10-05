@@ -2,6 +2,23 @@
 
 Last updated: 2026-10-06
 
+## Private GitHub modules / private GitHub module（最新）
+
+Both external modules have been uploaded privately under `taichan1113`.
+Function repository, local folder and Zephyr module name are `zmk-features-trackpad`.
+Driver remains `zmk-driver-iqs9150` (internal module name `iqs9150_ev02` unchanged).
+west uses GitHub HTTPS URLs, with driver `b86127ab125b96dcd222b357ee4cc6893ea4bfdf`
+and features `b9f70c4245759a7eed25803bbecb88ff7d3cfd66`. Generated workspace manifest
+and script paths follow the same names. Firmware logic, CONFIG API, DTS compatibles,
+public headers, tuning and keymap remain unchanged. Only metadata/docs changed.
+
+両外部moduleをtaichan1113配下のprivate GitHub repoへアップロード済み。
+機能repo・ローカルfolder・Zephyr module名は`zmk-features-trackpad`。
+driver名は維持し、内部module名も変更しない。westは上記固定commitのGitHub HTTPS URLを利用。
+生成manifest・script参照先も更新。ファーム処理・公開CONFIG・DTS compatible・header・調整値・keymapは不変。
+今回の変更はmetadata・文書のみ。別PC／CIでは両private repoへの認証が必要。
+以下の「ローカルのみ」「公開禁止」は過去の指示であり、今回のprivate保存許可で置き換わる。
+
 ## External-module milestone / 外部module切り出し（最新）
 
 Integrated implementation: `be4e1d8`, developed from `main` `b0ad83d` on
