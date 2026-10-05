@@ -32,6 +32,8 @@ enum transform_action {
 };
 
 struct transform_config {
+	bool pinch_enabled;
+	bool rotation_enabled;
 	uint32_t distance_threshold;
 	uint32_t rotation_threshold;
 	uint32_t pinch_step_threshold;
@@ -230,8 +232,8 @@ static void recognize_transform(const struct device *dev)
 		distance_delta = (int32_t)distance_squared - data->pinch_step_distance_squared;
 		rotation_cross = data->rotation_step_x * geometry_y -
 				 data->rotation_step_y * geometry_x;
-		pinch = abs32(distance_delta) >= cfg->pinch_step_threshold;
-		rotation = abs32(rotation_cross) >= cfg->rotation_step_threshold;
+		pinch = cfg->pinch_enabled && abs32(distance_delta) >= cfg->pinch_step_threshold;
+		rotation = cfg->rotation_enabled && abs32(rotation_cross) >= cfg->rotation_step_threshold;
 		if (pinch || rotation) {
 			queue_transform_actions(data, distance_delta, rotation_cross, pinch, rotation);
 		}
@@ -240,8 +242,8 @@ static void recognize_transform(const struct device *dev)
 
 	distance_delta = (int32_t)distance_squared - data->baseline_distance_squared;
 	rotation_cross = data->baseline_x * geometry_y - data->baseline_y * geometry_x;
-	pinch = abs32(distance_delta) >= cfg->distance_threshold;
-	rotation = abs32(rotation_cross) >= cfg->rotation_threshold;
+	pinch = cfg->pinch_enabled && abs32(distance_delta) >= cfg->distance_threshold;
+	rotation = cfg->rotation_enabled && abs32(rotation_cross) >= cfg->rotation_threshold;
 	if (!pinch && !rotation) {
 		return;
 	}
@@ -354,6 +356,8 @@ static int transform_init(const struct device *dev)
 #define TRANSFORM_INST(n)                                                                       \
 	static struct transform_data transform_data_##n = {.dev = DEVICE_DT_INST_GET(n)};         \
 	static const struct transform_config transform_config_##n = {                              \
+		.pinch_enabled = !DT_INST_PROP(n, pinch_disabled),                                  \
+		.rotation_enabled = !DT_INST_PROP(n, rotation_disabled),                            \
 		.distance_threshold = DT_INST_PROP_OR(n, distance_threshold, 30000),                 \
 		.rotation_threshold = DT_INST_PROP_OR(n, rotation_threshold, 30000),                 \
 		.pinch_step_threshold = DT_INST_PROP_OR(n, pinch_step_threshold, 30000),             \

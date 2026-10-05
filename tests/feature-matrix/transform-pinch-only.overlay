@@ -1,0 +1,4 @@
+/* Pinch only / ピンチのみ有効。 */
+&iqs9150_transform_gesture {
+    rotation-disabled;
+};

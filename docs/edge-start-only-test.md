@@ -54,6 +54,9 @@ for the interior-start session. Check 2 should emit acquisition/action logs.
 
 ## Next step / 次の段階
 
-Hardware approval is pending. After approval, checkpoint/integrate this stage
-and implement independent pinch/rotation enablement on a separate branch.
-実機承認待ち。合格後に本段階を保存・統合し、別ブランチでピンチ／回転の独立有効化を実装する。
+Hardware checks 1, 2 and 4 passed. In check 3, pointer suppression after a second
+contact persists until all fingers lift by existing router policy; no edge takeover
+was reported. This stage was accepted and merged into main (2026-10-05).
+実機項目1・2・4は合格。項目3の2本目追加後に全指解放までポインタが戻らない動作は
+既存router仕様であり、辺への横取りは報告されていない。本段階は承認されmainへ統合済み
+（2026-10-05）。

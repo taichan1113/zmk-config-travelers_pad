@@ -1,0 +1,6 @@
+/* Keep the virtual KSCAN device, disable both recognitions.
+ * 仮想KSCANは残して両方の認識を無効化する。 */
+&iqs9150_transform_gesture {
+    pinch-disabled;
+    rotation-disabled;
+};

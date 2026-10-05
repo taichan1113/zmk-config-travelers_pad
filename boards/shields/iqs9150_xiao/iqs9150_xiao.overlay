@@ -238,6 +238,9 @@
     iqs9150_router: iqs9150_router {
         compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
         input-device = <&iqs9150_session>;
+        /* Follow the same transform enablement without runtime recognizer coupling.
+         * runtime依存を追加せず、transformの個別有効設定を参照する。 */
+        transform-device = <&iqs9150_transform_gesture>;
         scroll-classify-move = <35>;
         geometry-distance-threshold = <30000>;
         geometry-rotation-threshold = <30000>;

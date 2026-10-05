@@ -1,21 +1,28 @@
 # Travelers Pad handoff / 引継ぎ書
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 ## Active adjustment / 現在の最終調整（2026-10-05）
 
 Validated baseline checkpoint: `dfd0313` on `main` (no tracked changes at checkpoint).
-Active branch: `feat/edge-start-only`. Edge dial now checks the first contact frame
+Integrated edge-policy commit: `f848b42` on `main`. Edge dial checks the first contact frame
 once per session; an interior start cannot acquire an edge later. Temporary contact
 count changes preserve that decision, and reacquisition uses only the starting edge.
-Edge widths and all other tuning remain unchanged. Hardware approval is pending;
-see `docs/edge-start-only-test.md`. Next stage: independently disable pinch/rotation.
+Edge widths and all other tuning remain unchanged. Hardware approval received;
+see `docs/edge-start-only-test.md`. Active branch: `feat/transform-independent-toggle`.
+Add `pinch-disabled` and `rotation-disabled` to the transform node independently.
+The router reads the same settings through `transform-device` (configuration-only
+dependency), including node status and feature CONFIG. Three USB-logging test UF2s
+cover pinch only, rotation only and both disabled; hardware approval is pending.
 
 実機確認済みの基準を`main`の`dfd0313`で保存（保存時点の追跡済み差分なし）。
-現在のブランチは`feat/edge-start-only`。辺取得資格をsession最初の接触frameで一度だけ
+辺取得の実装`f848b42`は実機承認されmainへ統合済み。辺取得資格をsession最初の接触frameで一度だけ
 判定し、内側開始からの途中取得を禁止する。指本数の一時変化でも判断を保持し、再取得は
-最初の辺に限定する。辺幅など他の設定は変更していない。実機承認待ち。検証手順は
-`docs/edge-start-only-test.md`。次の段階はピンチ／回転の独立無効化。
+最初の辺に限定する。辺幅など他の設定は変更していない。検証手順は
+`docs/edge-start-only-test.md`。現在は`feat/transform-independent-toggle`で
+`pinch-disabled`／`rotation-disabled`による独立無効化を実装。
+routerは`transform-device`で同じ設定・ノード状態・CONFIGを参照し、runtimeで競合recognizerを
+呼び出す依存は追加しない。ピンチのみ・回転のみ・両方無効の3種類のUSBログ付きUF2で実機確認待ち。
 
 Integration target: `main`
 Development branch for this milestone: `feat/pinch-rotate`

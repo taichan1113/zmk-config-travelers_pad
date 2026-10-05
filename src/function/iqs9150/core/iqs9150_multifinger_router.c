@@ -35,6 +35,8 @@ enum router_state {
 };
 
 struct router_config {
+	bool pinch_geometry_enabled;
+	bool rotation_geometry_enabled;
 	uint16_t scroll_classify_move;
 	uint32_t geometry_distance_threshold;
 	uint32_t geometry_rotation_threshold;
@@ -233,8 +235,8 @@ static void router_recognize_frame(const struct device *dev)
 		distance_delta = abs32((int32_t)distance_squared - data->start_distance_squared);
 		rotation_cross = abs32(data->start_geometry_x * geometry_y -
 				       data->start_geometry_y * geometry_x);
-		if (distance_delta >= cfg->geometry_distance_threshold ||
-		    rotation_cross >= cfg->geometry_rotation_threshold) {
+		if ((cfg->pinch_geometry_enabled && distance_delta >= cfg->geometry_distance_threshold) ||
+		    (cfg->rotation_geometry_enabled && rotation_cross >= cfg->geometry_rotation_threshold)) {
 			data->state = ROUTER_CLAIM_GEOMETRY;
 			LOG_INF("2F route=geometry claimed distance-delta=%u rotation=%u", distance_delta,
 				rotation_cross);
@@ -436,9 +438,19 @@ static int router_init(const struct device *dev)
 	return 0;
 }
 
+/* Read configuration only; do not call into a competing recognizer.
+ * 設定だけを共有し、競合recognizerへのruntime呼出しは追加しない。 */
+#define ROUTER_GEOMETRY_ENABLED(n, disabled_prop)                                               \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, transform_device),                                  \
+		(DT_NODE_HAS_STATUS(DT_INST_PHANDLE(n, transform_device), okay) &&                 \
+		 IS_ENABLED(CONFIG_TRAVELERS_PAD_IQS9150_TRANSFORM_GESTURE) &&                     \
+		 !DT_PROP_OR(DT_INST_PHANDLE(n, transform_device), disabled_prop, false)), (true))
+
 #define ROUTER_INST(n)                                                                        \
 	static struct router_data router_data_##n = {.dev = DEVICE_DT_INST_GET(n)};                \
 	static const struct router_config router_config_##n = {                                    \
+		.pinch_geometry_enabled = ROUTER_GEOMETRY_ENABLED(n, pinch_disabled),              \
+		.rotation_geometry_enabled = ROUTER_GEOMETRY_ENABLED(n, rotation_disabled),        \
 		.scroll_classify_move = DT_INST_PROP_OR(n, scroll_classify_move, 35),               \
 		.geometry_distance_threshold = DT_INST_PROP_OR(n, geometry_distance_threshold, 30000), \
 		.geometry_rotation_threshold = DT_INST_PROP_OR(n, geometry_rotation_threshold, 30000), \
