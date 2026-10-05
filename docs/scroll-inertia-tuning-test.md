@@ -6,7 +6,7 @@ Pinch/rotation identification remains deferred; both recognitions are disabled.
 
 | Parameter / 設定 | Value / 値 |
 |---|---|
-| Edge dial `edge-size` | 140 (unchanged / 維持) |
+| Edge dial `edge-size` | 20 (user correction / 指定訂正) |
 | Pointer listener scaler | `zip_scroll_scaler 1 12` |
 | Inertia `start-delay-ms` | 10 |
 | Inertia `repeat-ms` | 10 |
@@ -23,7 +23,22 @@ delta above `scroll-max-frame-delta=128`, so raising the clamp does not bypass t
 辺Behavior／マクロのスクロール速度は変わらない。`max-delta`は倍率でなく上限。
 pointerの`scroll-max-frame-delta=128`による異常座標除外は維持し、上限300でも解除されない。
 
-UF2: `C:\Users\takec\Downloads\travelers-pad-scroll-inertia-tuning-20261006.uf2`
+UF2: `C:\Users\takec\Downloads\travelers-pad-scroll-inertia-tuning-edge20-20261006.uf2`
+
+The edge-hold continuation band remains 80. Only edge-dial acquisition uses 20.
+エッジ保持継続の帯幅は80のまま。辺操作の取得だけ20とする。
+
+Inertia implementation review: the current initial value is the last nonzero
+wheel report, not a time-normalized velocity. Integer truncation during decay
+shortens low-speed tails (8 at 9/10 stops on the seventh 10ms tick). A future
+separate change should estimate recent physical velocity and preserve fractional
+velocity/output residuals, while retaining arbiter leases and the existing scaler.
+Do not treat this width-only firmware as a new inertia algorithm.
+
+慣性実装調査：初速は最後の非ゼロwheel reportであり時間正規化速度ではない。
+整数切捨て減衰により低速の余韻が短い（初速8・9/10は10msの7回目で停止）。
+次段階の独立改修候補は直近の物理速度推定と速度／出力端数の保持。
+arbiter leaseと既存scalerは維持する。この幅修正版に新慣性アルゴリズムは含まない。
 
 ## Hardware checks / 実機確認
 

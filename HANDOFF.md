@@ -7,13 +7,13 @@ Last updated: 2026-10-06
 Active branch: `feat/scroll-inertia-tuning`, based on `72e43c6`.
 Independent disablement works, but pinch/rotation can cross-trigger; classification
 design is deferred, not approved as final UX. Both are disabled in the tuning profile.
-User-requested values: edge width 140, wheel scaler 1/12, inertia delay/period 10ms,
+User-corrected values: edge width 20, wheel scaler 1/12, inertia delay/period 10ms,
 decay 9/10, max delta 300; stop delta remains 2. Hardware check pending; see
 `docs/scroll-inertia-tuning-test.md`. No algorithm or behavior-keymap changes.
 
 現在は`72e43c6`を基準とした`feat/scroll-inertia-tuning`。
 独立無効化は動くが、ピンチ／回転の交差発火が残るため識別設計は保留（最終UX合格ではない）。
-調整profileでは両方無効。指定値は辺幅140、倍率1/12、慣性遅延・周期10ms、減衰9/10、
+調整profileでは両方無効。訂正された指定値は辺幅20、倍率1/12、慣性遅延・周期10ms、減衰9/10、
 上限300。停止閾値2は維持。実機確認待ち。上記文書参照。アルゴリズム・Behavior割当は変更なし。
 
 ## Active adjustment / 現在の最終調整（2026-10-05）

@@ -144,10 +144,10 @@
         columns = <8>;
         surface-x = <2000>;
         surface-y = <1213>;
-        /* 左端から140カウント、80カウント移動ごとに一回発火する。
-         * The leftmost 140 counts acquire the edge; one event is emitted per
+        /* 各辺から20カウント、80カウント移動ごとに一回発火する。
+         * A 20-count edge band acquires the edge; one event is emitted per
          * 80 counts of parallel movement. */
-        edge-size = <140>;
+        edge-size = <20>;
         step-move = <80>;
         /* 辺の移動方向に対応する角の局所円へ、80カウント内側で切り替える。
          * Enter the local circle at the corner selected by edge direction. */
