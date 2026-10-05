@@ -4,11 +4,13 @@
 
 Travelers Pad uses independent driver and function projects under the ZMK workspace's
 `module/`, acquired by west. User instruction: local repositories only; no GitHub
-creation or push. Hardware approval is still pending for this extraction.
+creation or push. User hardware approval was received on 2026-10-06: behavior is
+unchanged from the previous firmware. Local extraction and west integration are complete.
 
 Travelers Padはworkspaceの`module/`にある独立driver・機能projectをwestで取り込む。
 ユーザー指定によりローカルrepoのみ。GitHub作成・pushは行わない。
-今回の切り出しは実機確認待ち。
+2026-10-06、従来と同様に動作するとのユーザー実機合格を受領。
+ローカル切り出しとwest統合は完了。
 
 | Repository / repo | Responsibility / 責務 | Pinned commit / 固定commit |
 | --- | --- | --- |
@@ -75,9 +77,9 @@ Firmware UF2 / ファーム：
 4. Disconnect/reconnect USB once and verify recovery. / USBを一度抜き差しして復帰を確認。
 
 No fine retuning is required: the criterion is unchanged behavior from the validated
-firmware. Report deviations and serial logs; do not merge the extraction branch until
-hardware approval. The contact-arbiter architecture remains unchanged.
+firmware. User approval has now satisfied this integration gate. Keep this procedure
+for future regressions. The contact-arbiter architecture remains unchanged.
 
 細かい再調整は不要。既存の合格済みファームと挙動が変わらないことが基準。
-差異とシリアルログを共有し、実機合格まで切り出しbranchをmainへ統合しない。
+ユーザー実機合格により今回の統合条件は満たされた。手順は今後の回帰確認用に保持する。
 接触arbiterのアーキテクチャは変更していない。

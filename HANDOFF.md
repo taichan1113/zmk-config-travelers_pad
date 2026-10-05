@@ -4,14 +4,16 @@ Last updated: 2026-10-06
 
 ## External-module milestone / 外部module切り出し（最新）
 
-Active branch: `refactor/external-trackpad-modules`, based on `main` `b0ad83d`.
+Integrated implementation: `be4e1d8`, developed from `main` `b0ad83d` on
+`refactor/external-trackpad-modules`. Hardware-approved for main integration.
 Driver and ALL function implementation now live in independent local Git repositories
 under `zmk-workspace/module/`, acquired by pinned west projects. Keyboard wiring,
 feature node choices, virtual matrix, keymap, XIAO boot probe and regression assets
 remain here. Shared DTS is supplied by the function module, not this repository.
 See `docs/external-module-migration.md` for revisions, tests and limitations.
 
-現在のbranchは`main`の`b0ad83d`から作成した`refactor/external-trackpad-modules`。
+実装commitは`be4e1d8`。`main`の`b0ad83d`から作成した
+`refactor/external-trackpad-modules`で開発し、実機合格によりmainへ統合する。
 driverと全機能実装をworkspace/module配下の独立ローカルGit repoへ切り出し、westで固定取得する。
 本repoには配線・機能nodeの選択・仮想matrix・keymap・XIAO診断・回帰資産を残す。
 共通DTSは機能moduleが供給する。固定revision・検査・制約は上記文書参照。
@@ -32,11 +34,13 @@ CONFIG changes only add module registration flags. Full-profile, driver-only and
 pointer-profile builds and host inertia math pass, as do structural checks. Fresh
 west clone was verified separately. UF2:
 `C:\Users\takec\Downloads\travelers-pad-external-modules-20261006.uf2`.
-Hardware approval pending; keep main unchanged until confirmation.
+User confirmed behavior unchanged from the previous firmware on 2026-10-06.
+Local extraction and west integration are complete; no new serial log was supplied.
 
 実装／共通profileのバイトと調整値は変更なし。生成DTSは旧版と一致し、CONFIG差分はmodule登録だけ。
 全機能・driver単独・基本pointerのbuild、host慣性数学・構造検査は合格。別workspaceのwest取得も確認。
-上記UF2の実機確認待ち。合格までこの切り出しはmainへ統合しない。
+2026-10-06、ユーザーから上記UF2が従来と同様に動作するとの実機合格を受領。
+ローカル切り出し・west統合は完了。この確認では新たなシリアルログの提出はない。
 以下の内部module時代の記載は履歴で、この節を優先する。
 
 ## Reusable-module milestone / 再利用module整備（最新）
