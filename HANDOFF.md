@@ -430,3 +430,18 @@ claim until items 1--6 and their failure-path tests pass.
 
 独立reviewは`06e334f`を継続開発baseとして条件付き承認した。上記1〜6と異常系testが
 完了するまでは、最終releaseおよび移行100%とは判定しない。
+# Latest checkpoint / 最新チェックポイント（2026-10-06）
+
+User-completed manual tuning is retained: smooth scrolling enabled, wheel scaler
+1/4, edge behavior velocity 1200. Pinch is enabled; rotation remains disabled.
+Time-based inertia and canonical pre-processor wheel observation are integrated.
+Pinch-only final UF2 was built; its latest hardware result has not been separately
+reported. Preserve the user-edited keymap (including Tip-Tap and transform keys).
+Next milestone: reusable, board-independent driver/function integration profiles.
+
+ユーザーの手動調整を維持：高解像度スクロール有効、ホイール倍率1/4、辺Behavior速度1200。
+ピンチ有効・回転無効。時間基準慣性とprocessor前の専用wheel観測を統合する。
+ピンチのみ有効な最終UF2はbuild済みだが、その実機結果は別途未報告。
+Tip-Tap・transformなどユーザー編集のキーマップを保持する。
+次の段階は基板非依存のドライバー／機能取り込みprofile整備。
+以下の古いブランチ・設定記載は履歴であり、この節を優先する。

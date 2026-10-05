@@ -19,32 +19,32 @@
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             wait-ms = <24>;
-            bindings = <&macro_press &msc MOVE_Y(600)>,
-                       <&macro_release &msc MOVE_Y(600)>;
+            bindings = <&macro_press &msc MOVE_Y(1200)>,
+                       <&macro_release &msc MOVE_Y(1200)>;
         };
 
         edge_scroll_down: edge_scroll_down {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             wait-ms = <24>;
-            bindings = <&macro_press &msc MOVE_Y(-600)>,
-                       <&macro_release &msc MOVE_Y(-600)>;
+            bindings = <&macro_press &msc MOVE_Y(-1200)>,
+                       <&macro_release &msc MOVE_Y(-1200)>;
         };
 
         edge_scroll_right: edge_scroll_right {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             wait-ms = <24>;
-            bindings = <&macro_press &msc MOVE_X(600)>,
-                       <&macro_release &msc MOVE_X(600)>;
+            bindings = <&macro_press &msc MOVE_X(1200)>,
+                       <&macro_release &msc MOVE_X(1200)>;
         };
 
         edge_scroll_left: edge_scroll_left {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             wait-ms = <24>;
-            bindings = <&macro_press &msc MOVE_X(-600)>,
-                       <&macro_release &msc MOVE_X(-600)>;
+            bindings = <&macro_press &msc MOVE_X(-1200)>,
+                       <&macro_release &msc MOVE_X(-1200)>;
         };
     };
 
@@ -64,30 +64,30 @@
              *       top volume up/down, bottom scroll right/left.
              * Transform: pinch in/out = Ctrl+-/Ctrl+= (zoom out/in),
              *            counter-clockwise/clockwise = F15/F16. */
-            bindings = <&mkp MB4         &mkp MB5          &kp PG_UP       &kp PG_DN
-                        &kp LG(LEFT)     &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
-                        &kp LG(M)        &kp LS(LG(M))
-                        &kp C_BRI_DN     &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
-                        &kp C_VOL_UP     &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
-                        &kp F13          &kp F14
-                        &kp LC(MINUS)    &kp LC(EQUAL)     &kp F15         &kp F16>;
+            bindings = <&mkp MB5          &mkp MB4          &kp PG_UP       &kp PG_DN
+                        &kp LG(LEFT)      &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
+                        &kp LG(M)         &kp LS(LG(M))
+                        &kp C_BRI_DN      &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
+                        &kp C_VOL_UP      &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
+                        &kp LC(LS(TAB)) &kp LC(TAB)
+                        &kp LC(MINUS)     &kp LC(COLON)     &kp C_BRI_DEC         &kp C_BRI_INC>;
         };
     };
 };
 
 /* Keyboard-level two-finger scroll tuning / キーボード側の2本指スクロール調整
- * The current tuning listener chain is <&zip_scroll_scaler 1 12>. To customise it,
+ * The current tuning listener chain is <&zip_scroll_scaler 1 4>. To customise it,
  * uncomment this block and choose the transform flags and multiplier below.
  * The processor handles only REL_WHEEL/HWHEEL: 1F pointer movement is unchanged.
  *
- * 現在の調整listener chainは <&zip_scroll_scaler 1 12> である。調整する場合は下の
+ * 現在の調整listener chainは <&zip_scroll_scaler 1 4> である。調整する場合は下の
  * blockを有効化し、反転flagと倍率を選ぶ。processorの対象はREL_WHEEL/HWHEELだけで、
  * 1本指ポインタ移動は変化しない。
  *
  * INPUT_TRANSFORM_Y_INVERT: vertical / 縦反転
  * INPUT_TRANSFORM_X_INVERT: horizontal / 横反転
- * scaler <1 6>: twice as fast / 現在の2倍速
- * scaler <1 24>: half as fast / 現在の半速 */
+ * scaler <1 2>: twice as fast / 現在の2倍速
+ * scaler <1 8>: half as fast / 現在の半速 */
 /*
 &iqs9150_pointer_listener {
     input-processors = <&zip_scroll_transform INPUT_TRANSFORM_Y_INVERT>,

@@ -225,9 +225,8 @@
     iqs9150_transform_gesture: iqs9150_transform_gesture {
         compatible = "zmk,travelers-pad-iqs9150-transform-gesture";
         input-device = <&iqs9150_session>;
-        /* Recognition design is deferred during scroll tuning.
-         * スクロール調整中はピンチ／回転認識の設計判断を保留する。 */
-        pinch-disabled;
+        /* Enable pinch only; rotation remains disabled.
+         * ピンチのみ有効にし、回転は無効のままにする。 */
         rotation-disabled;
         distance-threshold = <30000>;
         rotation-threshold = <30000>;
@@ -391,13 +390,13 @@
         compatible = "zmk,input-listener";
         device = <&iqs9150_pointer>;
         /* Keep wheel tuning downstream from contact tracking. The scaler
-         * preserves fractional values; the tuning profile uses <1 12>.
+         * preserves fractional values; the tuning profile uses <1 4>.
          * Keyboard overlays may replace
          * this chain to invert either axis or select another multiplier.
          * ホイール調整を接触追跡より後段へ分離する。scalerは端数を保持するため、
-         * 調整profileでは <1 12> を使う。キーボードoverlayは
+         * 調整profileでは <1 4> を使う。キーボードoverlayは
          * このchainを置換して軸反転または別の倍率を選択できる。 */
-        input-processors = <&zip_scroll_scaler 1 12>;
+        input-processors = <&zip_scroll_scaler 1 4>;
         status = "okay";
     };
 
