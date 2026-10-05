@@ -23,15 +23,24 @@ that reuses the normal listener chain.
 Release regression follows the [test guide index](docs/README.md): structural
 check, clean build, then full input hardware integration test.
 
-This is a ZMK/Zephyr module for the IQS9150EV02 Travelers Pad.
+This is the keyboard configuration for the IQS9150EV02 Travelers Pad. The
+driver and function implementation are separate west projects; this repository
+retains wiring, feature configuration, bindings and XIAO platform diagnostics.
 
-`config/west.yml` is a complete workspace manifest: it declares ZMK v0.3 and
-`zmk-input-matrix`. From the workspace root, `nix develop` then `just init`
+本repoはキーボード設定であり、driver・機能実装は独立したwest projectへ切り出した。
+配線・機能設定・キー割当・XIAO固有診断は本repoに残す。
+現在はユーザー指定によりローカルのみで、GitHubへの公開は行わない。
+取得元・固定commit・実機手順は [外部module移行](docs/external-module-migration.md) を参照。
+
+`config/west.yml` is a complete workspace manifest: it declares ZMK v0.3,
+`zmk-input-matrix`, and the two locally pinned driver/function projects.
+From the workspace root, `nix develop` then `just init`
 can select `config/zmk-config-travelers_pad` without relying on a previously
 selected keyboard configuration.
 
 `config/west.yml` は完全なworkspace manifestであり、ZMK v0.3と
-`zmk-input-matrix` を宣言する。workspace rootで `nix develop` 後に `just init` を実行して
+`zmk-input-matrix` およびローカル固定のdriver・機能2projectを宣言する。
+workspace rootで `nix develop` 後に `just init` を実行して
 `config/zmk-config-travelers_pad` を選んでも、以前に選択したkeyboard設定には依存しない。
 
 ## モジュール構成 / Module architecture
@@ -39,6 +48,7 @@ selected keyboard configuration.
 再利用の入口は [モジュール取り込みガイド](docs/reusable-modules.md) です。
 配線・キーマトリクスを含まない基本profileは
 `#include <travelers-pad/iqs9150-pointer.dtsi>` で取り込めます。
+共通DTSは`module/zmk-input-travelers-pad`が提供します。
 ドライバー単独でもビルドでき、基本profileは外部格子moduleに依存しません。
 既存XIAO full-pad profileはこの共通定義を使い、多指ジェスチャー・辺操作などを追加します。
 

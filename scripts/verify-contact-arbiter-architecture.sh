@@ -15,10 +15,11 @@
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$repo_root/scripts/module-paths.sh"
 overlay="$repo_root/boards/shields/iqs9150_xiao/iqs9150_xiao.overlay"
-pointer_profile="$repo_root/dts/travelers-pad/iqs9150-pointer.dtsi"
-source_root="$repo_root/src"
-include_root="$repo_root/include"
+pointer_profile="$function_module/dts/travelers-pad/iqs9150-pointer.dtsi"
+source_root="$function_module/src"
+include_root="$function_module/include"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -37,7 +38,10 @@ require_source() {
     local relative_path=$1
     local text=$2
 
-    require "$source_root/$relative_path" "$text"
+    case "$relative_path" in
+        driver/*) require "$driver_module/src/$relative_path" "$text" ;;
+        *) require "$source_root/$relative_path" "$text" ;;
+    esac
 }
 
 raw_subscribers=$(rg --no-filename --fixed-strings 'input-device = <&iqs9150>;' "$overlay" "$pointer_profile" | wc -l)

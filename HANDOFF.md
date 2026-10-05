@@ -2,6 +2,43 @@
 
 Last updated: 2026-10-06
 
+## External-module milestone / 外部module切り出し（最新）
+
+Active branch: `refactor/external-trackpad-modules`, based on `main` `b0ad83d`.
+Driver and ALL function implementation now live in independent local Git repositories
+under `zmk-workspace/module/`, acquired by pinned west projects. Keyboard wiring,
+feature node choices, virtual matrix, keymap, XIAO boot probe and regression assets
+remain here. Shared DTS is supplied by the function module, not this repository.
+See `docs/external-module-migration.md` for revisions, tests and limitations.
+
+現在のbranchは`main`の`b0ad83d`から作成した`refactor/external-trackpad-modules`。
+driverと全機能実装をworkspace/module配下の独立ローカルGit repoへ切り出し、westで固定取得する。
+本repoには配線・機能nodeの選択・仮想matrix・keymap・XIAO診断・回帰資産を残す。
+共通DTSは機能moduleが供給する。固定revision・検査・制約は上記文書参照。
+
+User explicitly chose LOCAL ONLY. No GitHub repository creation or push is authorized.
+Manifest file URLs point at the local source repositories; both repositories must be
+preserved/copied for handoff until future publication is requested. `west update`
+normally leaves them detached at the pinned revisions. Do not modify them without
+first creating a branch. Workspace generated manifest was refreshed to the same pins.
+
+ユーザーはローカルのみを明示選択。GitHub作成・pushは行わない。
+file URLの取得元Git repoは将来の公開指示まで保持／別PCへコピーする必要がある。
+west update後は固定revisionのdetached HEADになるため、変更前にbranchを作成する。
+workspace生成manifestも同じrevisionへ更新済み。
+
+Implementation/profile bytes and tuning are unchanged. Full DTS matches the baseline;
+CONFIG changes only add module registration flags. Full-profile, driver-only and
+pointer-profile builds and host inertia math pass, as do structural checks. Fresh
+west clone was verified separately. UF2:
+`C:\Users\takec\Downloads\travelers-pad-external-modules-20261006.uf2`.
+Hardware approval pending; keep main unchanged until confirmation.
+
+実装／共通profileのバイトと調整値は変更なし。生成DTSは旧版と一致し、CONFIG差分はmodule登録だけ。
+全機能・driver単独・基本pointerのbuild、host慣性数学・構造検査は合格。別workspaceのwest取得も確認。
+上記UF2の実機確認待ち。合格までこの切り出しはmainへ統合しない。
+以下の内部module時代の記載は履歴で、この節を優先する。
+
 ## Reusable-module milestone / 再利用module整備（最新）
 
 `main` includes the tuning milestone through `4303a03` and the hardware-approved

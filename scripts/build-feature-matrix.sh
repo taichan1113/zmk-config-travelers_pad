@@ -5,7 +5,7 @@
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-workspace_root=$(CDPATH='' cd -- "$repo_root/../.." && pwd)
+source "$repo_root/scripts/module-paths.sh"
 config_dir="$repo_root/config"
 matrix_dir="$repo_root/tests/feature-matrix"
 

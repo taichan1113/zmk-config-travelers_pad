@@ -5,8 +5,9 @@
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-kconfig="$repo_root/src/function/iqs9150/Kconfig"
-cmake="$repo_root/cmake/functions.cmake"
+source "$repo_root/scripts/module-paths.sh"
+kconfig="$function_module/src/function/iqs9150/Kconfig"
+cmake="$function_module/CMakeLists.txt"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2

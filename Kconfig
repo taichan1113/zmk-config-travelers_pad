@@ -1,6 +1,3 @@
-rsource "src/driver/iqs9150/Kconfig"
-rsource "src/function/iqs9150/Kconfig"
-
 config TRAVELERS_PAD_XIAO_BOOT_PROBE
     bool "XIAO USB boot diagnostic"
     default n

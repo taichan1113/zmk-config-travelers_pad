@@ -3,7 +3,7 @@
 # Travelers Pad shield・外部格子module無しで再利用profileを検査する。
 set -euo pipefail
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-workspace_root=$(CDPATH='' cd -- "$repo_root/../.." && pwd)
+source "$repo_root/scripts/module-paths.sh"
 example_dir="$repo_root/examples/reuse"
 profiles=("$@")
 if (( $# == 0 )); then profiles=(driver-only pointer); fi

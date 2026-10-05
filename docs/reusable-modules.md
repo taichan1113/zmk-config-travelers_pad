@@ -8,14 +8,16 @@
 | Functions / 機能群 | session・arbiter・broker、認識器、慣性・継続 / ownership, recognizers and continuation | キーボードの配線・物理キー配列 / keyboard wiring and layout |
 | Keyboard config / キーボード設定 | 配線、使用機能、チューニング、listener processor、KSCAN統合、キー割当 / integration and tuning | ドライバーや認識器のソース変更 / driver/recognizer implementation |
 
-One Zephyr module is still registered by `zephyr/module.yml`. Driver and function
-source lists are separated in `cmake/driver.cmake` and `cmake/functions.cmake`;
-Kconfig entry points are separated under `src/driver/iqs9150` and
-`src/function/iqs9150`. Public compatibles, CONFIG names and C headers are unchanged.
+Driver and functions are now separate Git repositories and Zephyr modules:
+`module/zmk-driver-iqs9150` and `module/zmk-input-travelers-pad`.
+Each owns its CMake, Kconfig, public headers and bindings. Public compatibles,
+CONFIG names and contact ABI are unchanged. The keyboard's own module now only
+provides its shield/platform diagnostics. See [migration status](external-module-migration.md).
 
-`zephyr/module.yml`で登録するZephyr moduleは引き続き1つ。driver/functionのsource listと
-Kconfig入口を分離した。公開compatible・CONFIG名・Cヘッダは変更していない。
-今後driverと機能群を2repositoryへ切り出すための第一段階で、現時点では別repoを作成・公開しない。
+driverと機能群は上記2つの独立Git repository／Zephyr moduleへ切り出した。
+各moduleがCMake・Kconfig・公開header・bindingを所有する。
+公開compatible・CONFIG名・接触ABIは維持。本repoのmoduleはshield/platform診断だけを提供する。
+公開は行っていない。取得元と確認状況は上記リンク参照。
 
 The driver is EV02-specific. Functions still have IQS9150-named CONFIG dependencies
 and a specific contact-frame contract; do not assume they work with another IC
@@ -26,14 +28,16 @@ merely by changing a phandle. Multiple pads and peripheral transport are not ver
 
 ## Import / 取り込み
 
-During local development, add this repository to `ZMK_EXTRA_MODULES`. For west
-distribution, add it as an ordinary project to the consuming keyboard's manifest,
-using a published, validated commit for `revision`. Do not replace the keyboard's
-manifest with this repository's `config/west.yml` or import its keyboard configuration.
+Add both external projects to the keyboard's west manifest and run `west update`.
+Their local source URLs and pinned revisions are recorded in `config/west.yml`.
+This repository does not supply the implementation via `ZMK_EXTRA_MODULES` any more;
+another keyboard normally does not import it. Its own keyboard configuration stays
+in control. Publication and portable URLs are deliberately deferred.
 
-ローカル開発では本repoを`ZMK_EXTRA_MODULES`へ追加する。west配布では接続先キーボードの
-manifestへ通常のprojectとして追加し、公開・検証済みcommitを`revision`へ固定する。
-本repoの`config/west.yml`やキーボード設定全体を接続先へ置き換えて取り込まない。
+キーボードのwest manifestへ外部2projectを追加し、`west update`を実行する。
+ローカル取得元と固定revisionは本repoの`config/west.yml`に記録。
+本repoを`ZMK_EXTRA_MODULES`へ追加しても実装は供給しないため、別キーボードでは通常取り込まない。
+接続先自身の設定を維持する。公開・他PC向けURL化はユーザー指示待ち。
 
 ### Driver only / ドライバーだけ
 

@@ -43,7 +43,7 @@ legacy algorithm with the retained 9/10 and stop-delta 2. Pinch/rotation remain 
 Host math regression / host計算回帰試験（workspace root）:
 
 ```sh
-nix develop --command bash -c 'cc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -I config/zmk-config-travelers_pad/include config/zmk-config-travelers_pad/tests/inertia-math.c -o /tmp/travelers-pad-inertia-math-test && /tmp/travelers-pad-inertia-math-test'
+nix develop --command bash -c 'cc -std=c11 -Wall -Wextra -Werror -fsanitize=undefined -I module/zmk-input-travelers-pad/include config/zmk-config-travelers_pad/tests/inertia-math.c -o /tmp/travelers-pad-inertia-math-test && /tmp/travelers-pad-inertia-math-test'
 ```
 
 UF2: `C:\Users\takec\Downloads\travelers-pad-time-based-inertia-20261006.uf2`

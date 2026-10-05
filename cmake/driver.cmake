@@ -1,1 +1,0 @@
-zephyr_library_sources_ifdef(CONFIG_IQS9150_EV02_DRIVER src/driver/iqs9150/iqs9150_ev02_driver.c)

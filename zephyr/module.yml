@@ -1,7 +1,6 @@
-name: iqs9150_ev02
+name: travelers_pad_config
 build:
   kconfig: Kconfig
   cmake: .
   settings:
     board_root: .
-    dts_root: .
