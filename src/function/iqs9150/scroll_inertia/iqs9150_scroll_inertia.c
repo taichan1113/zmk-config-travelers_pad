@@ -29,6 +29,7 @@
 LOG_MODULE_REGISTER(travelers_pad_scroll_inertia, LOG_LEVEL_INF);
 
 struct scroll_inertia_config {
+	const struct device *wheel_input_device;
 	const struct device *wheel_output_device;
 	uint16_t start_delay_ms;
 	uint16_t repeat_ms;
@@ -66,6 +67,7 @@ struct scroll_inertia_data {
 	struct travelers_pad_owner_token post_session_lease;
 	struct k_work_delayable work;
 	struct k_work_sync work_sync;
+	struct travelers_pad_wheel_observation wheel_observation;
 	uint32_t work_generation;
 };
 
@@ -371,6 +373,17 @@ static int inertia_init(const struct device *dev)
 		return -EINVAL;
 	}
 	k_work_init_delayable(&data->work, inertia_work_handler);
+	data->wheel_observation = (struct travelers_pad_wheel_observation){
+		.source = cfg->wheel_output_device,
+		.sink = cfg->wheel_input_device,
+	};
+	/* Observe an isolated copy, never the mutable host listener's event.
+	 * HID listenerが書き換えるeventでなく、専用deviceの複製を観測する。 */
+	int rc = travelers_pad_output_register_wheel_observation(&data->wheel_observation);
+	if (rc != 0) {
+		LOG_ERR("inertia requires a private canonical wheel input: %d", rc);
+		return rc;
+	}
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);
 	(void)travelers_pad_arbiter_bind_frame_handler(
 		TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA, inertia_deliver_resolved_frame, data);
@@ -384,8 +397,11 @@ static int inertia_init(const struct device *dev)
 }
 
 #define SCROLL_INERTIA_INST(n)                                                                 \
+	BUILD_ASSERT(DT_NODE_HAS_COMPAT(DT_INST_PHANDLE(n, wheel_input_device),                  \
+		zmk_travelers_pad_canonical_wheel_input), "inertia needs a private canonical source"); \
 	static struct scroll_inertia_data scroll_inertia_data_##n = {.dev = DEVICE_DT_INST_GET(n)};  \
 	static const struct scroll_inertia_config scroll_inertia_config_##n = {                      \
+		.wheel_input_device = DEVICE_DT_GET(DT_INST_PHANDLE(n, wheel_input_device)),            \
 		.wheel_output_device = DEVICE_DT_GET(DT_INST_PHANDLE(n, wheel_output_device)),          \
 		.start_delay_ms = DT_INST_PROP_OR(n, start_delay_ms, 20),                                \
 		.repeat_ms = DT_INST_PROP_OR(n, repeat_ms, 24),                                           \

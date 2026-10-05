@@ -120,6 +120,18 @@ require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_arbiter_acquire_post_session_lease'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_output_post_session'
+require "$overlay" 'wheel-input-device = <&iqs9150_wheel_observation>;'
+require "$overlay" 'wheel-output-device = <&iqs9150_pointer>;'
+require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
+    'travelers_pad_output_register_wheel_observation'
+require_source 'function/iqs9150/session/contact_output_broker.c' 'copy_canonical_wheel'
+post_session_body=$(sed -n '/^int travelers_pad_output_post_session(/,/^int travelers_pad_output_terminal(/p' \
+    "$source_root/function/iqs9150/session/contact_output_broker.c")
+printf '%s\n' "$post_session_body" | rg --fixed-strings --quiet 'producer, &guard, false);' ||
+    fail 'post-session output must not be copied into canonical observations'
+if rg --quiet '^[[:space:]]*device = <&iqs9150_wheel_observation>;' "$overlay"; then
+    fail 'canonical wheel observation must not have a host listener'
+fi
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'inertia_deliver_resolved_frame'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \

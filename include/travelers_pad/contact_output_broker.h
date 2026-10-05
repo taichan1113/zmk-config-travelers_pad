@@ -24,6 +24,19 @@
 
 #include <travelers_pad/contact_arbiter.h>
 
+/* Init-only registration of a private canonical wheel observation stream.
+ * The broker copies successful routed/auxiliary wheel values before processors;
+ * post-session output is never copied, preventing inertia feedback. The sink
+ * must not have a host input-listener or input processors attached.
+ * 初期化時だけ専用の標準wheel観測streamを登録する。processor前の値を複製し、
+ * post-session出力は複製しない。観測sinkへHID listenerやprocessorを接続しない。 */
+struct travelers_pad_wheel_observation {
+	const struct device *source;
+	const struct device *sink;
+	struct travelers_pad_wheel_observation *next;
+};
+int travelers_pad_output_register_wheel_observation(struct travelers_pad_wheel_observation *route);
+
 /* A primary owner output is emitted only while its exact arbiter token is
  * current. / primary ownerの出力は、完全に一致するarbiter tokenが現行の間だけ送る。 */
 int travelers_pad_output_primary(const struct device *dev, uint32_t ownership_frame_seq,

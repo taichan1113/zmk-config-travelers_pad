@@ -264,6 +264,13 @@
         status = "okay";
     };
 
+    /* No HID listener or processors on this private observation source.
+     * 専用観測sourceにはHID listener・processorを接続しない。 */
+    iqs9150_wheel_observation: iqs9150_wheel_observation {
+        compatible = "zmk,travelers-pad-canonical-wheel-input";
+        status = "okay";
+    };
+
     /* Scroll inertia observes canonical, axis-locked pointer wheel events and
      * sends its decay back through the same pointer listener chain.
      * スクロール慣性は標準ポインタの軸ロック済みホイール値を観測し、減衰値を同じ
@@ -271,7 +278,7 @@
     iqs9150_scroll_inertia: iqs9150_scroll_inertia {
         compatible = "zmk,travelers-pad-scroll-inertia";
         contact-input-device = <&iqs9150_session>;
-        wheel-input-device = <&iqs9150_pointer>;
+        wheel-input-device = <&iqs9150_wheel_observation>;
         wheel-output-device = <&iqs9150_pointer>;
         start-delay-ms = <10>;
         repeat-ms = <10>;

@@ -35,7 +35,12 @@ properties:
   wheel-input-device:
     type: phandle
     required: true
-    description: Canonical wheel stream emitted by the pointer function
+    description: |
+      Private zmk,travelers-pad-canonical-wheel-input device, without a host
+      listener or processors. Must differ from wheel-output-device. The broker
+      copies raw values from wheel-output-device to this source before scaling.
+      専用wheel観測device。出力deviceと分離しHID listener・processorを接続しない。
+      brokerが出力deviceの倍率適用前の値をこの観測sourceへ複製する。
   wheel-output-device:
     type: phandle
     required: true

@@ -182,15 +182,65 @@ static int emit(const struct device *dev, uint8_t type, uint16_t code, int32_t v
 /* `input_report(..., K_NO_WAIT)` only enqueues the report in this firmware's
  * threaded input configuration. Keep the arbiter output guard as short as
  * possible and log only after it has been released. */
+static struct travelers_pad_wheel_observation *wheel_observations;
+
+int travelers_pad_output_register_wheel_observation(struct travelers_pad_wheel_observation *route)
+{
+	if (route == NULL || route->source == NULL || route->sink == NULL ||
+	    route->source == route->sink) {
+		return -EINVAL;
+	}
+	for (struct travelers_pad_wheel_observation *entry = wheel_observations;
+	     entry != NULL; entry = entry->next) {
+		if (entry == route || entry->sink == route->sink) {
+			return -EALREADY;
+		}
+	}
+	route->next = wheel_observations;
+	wheel_observations = route;
+	return 0;
+}
+
+/* A separate queued event owns its value: mutation of the host event by a
+ * scaler/transform cannot affect the observer, regardless of callback order.
+ * 別queue eventに値を複製し、HID側の値の書換えをcallback順に関係なく隔離する。 */
+static int copy_canonical_wheel(const struct device *dev, uint8_t type, uint16_t code,
+			      int32_t value, bool sync)
+{
+	int result = 0;
+	if (type != INPUT_EV_REL || (code != INPUT_REL_WHEEL && code != INPUT_REL_HWHEEL)) {
+		return 0;
+	}
+	for (const struct travelers_pad_wheel_observation *entry = wheel_observations;
+	     entry != NULL; entry = entry->next) {
+		if (entry->source == dev) {
+			result |= input_report(entry->sink, type, code, value, sync, K_NO_WAIT);
+		}
+	}
+	return result;
+}
+
+/* Passive input-source device; created with the always-present session broker.
+ * session brokerとともに専用の受動input sourceを生成する。 */
+#define WHEEL_OBSERVATION_INST(node_id) \
+	DEVICE_DT_DEFINE(node_id, NULL, NULL, NULL, NULL, POST_KERNEL, \
+			 CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
+DT_FOREACH_STATUS_OKAY(zmk_travelers_pad_canonical_wheel_input, WHEEL_OBSERVATION_INST)
+
 static int emit_guarded(const struct device *dev, uint8_t type, uint16_t code, int32_t value,
 			bool sync, const char *producer,
-			struct travelers_pad_arbiter_output_guard *guard)
+			struct travelers_pad_arbiter_output_guard *guard, bool observe_wheel)
 {
 	int rc = input_report(dev, type, code, value, sync, K_NO_WAIT);
+	int observation_rc = rc == 0 && observe_wheel ?
+		copy_canonical_wheel(dev, type, code, value, sync) : 0;
 
 	travelers_pad_arbiter_end_output(guard);
 	if (rc != 0) {
 		LOG_ERR("%s output report failed: %d", producer, rc);
+	}
+	if (observation_rc != 0) {
+		LOG_WRN("%s canonical wheel observation dropped: %d", producer, observation_rc);
 	}
 	return rc;
 }
@@ -262,7 +312,7 @@ int travelers_pad_output_primary(const struct device *dev, uint32_t ownership_fr
 			ownership_frame_seq, code);
 		return -ENOMEM;
 	}
-	rc = emit_guarded(dev, type, code, value, sync, producer, &guard);
+	rc = emit_guarded(dev, type, code, value, sync, producer, &guard, false);
 	if (rc != 0 && capability == TRAVELERS_PAD_CAP_BUTTON && type == INPUT_EV_KEY && value != 0) {
 		(void)take_held_button(dev, ownership_frame_seq, recognizer, owner, code);
 	}
@@ -282,7 +332,8 @@ int travelers_pad_output_auxiliary(const struct device *dev,
 							  producer, &guard)) {
 		return -EACCES;
 	}
-	return emit_guarded(dev, type, code, value, sync, producer, &guard);
+	return emit_guarded(dev, type, code, value, sync, producer, &guard,
+			    owner == TRAVELERS_PAD_OWNER_SCROLL);
 }
 
 int travelers_pad_output_post_session(const struct device *dev,
@@ -297,7 +348,7 @@ int travelers_pad_output_post_session(const struct device *dev,
 							    &guard)) {
 		return -EACCES;
 	}
-	return emit_guarded(dev, type, code, value, sync, producer, &guard);
+	return emit_guarded(dev, type, code, value, sync, producer, &guard, false);
 }
 
 int travelers_pad_output_terminal(const struct device *dev, uint32_t ownership_frame_seq,
@@ -404,5 +455,6 @@ int travelers_pad_output_routed_pointer(const struct device *dev, uint32_t route
 			owner);
 		return -EACCES;
 	}
-	return emit_guarded(dev, type, code, value, sync, producer, &guard);
+	return emit_guarded(dev, type, code, value, sync, producer, &guard,
+			    owner == TRAVELERS_PAD_OWNER_SCROLL);
 }

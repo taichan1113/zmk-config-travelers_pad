@@ -4,6 +4,16 @@ Last updated: 2026-10-06
 
 ## Time-based inertia / 時間基準慣性（実機確認待ち）
 
+Follow-up to `28da725`: hardware handoff jerk exposed double scaling. Inertia now
+subscribes to private `iqs9150_wheel_observation`; the broker copies authorized
+live wheel values before processors and never copies post-session output. No
+parameters/decay changes. See `docs/inertia-canonical-wheel-test.md`; hardware
+approval pending. Existing custom overlays require the private wheel input node.
+
+`28da725`の切替段差ログから二重倍率を特定。慣性の観測を専用nodeへ分離し、brokerが
+認可済みlive wheelのprocessor前の値を複製する。post-session出力は複製しない。
+設定・減衰変更なし。上記検証文書参照。実機承認待ち。外部overlayは専用wheel入力nodeが必要。
+
 Active branch: `feat/time-based-scroll-inertia`, baseline `d003657`.
 Fixed-point speed estimation, fractional travel, half-life decay and stale-motion
 rejection are implemented inside the inertia observer only. Initial settings:
