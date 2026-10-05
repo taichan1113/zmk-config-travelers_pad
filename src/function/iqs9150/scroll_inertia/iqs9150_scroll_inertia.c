@@ -24,6 +24,7 @@
 #include <zephyr/logging/log.h>
 #include <travelers_pad/contact_arbiter.h>
 #include <travelers_pad/contact_output_broker.h>
+#include <travelers_pad/inertia_math.h>
 
 LOG_MODULE_REGISTER(travelers_pad_scroll_inertia, LOG_LEVEL_INF);
 
@@ -35,6 +36,11 @@ struct scroll_inertia_config {
 	uint8_t decay_denominator;
 	uint16_t stop_delta;
 	uint16_t max_delta;
+	uint16_t half_life_ms;
+	uint16_t velocity_window_ms;
+	uint16_t release_timeout_ms;
+	uint16_t max_duration_ms;
+	uint16_t stop_speed;
 };
 
 struct scroll_inertia_data {
@@ -42,6 +48,16 @@ struct scroll_inertia_data {
 	uint8_t contact_fingers;
 	int16_t horizontal_velocity;
 	int16_t vertical_velocity;
+	int32_t horizontal_velocity_fp;
+	int32_t vertical_velocity_fp;
+	int64_t horizontal_remainder;
+	int64_t vertical_remainder;
+	int64_t last_wheel_ms;
+	int64_t last_contact_ms;
+	int64_t release_ms;
+	int64_t last_tick_ms;
+	uint32_t contact_interval_ms;
+	bool have_wheel;
 	bool emitting;
 	bool release_pending;
 	bool post_session_pending;
@@ -58,7 +74,7 @@ static int16_t absolute_int16(int16_t value)
 	return value < 0 ? -value : value;
 }
 
-static int16_t clamp_delta(int16_t value, uint16_t maximum)
+static int16_t clamp_delta(int32_t value, uint16_t maximum)
 {
 	if (value > (int16_t)maximum) {
 		return maximum;
@@ -78,6 +94,14 @@ static void clear_inertia_state(struct scroll_inertia_data *data)
 {
 	data->horizontal_velocity = 0;
 	data->vertical_velocity = 0;
+	data->horizontal_velocity_fp = 0;
+	data->vertical_velocity_fp = 0;
+	data->horizontal_remainder = 0;
+	data->vertical_remainder = 0;
+	data->last_wheel_ms = 0;
+	data->last_contact_ms = 0;
+	data->contact_interval_ms = 0;
+	data->have_wheel = false;
 	data->release_pending = false;
 	data->post_session_pending = false;
 	data->post_session_id = 0;
@@ -129,10 +153,41 @@ static void inertia_work_handler(struct k_work *work)
 			data->post_session_lease.session_id,
 			data->post_session_lease.owner_generation);
 	}
-	data->horizontal_velocity = decay_velocity(data->horizontal_velocity, cfg);
-	data->vertical_velocity = decay_velocity(data->vertical_velocity, cfg);
-	if (absolute_int16(data->horizontal_velocity) < cfg->stop_delta &&
-	    absolute_int16(data->vertical_velocity) < cfg->stop_delta) {
+	bool stopped;
+	if (cfg->half_life_ms != 0) {
+		int64_t now = k_uptime_get();
+		if (now - data->release_ms >= cfg->max_duration_ms) {
+			LOG_INF("scroll inertia stopped: duration limit");
+			stop_inertia_from_work(data);
+			return;
+		}
+		uint32_t elapsed = (uint32_t)(now - data->last_tick_ms);
+		int32_t old_h = data->horizontal_velocity_fp;
+		int32_t old_v = data->vertical_velocity_fp;
+		data->last_tick_ms = now;
+		data->horizontal_velocity_fp = travelers_pad_inertia_decay(old_h, elapsed, cfg->half_life_ms);
+		data->vertical_velocity_fp = travelers_pad_inertia_decay(old_v, elapsed, cfg->half_life_ms);
+		/* Integrate mean velocity over actual elapsed time, including the first
+		 * delay. Keep residual travel and cap reports, not the time estimate.
+		 * 初回遅延も含め実経過時間で平均速度を積分。移動端数を保持し出力を上限制限。 */
+		int32_t h = travelers_pad_inertia_integrate((int32_t)(((int64_t)old_h + data->horizontal_velocity_fp) / 2),
+			elapsed, &data->horizontal_remainder);
+		int32_t v = travelers_pad_inertia_integrate((int32_t)(((int64_t)old_v + data->vertical_velocity_fp) / 2),
+			elapsed, &data->vertical_remainder);
+		data->horizontal_velocity = (int16_t)CLAMP(h, -(int32_t)cfg->max_delta, (int32_t)cfg->max_delta);
+		data->vertical_velocity = (int16_t)CLAMP(v, -(int32_t)cfg->max_delta, (int32_t)cfg->max_delta);
+		int64_t stop = (int64_t)cfg->stop_speed * TRAVELERS_PAD_INERTIA_ONE;
+		int64_t h_speed = (int64_t)data->horizontal_velocity_fp * 1000;
+		int64_t v_speed = (int64_t)data->vertical_velocity_fp * 1000;
+		stopped = (h_speed < 0 ? -h_speed : h_speed) < stop &&
+			  (v_speed < 0 ? -v_speed : v_speed) < stop;
+	} else {
+		data->horizontal_velocity = decay_velocity(data->horizontal_velocity, cfg);
+		data->vertical_velocity = decay_velocity(data->vertical_velocity, cfg);
+		stopped = absolute_int16(data->horizontal_velocity) < cfg->stop_delta &&
+			  absolute_int16(data->vertical_velocity) < cfg->stop_delta;
+	}
+	if (stopped) {
 		LOG_INF("scroll inertia stopped");
 		stop_inertia_from_work(data);
 		return;
@@ -205,6 +260,13 @@ static void inertia_deliver_resolved_frame(
 {
 	struct scroll_inertia_data *data = context;
 	const struct scroll_inertia_config *cfg = data->dev->config;
+	int64_t now = k_uptime_get();
+	if (snapshot->contact_count != 0) {
+		if (data->last_contact_ms != 0 && now > data->last_contact_ms) {
+			data->contact_interval_ms = (uint32_t)(now - data->last_contact_ms);
+		}
+		data->last_contact_ms = now;
+	}
 
 	if (snapshot->cancelled) {
 		/* A sensor reset is not a finger release. It must stop a running glide
@@ -216,13 +278,27 @@ static void inertia_deliver_resolved_frame(
 
 	if (data->release_pending && snapshot->contact_count == 0) {
 		if (token != NULL && token->valid && token->owner == TRAVELERS_PAD_OWNER_SCROLL &&
-		    (data->horizontal_velocity != 0 || data->vertical_velocity != 0)) {
+		    (data->horizontal_velocity != 0 || data->vertical_velocity != 0) &&
+		    (cfg->half_life_ms == 0 ||
+		     (data->have_wheel && now - data->last_wheel_ms <= cfg->release_timeout_ms))) {
 			/* The arbiter creates the post-session lease when this terminal frame
 			 * resolves. Delay work until then and acquire that exact session lease
 			 * before sending any wheel value. */
 			data->post_session_pending = true;
 			data->post_session_id = snapshot->session_id;
 			data->post_session_lease = (struct travelers_pad_owner_token){};
+			data->release_ms = now;
+			data->last_tick_ms = now;
+			if (cfg->half_life_ms != 0) {
+				uint32_t age = (uint32_t)(now - data->last_wheel_ms);
+				data->horizontal_velocity_fp = travelers_pad_inertia_decay(
+					data->horizontal_velocity_fp, age, cfg->half_life_ms);
+				data->vertical_velocity_fp = travelers_pad_inertia_decay(
+					data->vertical_velocity_fp, age, cfg->half_life_ms);
+				LOG_INF("inertia seed speed h=%d v=%d counts/s age=%ums",
+					(int32_t)((int64_t)data->horizontal_velocity_fp * 1000 / TRAVELERS_PAD_INERTIA_ONE),
+					(int32_t)((int64_t)data->vertical_velocity_fp * 1000 / TRAVELERS_PAD_INERTIA_ONE), age);
+			}
 			LOG_INF("scroll inertia pending normal-end lease session=%u h=%d v=%d",
 				snapshot->session_id, data->horizontal_velocity, data->vertical_velocity);
 			k_work_schedule(&data->work, K_MSEC(cfg->start_delay_ms));
@@ -232,6 +308,9 @@ static void inertia_deliver_resolved_frame(
 			 * click, Tip-Tap, geometry, or higher-priority action. */
 			data->horizontal_velocity = 0;
 			data->vertical_velocity = 0;
+		} else if (cfg->half_life_ms != 0) {
+			LOG_INF("scroll inertia skipped: stale/no motion");
+			clear_inertia_state(data);
 		}
 		data->release_pending = false;
 	}
@@ -247,6 +326,29 @@ static void inertia_handle_wheel(const struct device *dev, struct input_event *e
 		return;
 	}
 	value = clamp_delta(evt->value, cfg->max_delta);
+	if ((evt->code != INPUT_REL_HWHEEL && evt->code != INPUT_REL_WHEEL) || value == 0) {
+		return;
+	}
+	if (cfg->half_life_ms != 0) {
+		int64_t now = k_uptime_get();
+		bool fresh = !data->have_wheel || now - data->last_wheel_ms > cfg->release_timeout_ms;
+		uint32_t fallback = MAX(data->contact_interval_ms, cfg->repeat_ms);
+		uint32_t elapsed = fresh || now <= data->last_wheel_ms ? fallback :
+			(uint32_t)(now - data->last_wheel_ms);
+		if (evt->code == INPUT_REL_HWHEEL) {
+			fresh |= data->vertical_velocity_fp != 0;
+			data->horizontal_velocity_fp = travelers_pad_inertia_velocity(
+				data->horizontal_velocity_fp, value, elapsed, cfg->velocity_window_ms, fresh);
+			data->vertical_velocity_fp = 0;
+		} else {
+			fresh |= data->horizontal_velocity_fp != 0;
+			data->vertical_velocity_fp = travelers_pad_inertia_velocity(
+				data->vertical_velocity_fp, value, elapsed, cfg->velocity_window_ms, fresh);
+			data->horizontal_velocity_fp = 0;
+		}
+		data->last_wheel_ms = now;
+		data->have_wheel = true;
+	}
 	if (evt->code == INPUT_REL_HWHEEL && value != 0) {
 		data->horizontal_velocity = value;
 		data->vertical_velocity = 0;
@@ -261,6 +363,13 @@ static int inertia_init(const struct device *dev)
 	const struct scroll_inertia_config *cfg = dev->config;
 	struct scroll_inertia_data *data = dev->data;
 
+	if (cfg->repeat_ms == 0 || cfg->max_delta == 0 || cfg->max_delta > INT16_MAX ||
+	    (cfg->half_life_ms == 0 && (cfg->stop_delta == 0 || cfg->decay_denominator == 0 ||
+	                              cfg->decay_numerator >= cfg->decay_denominator)) ||
+	    (cfg->half_life_ms != 0 && (cfg->release_timeout_ms == 0 || cfg->max_duration_ms == 0 ||
+	                               cfg->stop_speed == 0))) {
+		return -EINVAL;
+	}
 	k_work_init_delayable(&data->work, inertia_work_handler);
 	(void)travelers_pad_arbiter_register(TRAVELERS_PAD_RECOGNIZER_SCROLL_INERTIA);
 	(void)travelers_pad_arbiter_bind_frame_handler(
@@ -268,6 +377,9 @@ static int inertia_init(const struct device *dev)
 	LOG_INF("scroll inertia active: delay=%ums period=%ums decay=%u/%u stop=%u",
 		cfg->start_delay_ms, cfg->repeat_ms, cfg->decay_numerator, cfg->decay_denominator,
 		cfg->stop_delta);
+	LOG_INF("inertia mode=%s half-life=%ums window=%ums release-timeout=%ums max-duration=%ums",
+		cfg->half_life_ms ? "time-based" : "legacy", cfg->half_life_ms,
+		cfg->velocity_window_ms, cfg->release_timeout_ms, cfg->max_duration_ms);
 	return 0;
 }
 
@@ -281,6 +393,11 @@ static int inertia_init(const struct device *dev)
 		.decay_denominator = DT_INST_PROP_OR(n, decay_denominator, 4),                           \
 		.stop_delta = DT_INST_PROP_OR(n, stop_delta, 2),                                         \
 		.max_delta = DT_INST_PROP_OR(n, max_delta, 64),                                          \
+		.half_life_ms = DT_INST_PROP(n, half_life_ms),                                         \
+		.velocity_window_ms = DT_INST_PROP(n, velocity_window_ms),                             \
+		.release_timeout_ms = DT_INST_PROP(n, release_timeout_ms),                             \
+		.max_duration_ms = DT_INST_PROP(n, max_duration_ms),                                   \
+		.stop_speed = DT_INST_PROP(n, stop_speed),                                             \
 	};                                                                                           \
 	static void scroll_inertia_contact_handler_##n(struct input_event *evt)                      \
 	{                                                                                            \

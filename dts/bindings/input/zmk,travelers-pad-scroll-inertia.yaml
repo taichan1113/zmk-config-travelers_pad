@@ -5,6 +5,29 @@ compatible: "zmk,travelers-pad-scroll-inertia"
 include: base.yaml
 
 properties:
+  half-life-ms:
+    type: int
+    default: 0
+    description: |
+      Velocity half-life in ms. Nonzero selects time-based fixed-point inertia;
+      zero preserves legacy per-report integer decay.
+      速度の半減時間。非ゼロは時間基準の固定小数点慣性、0は従来の整数減衰。
+  velocity-window-ms:
+    type: int
+    default: 80
+    description: Velocity smoothing window for time-based mode / 時間基準モードの速度平滑化時間
+  release-timeout-ms:
+    type: int
+    default: 120
+    description: Maximum age of the last physical wheel motion at release / 解放時に許容する最終移動の古さ
+  max-duration-ms:
+    type: int
+    default: 3000
+    description: Safety duration limit for time-based inertia / 時間基準慣性の最大継続時間
+  stop-speed:
+    type: int
+    default: 20
+    description: Stop below this raw sensor-counts/second velocity in time-based mode / 時間基準モードの停止速度（生センサーcount毎秒）
   contact-input-device:
     type: phandle
     required: true

@@ -2,6 +2,22 @@
 
 Last updated: 2026-10-06
 
+## Time-based inertia / 時間基準慣性（実機確認待ち）
+
+Active branch: `feat/time-based-scroll-inertia`, baseline `d003657`.
+Fixed-point speed estimation, fractional travel, half-life decay and stale-motion
+rejection are implemented inside the inertia observer only. Initial settings:
+half-life 250ms, smoothing 80ms, release timeout 120ms, stop speed 20 counts/s,
+max duration 3000ms. Scaler 1/12, edge width 20 and transforms disabled are retained.
+Legacy mode is available with half-life 0. See `docs/time-based-inertia-test.md`.
+No merge to main until hardware approval.
+
+現在は`d003657`を基準とする`feat/time-based-scroll-inertia`。慣性observer内だけで
+固定小数点速度推定・移動端数保持・半減時間減衰・古い移動の棄却を実装。
+初期値は半減250ms・平滑80ms・解放期限120ms・停止速度20count/s・上限3000ms。
+倍率1/12・辺幅20・ピンチ回転無効を維持。半減時間0で従来方式へ戻る。
+実機合格までmainへ統合しない。検証手順は上記文書。
+
 ## Tuning update / チューニング更新（2026-10-06）
 
 Active branch: `feat/scroll-inertia-tuning`, based on `72e43c6`.

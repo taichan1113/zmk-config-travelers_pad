@@ -1,0 +1,4 @@
+/* Legacy integer decay compatibility / 従来の整数減衰方式の互換確認。 */
+&iqs9150_scroll_inertia {
+    half-life-ms = <0>;
+};

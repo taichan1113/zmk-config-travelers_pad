@@ -279,6 +279,13 @@
         decay-denominator = <10>;
         stop-delta = <2>;
         max-delta = <300>;
+        /* Time-based glide: preserve fractional speed and travel.
+         * 時間基準の慣性：速度と移動の端数を保持する。 */
+        half-life-ms = <250>;
+        velocity-window-ms = <80>;
+        release-timeout-ms = <120>;
+        max-duration-ms = <3000>;
+        stop-speed = <20>;
         status = "okay";
     };
 
