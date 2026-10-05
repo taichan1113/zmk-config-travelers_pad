@@ -4,16 +4,16 @@ Last updated: 2026-10-06
 
 ## Reusable-module milestone / 再利用module整備（最新）
 
-`main` now includes the tuning milestone through `4303a03`. Development continues
-on `refactor/reusable-trackpad-modules`. Driver/function Kconfig and source lists
+`main` includes the tuning milestone through `4303a03` and the hardware-approved
+reusable-profile implementation `4988a42`. Driver/function Kconfig and source lists
 are separated; `dts/travelers-pad/iqs9150-pointer.dtsi` supplies the board-independent
 basic profile. The full XIAO shield imports it without changing tuned values or keys.
 See `docs/reusable-modules.md`. This is still one Zephyr module/repository, not two
 published repositories. Basic-profile KSCAN gestures/edge hold require further
 integration and are not automatically imported. Different IC support is not claimed.
 
-`main`へ`4303a03`までの調整を統合済み。開発branchは
-`refactor/reusable-trackpad-modules`。driver/functionのKconfig・source listを分離し、
+`main`へ`4303a03`までの調整と、実機合格済みの再利用profile実装`4988a42`を統合する。
+driver/functionのKconfig・source listを分離し、
 基本profileを共通DTSへ切り出した。完全XIAO shieldも同じ定義を取り込み、調整値・キーは維持。
 詳細は上記文書。現時点では1つのZephyr module／repositoryであり、別repoの公開はまだしない。
 基本profileはKSCANジェスチャー・edge holdを自動では導入しない。異なるICへの対応は未検証。
@@ -22,10 +22,14 @@ integration and are not automatically imported. Different IC support is not clai
 Build checks passed: full XIAO firmware, driver-only fixture, basic pointer fixture,
 and both structural scripts. Full-profile UF2 for regression:
 `C:\Users\takec\Downloads\travelers-pad-reusable-modules-20261006.uf2`.
-Hardware confirmation is pending; do not merge this refactor branch to main yet.
+User hardware approval received for pointer, taps, double-tap drag, two-finger
+scroll/inertia, edges, Tip-Tap, multi-finger gestures and pinch. This checkpoint
+is approved for main integration. No serial log was supplied for this confirmation.
 
 完全XIAO firmware・driver単独・基本pointerのbuildと2種類の構造scriptは合格。
-上記UF2で回帰実機確認待ち。このrefactor branchはまだmainへ統合しない。
+上記UF2でポインタ・タップ・ダブルタップドラッグ、2本指スクロール・慣性、
+エッジ・Tip-Tap・多指ジェスチャー・ピンチの全項目についてユーザー実機合格を受領。
+main統合可。この確認ではシリアルログの提出はなく、ユーザーの操作確認を根拠とする。
 
 ## Time-based inertia / 時間基準慣性（実機確認待ち）
 
