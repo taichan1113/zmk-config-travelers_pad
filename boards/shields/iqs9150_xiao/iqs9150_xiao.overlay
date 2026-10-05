@@ -225,6 +225,10 @@
     iqs9150_transform_gesture: iqs9150_transform_gesture {
         compatible = "zmk,travelers-pad-iqs9150-transform-gesture";
         input-device = <&iqs9150_session>;
+        /* Recognition design is deferred during scroll tuning.
+         * スクロール調整中はピンチ／回転認識の設計判断を保留する。 */
+        pinch-disabled;
+        rotation-disabled;
         distance-threshold = <30000>;
         rotation-threshold = <30000>;
         pinch-step-threshold = <30000>;
@@ -269,12 +273,12 @@
         contact-input-device = <&iqs9150_session>;
         wheel-input-device = <&iqs9150_pointer>;
         wheel-output-device = <&iqs9150_pointer>;
-        start-delay-ms = <20>;
-        repeat-ms = <24>;
-        decay-numerator = <3>;
-        decay-denominator = <4>;
+        start-delay-ms = <10>;
+        repeat-ms = <10>;
+        decay-numerator = <9>;
+        decay-denominator = <10>;
         stop-delta = <2>;
-        max-delta = <64>;
+        max-delta = <300>;
         status = "okay";
     };
 
@@ -373,13 +377,13 @@
         compatible = "zmk,input-listener";
         device = <&iqs9150_pointer>;
         /* Keep wheel tuning downstream from contact tracking. The scaler
-         * preserves fractional values, so <1 4> matches the former divisor=4
-         * behavior even during slow movement. Keyboard overlays may replace
+         * preserves fractional values; the tuning profile uses <1 12>.
+         * Keyboard overlays may replace
          * this chain to invert either axis or select another multiplier.
          * ホイール調整を接触追跡より後段へ分離する。scalerは端数を保持するため、
-         * <1 4> は低速操作でも旧 divisor=4 と同じ感度になる。キーボードoverlayは
+         * 調整profileでは <1 12> を使う。キーボードoverlayは
          * このchainを置換して軸反転または別の倍率を選択できる。 */
-        input-processors = <&zip_scroll_scaler 1 4>;
+        input-processors = <&zip_scroll_scaler 1 12>;
         status = "okay";
     };
 

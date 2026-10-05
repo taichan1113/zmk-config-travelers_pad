@@ -1,0 +1,6 @@
+/* Restore both recognitions regardless of the tuning base profile.
+ * 調整用base設定にかかわらず両方の認識を復帰する。 */
+&iqs9150_transform_gesture {
+    /delete-property/ pinch-disabled;
+    /delete-property/ rotation-disabled;
+};

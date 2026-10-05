@@ -1,4 +1,5 @@
 /* Pinch only / ピンチのみ有効。 */
 &iqs9150_transform_gesture {
+    /delete-property/ pinch-disabled;
     rotation-disabled;
 };

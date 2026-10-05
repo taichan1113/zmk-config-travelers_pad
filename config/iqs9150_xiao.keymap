@@ -76,18 +76,18 @@
 };
 
 /* Keyboard-level two-finger scroll tuning / キーボード側の2本指スクロール調整
- * The default listener chain is <&zip_scroll_scaler 1 4>. To customise it,
+ * The current tuning listener chain is <&zip_scroll_scaler 1 12>. To customise it,
  * uncomment this block and choose the transform flags and multiplier below.
  * The processor handles only REL_WHEEL/HWHEEL: 1F pointer movement is unchanged.
  *
- * 既定listener chainは <&zip_scroll_scaler 1 4> である。調整する場合は下の
+ * 現在の調整listener chainは <&zip_scroll_scaler 1 12> である。調整する場合は下の
  * blockを有効化し、反転flagと倍率を選ぶ。processorの対象はREL_WHEEL/HWHEELだけで、
  * 1本指ポインタ移動は変化しない。
  *
  * INPUT_TRANSFORM_Y_INVERT: vertical / 縦反転
  * INPUT_TRANSFORM_X_INVERT: horizontal / 横反転
- * scaler <1 2>: twice as fast / 2倍速
- * scaler <1 8>: half as fast / 半速 */
+ * scaler <1 6>: twice as fast / 現在の2倍速
+ * scaler <1 24>: half as fast / 現在の半速 */
 /*
 &iqs9150_pointer_listener {
     input-processors = <&zip_scroll_transform INPUT_TRANSFORM_Y_INVERT>,

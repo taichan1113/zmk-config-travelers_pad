@@ -38,7 +38,7 @@ build_profile() {
 if (( $# )); then
     profiles=("$@")
 else
-    profiles=(router-pointer router-pointer-observers router-tap-pointer tap-drag multifinger-gesture tip-tap edge-dial transform-pinch-only transform-rotation-only transform-both-disabled)
+    profiles=(router-pointer router-pointer-observers router-tap-pointer tap-drag multifinger-gesture tip-tap edge-dial transform-pinch-only transform-rotation-only transform-both-disabled transform-both-enabled)
 fi
 
 for profile in "${profiles[@]}"; do

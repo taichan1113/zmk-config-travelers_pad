@@ -1,4 +1,5 @@
 /* Rotation only / 回転のみ有効。 */
 &iqs9150_transform_gesture {
+    /delete-property/ rotation-disabled;
     pinch-disabled;
 };
