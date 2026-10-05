@@ -1,0 +1,3 @@
+/* Add pointer, two-finger scroll, tap/drag and inertia to a keyboard.
+ * キーボードへポインタ・2本指スクロール・タップ/ドラッグ・慣性を追加する。 */
+#include <travelers-pad/iqs9150-pointer.dtsi>

@@ -11,7 +11,7 @@
 
 #include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
 #include <dt-bindings/zmk/matrix_transform.h>
-#include <input/processors.dtsi>
+#include <travelers-pad/iqs9150-pointer.dtsi>
 #include <zmk-input-matrix/input_matrix.dtsi>
 
 &i2c0_default {
@@ -222,78 +222,28 @@
     /* Pinch/rotation has a dedicated primary owner. It deliberately receives
      * normalized session frames directly, so a transform can suppress both
      * pointer routing and a terminal two-finger tap. */
-    iqs9150_transform_gesture: iqs9150_transform_gesture {
-        compatible = "zmk,travelers-pad-iqs9150-transform-gesture";
-        input-device = <&iqs9150_session>;
-        /* Enable pinch only; rotation remains disabled.
-         * ピンチのみ有効にし、回転は無効のままにする。 */
-        rotation-disabled;
-        distance-threshold = <30000>;
-        rotation-threshold = <30000>;
-        pinch-step-threshold = <30000>;
-        rotation-step-threshold = <30000>;
+    /* Full-pad profile enables pinch; rotation stays disabled.
+     * 完全pad profileではピンチを有効、回転を無効にする。 */
+    iqs9150_transform_gesture {
         status = "okay";
     };
 
     /* Function module: normalized session frames are classified before pointer
      * handling. / 正規化session frameをポインタ処理前にジェスチャー種別へ
      * 振り分ける。 */
-    iqs9150_router: iqs9150_router {
-        compatible = "zmk,travelers-pad-iqs9150-multifinger-router";
-        input-device = <&iqs9150_session>;
-        /* Follow the same transform enablement without runtime recognizer coupling.
-         * runtime依存を追加せず、transformの個別有効設定を参照する。 */
-        transform-device = <&iqs9150_transform_gesture>;
-        scroll-classify-move = <35>;
-        geometry-distance-threshold = <30000>;
-        geometry-rotation-threshold = <30000>;
-        status = "okay";
-    };
 
-    iqs9150_pointer: iqs9150_pointer {
-        compatible = "zmk,travelers-pad-iqs9150-pointer";
-        /* This profile uses the router output, not raw contact. It validates
-         * routing decisions and the following pointer hand-off only.
-         * このプロファイルは生接触ではなくrouter出力を使う。routerの判定と、
-         * その後段のポインタ受け渡しだけを検証する。 */
-        input-device = <&iqs9150_router>;
-        scroll-axis-lock-min-move = <12>;
-        scroll-axis-lock-ratio = <2>;
-        scroll-max-frame-delta = <128>;
-        status = "okay";
-    };
+
+
 
     /* No HID listener or processors on this private observation source.
      * 専用観測sourceにはHID listener・processorを接続しない。 */
-    iqs9150_wheel_observation: iqs9150_wheel_observation {
-        compatible = "zmk,travelers-pad-canonical-wheel-input";
-        status = "okay";
-    };
+
 
     /* Scroll inertia observes canonical, axis-locked pointer wheel events and
      * sends its decay back through the same pointer listener chain.
      * スクロール慣性は標準ポインタの軸ロック済みホイール値を観測し、減衰値を同じ
      * ポインタlistener chainへ戻す。 */
-    iqs9150_scroll_inertia: iqs9150_scroll_inertia {
-        compatible = "zmk,travelers-pad-scroll-inertia";
-        contact-input-device = <&iqs9150_session>;
-        wheel-input-device = <&iqs9150_wheel_observation>;
-        wheel-output-device = <&iqs9150_pointer>;
-        start-delay-ms = <10>;
-        repeat-ms = <10>;
-        decay-numerator = <9>;
-        decay-denominator = <10>;
-        stop-delta = <2>;
-        max-delta = <300>;
-        /* Time-based glide: preserve fractional speed and travel.
-         * 時間基準の慣性：速度と移動の端数を保持する。 */
-        half-life-ms = <250>;
-        velocity-window-ms = <80>;
-        release-timeout-ms = <120>;
-        max-duration-ms = <3000>;
-        stop-speed = <20>;
-        status = "okay";
-    };
+
 
     /* Contact arbiter: the session manager is the sole raw subscriber and
      * republishes normalized frames. All primary ownership is resolved here;
@@ -301,11 +251,7 @@
      * contact arbiter: session managerだけが生入力を購読して正規化frameを再配信
      * する。全primaryの所有権はここで解決し、observerの継続出力はlive tokenから
      * 明示的に委譲する。 */
-    iqs9150_session: iqs9150_session {
-        compatible = "zmk,travelers-pad-contact-session-manager";
-        input-device = <&iqs9150>;
-        status = "okay";
-    };
+
 
     /* Function module: one/two/three-finger tap maps to left/right/middle.
      * A nearby second tap with the same number of fingers starts a drag when
@@ -314,29 +260,7 @@
      * 1/2/3本指タップを左/右/中クリックへ変換する。近い位置で同本数の二回目を
      * ホールドするとドラッグを開始する。session再配信frameを受けるため、タップ履歴を
      * 維持しつつ排他所有権はcontact arbiterが制御する。 */
-    iqs9150_tap_drag: iqs9150_tap_drag {
-        compatible = "zmk,travelers-pad-iqs9150-tap-drag";
-        /* Ownership is exchanged only through the contact arbiter. Its HID
-         * listener is enabled in this integration profile.
-         * 所有権はcontact arbiterだけを介して扱う。この結合profileではHID listenerも
-         * 有効にする。 */
-        input-device = <&iqs9150_session>;
-        tap-max-ms = <180>;
-        tap-max-move = <75>;
-        /* EV02 contact centroids can settle for several report periods
-         * after the second finger appears. The router still commits genuine
-         * scrolling independently; this value only prevents that settling
-         * from rejecting a stationary 2F/3F tap.
-         * EV02では2本目の検出後、重心が約2レポート周期安定化する。実際の
-         * スクロールはルーターが別に判定するため、この値は静止した2本/3本指
-         * タップを安定化中の座標変動で棄却しないためだけに使う。 */
-        multifinger-settle-ms = <120>;
-        double-tap-max-gap-ms = <250>;
-        double-tap-max-distance = <120>;
-        drag-start-move = <8>;
-        /* Edge-dial × tap/drag arbitration integration test. */
-        status = "okay";
-    };
+
 
     /* Edge continuation: a confirmed drag emits timer-driven pointer motion,
      * and an axis-locked 2F scroll emits wheel motion, only while the relevant
@@ -386,25 +310,9 @@
 
     /* Forward function-module output to ZMK's mouse HID endpoint.
      * 機能モジュールの出力をZMKのマウスHIDエンドポイントへ転送する。 */
-    iqs9150_pointer_listener: iqs9150_pointer_listener {
-        compatible = "zmk,input-listener";
-        device = <&iqs9150_pointer>;
-        /* Keep wheel tuning downstream from contact tracking. The scaler
-         * preserves fractional values; the tuning profile uses <1 4>.
-         * Keyboard overlays may replace
-         * this chain to invert either axis or select another multiplier.
-         * ホイール調整を接触追跡より後段へ分離する。scalerは端数を保持するため、
-         * 調整profileでは <1 4> を使う。キーボードoverlayは
-         * このchainを置換して軸反転または別の倍率を選択できる。 */
-        input-processors = <&zip_scroll_scaler 1 4>;
-        status = "okay";
-    };
 
-    iqs9150_tap_drag_listener: iqs9150_tap_drag_listener {
-        compatible = "zmk,input-listener";
-        device = <&iqs9150_tap_drag>;
-        status = "okay";
-    };
+
+
 
     iqs9150_edge_hold_continue_listener: iqs9150_edge_hold_continue_listener {
         compatible = "zmk,input-listener";

@@ -36,6 +36,18 @@ selected keyboard configuration.
 
 ## モジュール構成 / Module architecture
 
+再利用の入口は [モジュール取り込みガイド](docs/reusable-modules.md) です。
+配線・キーマトリクスを含まない基本profileは
+`#include <travelers-pad/iqs9150-pointer.dtsi>` で取り込めます。
+ドライバー単独でもビルドでき、基本profileは外部格子moduleに依存しません。
+既存XIAO full-pad profileはこの共通定義を使い、多指ジェスチャー・辺操作などを追加します。
+
+See the [module integration guide](docs/reusable-modules.md). Import the basic
+profile with `#include <travelers-pad/iqs9150-pointer.dtsi>` without taking over
+keyboard wiring or KSCAN. Driver-only builds are supported; the basic profile
+does not depend on the external grid module. The XIAO full-pad profile extends
+these shared definitions with virtual-key gestures and edge operations.
+
 センサ固有の処理と操作ポリシーを分離しています。`driver` はIQS9150の初期化、RDY、ATI、
 Event Mode、および正規化した接触フレーム（最大5点の絶対座標、接触本数）だけを担当します。
 クリック、スクロール、加速、ジェスチャーをここへ戻さないでください。

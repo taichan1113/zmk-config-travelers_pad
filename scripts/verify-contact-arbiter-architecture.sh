@@ -16,6 +16,7 @@ set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 overlay="$repo_root/boards/shields/iqs9150_xiao/iqs9150_xiao.overlay"
+pointer_profile="$repo_root/dts/travelers-pad/iqs9150-pointer.dtsi"
 source_root="$repo_root/src"
 include_root="$repo_root/include"
 
@@ -39,10 +40,11 @@ require_source() {
     require "$source_root/$relative_path" "$text"
 }
 
-raw_subscribers=$(rg --fixed-strings --count 'input-device = <&iqs9150>;' "$overlay" || true)
+raw_subscribers=$(rg --no-filename --fixed-strings 'input-device = <&iqs9150>;' "$overlay" "$pointer_profile" | wc -l)
 [[ "$raw_subscribers" == '1' ]] ||
     fail "expected exactly one direct IQS9150 input subscriber, found $raw_subscribers"
-require "$overlay" 'iqs9150_session: iqs9150_session'
+require "$overlay" '#include <travelers-pad/iqs9150-pointer.dtsi>'
+require "$pointer_profile" 'iqs9150_session: iqs9150_session'
 require "$overlay" 'input-device = <&iqs9150_session>;'
 
 if rg --glob '*.[ch]' --quiet \
@@ -120,8 +122,8 @@ require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_arbiter_acquire_post_session_lease'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_output_post_session'
-require "$overlay" 'wheel-input-device = <&iqs9150_wheel_observation>;'
-require "$overlay" 'wheel-output-device = <&iqs9150_pointer>;'
+require "$pointer_profile" 'wheel-input-device = <&iqs9150_wheel_observation>;'
+require "$pointer_profile" 'wheel-output-device = <&iqs9150_pointer>;'
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \
     'travelers_pad_output_register_wheel_observation'
 require_source 'function/iqs9150/session/contact_output_broker.c' 'copy_canonical_wheel'
@@ -129,7 +131,7 @@ post_session_body=$(sed -n '/^int travelers_pad_output_post_session(/,/^int trav
     "$source_root/function/iqs9150/session/contact_output_broker.c")
 printf '%s\n' "$post_session_body" | rg --fixed-strings --quiet 'producer, &guard, false);' ||
     fail 'post-session output must not be copied into canonical observations'
-if rg --quiet '^[[:space:]]*device = <&iqs9150_wheel_observation>;' "$overlay"; then
+if rg --quiet '^[[:space:]]*device = <&iqs9150_wheel_observation>;' "$overlay" "$pointer_profile"; then
     fail 'canonical wheel observation must not have a host listener'
 fi
 require_source 'function/iqs9150/scroll_inertia/iqs9150_scroll_inertia.c' \

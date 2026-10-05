@@ -20,6 +20,7 @@ used only when an integration failure needs to be localized.
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes / 起動、UF2、USB、電源シーケンス変更後 |
 | [startup-ati-recovery-test.md](startup-ati-recovery-test.md) | After IQS9150 initialization or ATI changes / IQS9150初期化またはATI変更後 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation / 実装前に責務と調整場所を確認する時 |
+| [reusable-modules.md](reusable-modules.md) | Import the driver/basic functions into another keyboard, with build fixtures and regression checks / 別キーボードへdriver・基本機能を取り込む手順、build例、回帰確認 |
 | [two-finger-interaction-flow.md](two-finger-interaction-flow.md) | IC-independent tap/drag/scroll/Tip-Tap flow and porting contract / 別IC向けtap・drag・scroll・Tip-Tap処理と移植契約 |
 | [contact-arbiter-solution-review-prompt.md](contact-arbiter-solution-review-prompt.md) | Hand-off to an independent architecture review after a verified milestone / 実機確認済み節目の後、独立したアーキテクチャレビューへ引き継ぐ時 |
 | [two-finger-scroll-tuning.md](two-finger-scroll-tuning.md) | To change only the user preference for 2F scroll direction / 2本指スクロール方向だけを変更する時 |

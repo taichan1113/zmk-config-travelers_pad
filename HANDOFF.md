@@ -2,6 +2,31 @@
 
 Last updated: 2026-10-06
 
+## Reusable-module milestone / 再利用module整備（最新）
+
+`main` now includes the tuning milestone through `4303a03`. Development continues
+on `refactor/reusable-trackpad-modules`. Driver/function Kconfig and source lists
+are separated; `dts/travelers-pad/iqs9150-pointer.dtsi` supplies the board-independent
+basic profile. The full XIAO shield imports it without changing tuned values or keys.
+See `docs/reusable-modules.md`. This is still one Zephyr module/repository, not two
+published repositories. Basic-profile KSCAN gestures/edge hold require further
+integration and are not automatically imported. Different IC support is not claimed.
+
+`main`へ`4303a03`までの調整を統合済み。開発branchは
+`refactor/reusable-trackpad-modules`。driver/functionのKconfig・source listを分離し、
+基本profileを共通DTSへ切り出した。完全XIAO shieldも同じ定義を取り込み、調整値・キーは維持。
+詳細は上記文書。現時点では1つのZephyr module／repositoryであり、別repoの公開はまだしない。
+基本profileはKSCANジェスチャー・edge holdを自動では導入しない。異なるICへの対応は未検証。
+以下の旧branch・実機待ち記載は過去の履歴で、この節を優先する。
+
+Build checks passed: full XIAO firmware, driver-only fixture, basic pointer fixture,
+and both structural scripts. Full-profile UF2 for regression:
+`C:\Users\takec\Downloads\travelers-pad-reusable-modules-20261006.uf2`.
+Hardware confirmation is pending; do not merge this refactor branch to main yet.
+
+完全XIAO firmware・driver単独・基本pointerのbuildと2種類の構造scriptは合格。
+上記UF2で回帰実機確認待ち。このrefactor branchはまだmainへ統合しない。
+
 ## Time-based inertia / 時間基準慣性（実機確認待ち）
 
 Follow-up to `28da725`: hardware handoff jerk exposed double scaling. Inertia now
