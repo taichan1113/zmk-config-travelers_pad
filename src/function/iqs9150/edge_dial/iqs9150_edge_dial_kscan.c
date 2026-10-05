@@ -72,6 +72,9 @@ struct edge_dial_data {
 	uint32_t arbiter_frame_seq;
 	uint32_t ownership_frame_seq;
 	bool claim_submitted;
+	uint32_t start_session_id;
+	bool start_seen;
+	enum edge_dial_edge start_edge;
 };
 
 static int edge_dial_configure(const struct device *dev, kscan_callback_t callback)
@@ -274,8 +277,41 @@ static void edge_dial_process_frame(const struct device *dev)
 {
 	const struct edge_dial_config *cfg = dev->config;
 	struct edge_dial_data *data = dev->data;
+	struct travelers_pad_session_snapshot snapshot;
 	int32_t delta;
 	uint16_t step_move;
+
+	/* Decide eligibility once, from the first frame of the physical session.
+	 * Interior starts (including multi-contact/invalid-coordinate starts) must
+	 * never turn into an edge dial later, even after a temporary finger change.
+	 * 接触sessionの最初のframeだけで辺操作の資格を判定する。内側開始・多指開始・
+	 * 無効座標開始は、途中の移動や指本数変化で辺操作へ切り替えない。 */
+	if (!travelers_pad_arbiter_get_frame_snapshot(data->arbiter_frame_seq, &snapshot)) {
+		return;
+	}
+	if (snapshot.cancelled || snapshot.contact_count == 0) {
+		data->start_seen = false;
+		data->start_edge = EDGE_DIAL_NONE;
+		data->active = false;
+		data->claim_submitted = false;
+		data->edge = EDGE_DIAL_NONE;
+		data->mode = EDGE_DIAL_LINEAR;
+		data->edge_direction = 0;
+		data->circle_direction = 0;
+		data->accumulated_move = 0;
+		return;
+	}
+	if (!data->start_seen || data->start_session_id != snapshot.session_id) {
+		data->start_seen = true;
+		data->start_session_id = snapshot.session_id;
+		data->active = false;
+		data->claim_submitted = false;
+		data->start_edge = data->fingers == 1 ?
+			edge_dial_edge_for(cfg, data->x, data->y) : EDGE_DIAL_NONE;
+		if (data->start_edge < EDGE_DIAL_NONE && !cfg->enabled[data->start_edge]) {
+			data->start_edge = EDGE_DIAL_NONE;
+		}
+	}
 
 	if (data->fingers != 1) {
 		data->active = false;
@@ -297,8 +333,13 @@ static void edge_dial_process_frame(const struct device *dev)
 	if (!data->active) {
 		enum travelers_pad_owner owner;
 
+		if (data->start_edge == EDGE_DIAL_NONE) {
+			return;
+		}
 		data->edge = edge_dial_edge_for(cfg, data->x, data->y);
-		if (data->edge < EDGE_DIAL_NONE && cfg->enabled[data->edge]) {
+		/* Re-acquisition is permitted only on the original starting edge.
+		 * 再取得時も接触開始時の辺に限定する。 */
+		if (data->edge == data->start_edge) {
 			owner = travelers_pad_arbiter_owner_for_frame(data->arbiter_frame_seq);
 			/* Edge dial has the highest primary priority, but it must not revive
 			 * after a previously committed incompatible owner. EDGE_DIAL itself is

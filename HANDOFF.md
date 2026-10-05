@@ -1,6 +1,22 @@
 # Travelers Pad handoff / 引継ぎ書
 
 Last updated: 2026-10-04
+
+## Active adjustment / 現在の最終調整（2026-10-05）
+
+Validated baseline checkpoint: `dfd0313` on `main` (no tracked changes at checkpoint).
+Active branch: `feat/edge-start-only`. Edge dial now checks the first contact frame
+once per session; an interior start cannot acquire an edge later. Temporary contact
+count changes preserve that decision, and reacquisition uses only the starting edge.
+Edge widths and all other tuning remain unchanged. Hardware approval is pending;
+see `docs/edge-start-only-test.md`. Next stage: independently disable pinch/rotation.
+
+実機確認済みの基準を`main`の`dfd0313`で保存（保存時点の追跡済み差分なし）。
+現在のブランチは`feat/edge-start-only`。辺取得資格をsession最初の接触frameで一度だけ
+判定し、内側開始からの途中取得を禁止する。指本数の一時変化でも判断を保持し、再取得は
+最初の辺に限定する。辺幅など他の設定は変更していない。実機承認待ち。検証手順は
+`docs/edge-start-only-test.md`。次の段階はピンチ／回転の独立無効化。
+
 Integration target: `main`
 Development branch for this milestone: `feat/pinch-rotate`
 Integrated commit: `c76e3e02cad944fb9025cf36930c4d2cc7852f5f` (main merge of feat/pinch-rotate)
