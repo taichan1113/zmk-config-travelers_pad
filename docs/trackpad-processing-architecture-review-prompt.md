@@ -1,10 +1,46 @@
-# Archived architecture-review prompt / 旧アーキテクチャレビュー依頼
+## English
+
+# Archived architecture-review prompt
 
 > Historical design input captured before the contact-arbiter migration. It is
 > retained for decision history and is not a description of the current path.
 > The authoritative current diagram and responsibilities are in
 > [architecture-and-tuning.md](architecture-and-tuning.md).
 >
+
+- **2F router**
+- **tap/drag**
+- **3〜5F gesture**
+Release。
+- **edge dial**
+- **edge hold**
+- **scroll inertia**
+
+```mermaid
+flowchart TD
+    RAW[IQS9150 正規化済み接触フレーム] --> ROUTER[2F router]
+    RAW --> TAP[tap/drag]
+    RAW --> GESTURE[3〜5F gesture]
+    RAW --> EDGE[edge dial]
+
+    TAP -. "ドラッグ追跡中？" .-> ROUTER
+    EDGE -. "edge dial 有効中？" .-> ROUTER
+
+    ROUTER --> POINTER[pointer]
+    POINTER --> HID[ZMK HID]
+    TAP --> HID
+
+    TAP -. "ドラッグ追跡中？" .-> GESTURE
+```
+
+- edge dial
+
+- pinch
+
+## 日本語
+
+# 旧アーキテクチャレビュー依頼
+
 > これはcontact-arbiter移行前の設計検討資料である。意思決定の履歴として残すが、
 > 現在の処理経路を表す文書ではない。現在の正式な図と責務は
 > [architecture-and-tuning.md](architecture-and-tuning.md) を参照する。
@@ -33,19 +69,13 @@
 
 IQS9150ドライバは、正規化済みの接触フレームを input event として発行します。現状、主に次の機能が同じ生フレームを独立に購読しています。
 
-- **2F router**
   - 1本指ポインタと2本指スクロールを分類し、pointer モジュールへ渡す。
-- **tap/drag**
   - 1/2/3本指タップ。
   - ダブルタップ＋ホールドによる左/右/中クリックのドラッグ。
-- **3〜5F gesture**
   - 3/4本指スワイプ。
-  - 5本指 Grasp / Release。
-- **edge dial**
+  - 5本指 Grasp
   - 有効辺をなぞる連続操作。
-- **edge hold**
   - パッド端でのドラッグ継続、2本指スクロール継続。
-- **scroll inertia**
   - 2本指スクロールのリリース後に、減衰するホイールイベントを再投入する機能。
 
 ## 現行の概略経路
@@ -93,9 +123,9 @@ flowchart TD
 少なくとも以下を比較してください。
 
 1. **最小変更案**
-   - 2F router がスクロール確定時に tap/drag へ `scroll claimed` を一方向に通知し、同一接触セッションのタップ判定を抑止する方式。
+1. - 2F router がスクロール確定時に tap/drag へ `scroll claimed` を一方向に通知し、同一接触セッションのタップ判定を抑止する方式。
 2. **集中仲裁案**
-   - 接触セッションを管理する arbiter / session manager を設け、各機能へイベントを振り分ける方式。
+2. - 接触セッションを管理する arbiter / session manager を設け、各機能へイベントを振り分ける方式。
 
 必要であれば第三案も示してください。各案について、次を比較してください。
 
@@ -115,7 +145,7 @@ flowchart TD
 - タップ候補、ダブルタップ候補、ホールド、ドラッグ。
 - 2本指スクロール候補とスクロール確定。
 - 3〜5本指ジェスチャー候補と確定。
-- edge dial / edge hold の取得。
+- edge hold の取得。
 - 慣性スクロール開始と停止。
 - 所有権の競合時、確定済み経路への遷移後、キャンセル時の扱い。
 
@@ -127,7 +157,7 @@ flowchart TD
 - drag 中は router がスクロールに奪われてはいけない。
 - スクロールに確定した接触は tap/drag がクリックとして扱ってはいけない。
 - 1本指タップ直後に2本指タップを行う場合、左クリック後に右クリックが送られる仕様は許容済み。
-- pinch / rotate は未実装。
+- rotate は未実装。
 - スクロール方向反転、速度、加速などは、将来的に input processor で調整可能にしたい。
 - edge dial はキー割当可能な設計を維持したい。
 
@@ -136,14 +166,14 @@ flowchart TD
 実装に進む前に、以下を提出してください。
 
 1. 現行アーキテクチャの整理
-   - データ経路、制御経路、未表現の依存関係。
+1. - データ経路、制御経路、未表現の依存関係。
 2. 設計案の比較表
-   - 最小変更案と集中仲裁案を含む。
+2. - 最小変更案と集中仲裁案を含む。
 3. 推奨アーキテクチャ
-   - Mermaid による改修後の処理経路図。
+3. - Mermaid による改修後の処理経路図。
    - モジュール責務、接触セッション、所有権、優先順位、解除条件を明文化。
 4. 段階的な移行計画
-   - 既存機能を壊さない実装順序。
+4. - 既存機能を壊さない実装順序。
    - 各段階の単体テストおよび最小限の実機統合テスト。
    - モジュールの有効・無効組み合わせに対する確認方針。
 

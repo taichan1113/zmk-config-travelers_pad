@@ -1,15 +1,13 @@
-# Arbiter safety hardening test / Arbiter安全性強化テスト
+## English
+
+# Arbiter safety hardening test
 
 Use this procedure after flashing a build that includes lifecycle-epoch,
 auxiliary-lease, work-generation, broker retry, or arbiter-lock changes. It
 does not replace the full integration test. It is the evidence for reset and
 delayed-work failure paths.
 
-この手順は lifecycle epoch、auxiliary lease、work generation、broker retry、または
-arbiter lockを変更したビルドを書き込んだ後に使用する。全入力結合試験を置き換えるものではなく、
-resetとdelayable workの異常系に対する証跡である。
-
-## Preparation / 準備
+## Preparation
 
 1. Build the USB-logging target and manually copy its `zmk.uf2` to the XIAO
    UF2 drive. Do not reset the board while copying.
@@ -19,14 +17,9 @@ resetとdelayable workの異常系に対する証跡である。
 3. Filter or retain lines containing `arbiter`, `edge-hold`, `scroll inertia`,
    `tap/drag`, `broker`, `output report failed`, and `session`.
 
-1. USB logging付きtargetをbuildし、`zmk.uf2`をXIAOのUF2 driveへ手動でコピーする。
-   コピー中にboardをresetしない。
-2. 通常のlogging rateでUSB serial consoleを開き、padに触れる前からcaptureを開始する。
-   ケースごとに`arbiter-safety-YYYYMMDD-caseN.log`のような別fileで保存する。
 3. `arbiter`、`edge-hold`、`scroll inertia`、`tap/drag`、`broker`、
-   `output report failed`、`session`を含む行を保存またはfilterする。
 
-## Case 1: reset during inertia / inertia中のreset
+## Case 1: reset during inertia
 
 1. Make an axis-locked 2F scroll and release both fingers so that inertia
    begins. Confirm `arbiter post-session lease` and `scroll inertia lease
@@ -44,7 +37,7 @@ Expected evidence:
   cancel and before the new contact
 - the new contact starts a new session and works normally
 
-## Case 2: reset after release, before delayed tap / release後の遅延tap前reset
+## Case 2: reset after release, before delayed tap
 
 1. Perform a short 1F tap and leave the pad untouched; the first click is in
    the double-tap waiting interval.
@@ -57,7 +50,7 @@ Expected evidence:
 - no old `single tap confirmed` or click action appears after reset
 - only the fresh tap can later produce a click
 
-## Case 3: stale edge-hold work / 古いedge-hold work
+## Case 3: stale edge-hold work
 
 Run this case twice, once for drag and once for axis-locked 2F scroll.
 
@@ -74,7 +67,7 @@ Expected evidence:
 - any new continuation is preceded by a new `continuation started` line and
   follows only the new contact
 
-## Case 4: button release and recovery / button releaseと回復
+## Case 4: button release and recovery
 
 1. Start a double-tap drag, move enough to log `arbiter owner active`, then
    release the contact.
@@ -87,11 +80,7 @@ The retry path is only fully verified when a test fixture injects a successful
 button-down followed by a failed button-up enqueue. If no such fixture exists,
 record this case as hardware smoke coverage, not fault-injection coverage.
 
-retry経路を完全に検証するには、button-down成功後にbutton-up enqueueだけを失敗させる
-test fixtureが必要である。fixtureが無い場合、このケースはhardware smoke coverageとして
-記録し、fault-injection coverageとは扱わない。
-
-## Case 5: work-cancellation boundary / work cancel境界
+## Case 5: work-cancellation boundary
 
 Run the following three variants while retaining the complete serial capture.
 
@@ -109,11 +98,7 @@ Expected evidence:
 - the firmware remains responsive; waiting for an old work handler must not
   deadlock the input stream
 
-各variantでserial capture全体を保存する。resetまたは新規contactの境界後に旧操作の
-click・continuation・inertia出力が一つでもあれば失敗である。旧work handler待機により
-input streamが停止しないことも確認する。
-
-## Case 6: queued routed-pointer frame / queue済みrouted pointer frame
+## Case 6: queued routed-pointer frame
 
 1. Move a 1F pointer continuously, then trigger sensor recovery/reset while
    movement is still being reported. Repeat with an axis-locked 2F scroll.
@@ -132,15 +117,53 @@ Expected evidence:
 - changing from 1F pointer to committed 2F scroll never leaks a 1F REL report
   into the scroll session
 
-1F pointerまたはaxis lock済み2F scrollの出力中にresetを行い、直後に新しい1F/2F操作を
-開始する。高速移動でqueueを残す条件も繰り返す。reset境界後に旧操作のpointer/wheelが
-出てはならず、旧frameは必要に応じて`routed output denied frame=...`として破棄される。
-新しい操作の出力が正常で、1F→2F切替時に古い1F RELが漏れないことを確認する。
-
-## Pass criteria / 合格条件
+## Pass criteria
 
 Each case must preserve the captured log, operation time, USB/BLE state, and
 whether reconnect or board reset was used. Any output from a pre-reset timer or
 lease after `arbiter global cancel` is a failure. A failed button-up that is not
 followed by a successful `retried button-up` before the next completed input
 operation is also a failure.
+
+## 日本語
+
+# Arbiter安全性強化テスト
+
+この手順は lifecycle epoch、auxiliary lease、work generation、broker retry、または
+arbiter lockを変更したビルドを書き込んだ後に使用する。全入力結合試験を置き換えるものではなく、
+resetとdelayable workの異常系に対する証跡である。
+
+## 準備
+
+1. USB logging付きtargetをbuildし、`zmk.uf2`をXIAOのUF2 driveへ手動でコピーする。
+1. コピー中にboardをresetしない。
+2. 通常のlogging rateでUSB serial consoleを開き、padに触れる前からcaptureを開始する。
+2. ケースごとに`arbiter-safety-YYYYMMDD-caseN.log`のような別fileで保存する。
+3. `output report failed`、`session`を含む行を保存またはfilterする。
+
+## inertia中のreset
+
+## release後の遅延tap前reset
+
+## 古いedge-hold work
+
+## button releaseと回復
+
+3. retry経路を完全に検証するには、button-down成功後にbutton-up enqueueだけを失敗させる
+test fixtureが必要である。fixtureが無い場合、このケースはhardware smoke coverageとして
+記録し、fault-injection coverageとは扱わない。
+
+## work cancel境界
+
+3. 各variantでserial capture全体を保存する。resetまたは新規contactの境界後に旧操作の
+click・continuation・inertia出力が一つでもあれば失敗である。旧work handler待機により
+input streamが停止しないことも確認する。
+
+## queue済みrouted pointer frame
+
+3. 1F pointerまたはaxis lock済み2F scrollの出力中にresetを行い、直後に新しい1F/2F操作を
+開始する。高速移動でqueueを残す条件も繰り返す。reset境界後に旧操作のpointer/wheelが
+出てはならず、旧frameは必要に応じて`routed output denied frame=...`として破棄される。
+新しい操作の出力が正常で、1F→2F切替時に古い1F RELが漏れないことを確認する。
+
+## 合格条件

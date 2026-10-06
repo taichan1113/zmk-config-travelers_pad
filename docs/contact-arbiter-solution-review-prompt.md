@@ -1,38 +1,29 @@
-# Travelers Pad contact-arbiter solution review / 接触arbiterソリューション・レビュー依頼
+## English
 
-## Review request / 依頼内容
+# Travelers Pad contact-arbiter solution review
+
+## Review request
 
 Review and, if justified, redesign the **contact-processing architecture** of
 this IQS9150 trackpad. This is an architecture/design review only: do not edit
 code, alter configuration, build firmware, or prescribe environment setup.
-
-IQS9150トラックパッドの**接触処理アーキテクチャ**をレビューし、必要なら再設計して
-ください。これはアーキテクチャ／設計レビューだけを目的とします。コード、設定、ファームを
-変更せず、実装環境のセットアップも扱わないでください。
 
 The current solution is hardware-verified and must be treated as a working
 baseline, not as a failure to replace casually. Assess whether it should be
 kept, simplified, or evolved, and describe migration steps that preserve its
 verified behavior.
 
-現行ソリューションは実機確認済みであり、安易に置換すべき失敗作ではなく、動作する基準実装
-として扱ってください。維持・単純化・発展のどれが妥当かを評価し、実証済みの操作感を守る
-移行手順を示してください。
-
-## Fixed review scope / レビュー対象の固定
+## Fixed review scope
 
 Review the implementation on branch `main` at commit
 `65e4a8dadd534ab4b8c6a739f26064da7cda95aa`.
 
-レビュー対象は branch `main` の commit
-`65e4a8dadd534ab4b8c6a739f26064da7cda95aa` に固定します。
-
-| Item / 項目 | Fixed value / 固定値 |
+| Item| Fixed value|
 | --- | --- |
-| Target branch / 対象branch | `main` |
-| Target implementation HEAD / 対象実装HEAD | `65e4a8dadd534ab4b8c6a739f26064da7cda95aa` (`docs: add contact arbiter design review brief`) |
-| Pre-migration baseline / 移行前基準 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7` (`feat: continue two-finger scroll at pad edge`) |
-| Required review range / 必須比較範囲 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7..65e4a8dadd534ab4b8c6a739f26064da7cda95aa` |
+| Target branch| `main` |
+| Target implementation HEAD| `65e4a8dadd534ab4b8c6a739f26064da7cda95aa` (`docs: add contact arbiter design review brief`) |
+| Pre-migration baseline| `ae479d75ef3c4e784796e6571dc8feac2a2180b7` (`feat: continue two-finger scroll at pad edge`) |
+| Required review range| `ae479d75ef3c4e784796e6571dc8feac2a2180b7..65e4a8dadd534ab4b8c6a739f26064da7cda95aa` |
 
 This brief may receive documentation-only refinements after the target commit.
 Those refinements do not change the code under review. Begin by read-only
@@ -40,11 +31,7 @@ verification of `git status`, current branch, `HEAD`, the fixed target object,
 and the stated range. If the checked-out source differs, state the mismatch
 before drawing conclusions.
 
-この依頼文自身は対象commit以降に文書のみ更新され得ますが、レビュー対象コードは変わりません。
-最初に `git status`、現在branch、`HEAD`、固定した対象object、比較範囲を読み取り専用で検証
-してください。チェックアウトされたソースが異なる場合は、結論より先に差異を報告してください。
-
-## Current verified capabilities / 現在確認済みの機能
+## Current verified capabilities
 
 - IQS9150 EV02 initialization, ATI, Event Mode, runtime recovery.
 - One-finger relative pointer.
@@ -60,21 +47,9 @@ before drawing conclusions.
 - Pinch/rotation classification suppresses scroll leakage, but has no host
   action assigned. Configurable acceleration is deliberately deferred.
 
-- IQS9150 EV02初期化、ATI、Event Mode、実行中復帰。
-- 1本指相対ポインタ。
-- 軸ロック済み2本指縦横スクロール、listener input processorによる方向・倍率調整、
-  慣性、エッジ継続。
-- 1/2/3本指の左／右／中タップ、同本数ダブルタップ＋ホールド＋移動によるドラッグ。
-  2回目を静止して離した場合はドラッグではなくダブルクリック。
-- anchorを保持する限り繰り返せるTip-Tap。
-- 仮想KSCAN／keymap経由の3/4本指方向スワイプ、独立座標を使う5本指
   Grasp/Release。
-- 任意辺選択、直線軌跡、角に寄せた局所円継続を持つedge dial、確定dragと確定2本指
-  スクロールのedge-hold継続。
-- ピンチ／回転はスクロールへの混入を抑止するが、ホスト操作は未割当。設定可能な加速は
-  意図的に未実装。
 
-## Current processing and ownership path / 現在の処理・所有権経路
+## Current processing and ownership path
 
 ```mermaid
 flowchart TD
@@ -136,26 +111,20 @@ submits a proposal if applicable, and acknowledges observation. The arbiter
 resolves only after all registered recognizers have acknowledged the frame;
 therefore callback registration order cannot decide the winner.
 
-`iqs9150_session` だけがIQS9150接触frameを直接購読する。不変の論理session／frame
-metadataを作り、`arbiter_begin_frame` を呼んでframeを再配信する。各有効recognizerは
-queueのFIFO順で入力を受け、対応frame sequenceを取得して処理し、必要ならproposalを提出し、
-観測を確認する。arbiterは登録済み全recognizerの確認後にだけ解決するため、callback登録順が
-勝者を決めない。
-
-### Owners, capabilities, and precedence / owner・capability・優先順位
+### Owners, capabilities, and precedence
 
 The arbiter has one owner per contact session. A primary claim carries a
 requested owner and allowed capabilities (`pointer delta`, `scroll delta`,
 `button`, `behavior action`). Current policy priority is fixed in code:
 
-| Priority / 優先度 | Owner / owner | Recognizer / 認識器 | Primary output / 主出力 |
+| Priority| Owner / owner | Recognizer| Primary output|
 | ---: | --- | --- | --- |
-| 100 | `edge-dial` | edge dial | Virtual KSCAN / 仮想KSCAN |
-| 90 | `drag` | tap/drag | Button + relative drag / ボタン＋相対ドラッグ |
-| 80 | `gesture` | 3–5F gesture | Virtual KSCAN / 仮想KSCAN |
-| 70 | `scroll` | 2F router | Wheel through pointer/listener / pointer・listener経由ホイール |
-| 60 | `tip-tap` | Tip-Tap | Virtual KSCAN / 仮想KSCAN |
-| 10 | `pointer provisional` | none at this target / この対象ではなし | Retained enum; no active proposal requests it / enumは残るが、有効proposalは要求しない |
+| 100 | `edge-dial` | edge dial | Virtual KSCAN|
+| 90 | `drag` | tap/drag | Button + relative drag|
+| 80 | `gesture` | 3–5F gesture | Virtual KSCAN|
+| 70 | `scroll` | 2F router | Wheel through pointer/listener|
+| 60 | `tip-tap` | Tip-Tap | Virtual KSCAN|
+| 10 | `pointer provisional` | none at this target| Retained enum; no active proposal requests it|
 
 `TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL` is a retained owner enum, but no
 current recognizer submits it as `requested_owner`. The actual provisional
@@ -165,22 +134,12 @@ the highest-priority submitted **claim's real requested owner** (for example,
 semantic output. Verify whether retaining the unused owner enum is useful or
 misleading.
 
-`TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL` はowner enumとして残っているが、この対象では
-どのrecognizerも `requested_owner` として提出しない。実際の暫定機構は
-`TRAVELERS_PAD_TOKEN_PROVISIONAL` であり、解決前には優先度が最も高い提出済みclaimの**実際の
-requested owner**（例: `drag`）を、生経路の非互換抑止のためだけに見せる。semantic出力は
-許可しない。この未使用owner enumを残す意義と誤解の可能性を検証してください。
-
 Priority selects among unresolved claims for a frame. Once a committed token
 is live for the session, later claims do not preempt it in the current code;
 they may be recorded but cannot create a second owner. Confirm this behavior
 and assess whether it is correct for phase-changing operations.
 
-優先度は同一frameの未解決claim間でのみ勝者を選ぶ。現在のコードではsession中にcommitted tokenが
-liveなら、後続claimは記録されても先取りして第2 ownerを作れない。この挙動をコードで確認し、
-phase遷移を持つ操作にも正しいか評価してください。
-
-### Token lifetime / tokenの生存期間
+### Token lifetime
 
 1. **Provisional:** a submitted `CLAIM` is represented by a provisional token
    carrying that claim's requested owner before all queued listeners acknowledge
@@ -200,27 +159,11 @@ phase遷移を持つ操作にも正しいか評価してください。
    observes the terminal frame's scroll owner, then emits post-release decay;
    new physical contact cancels it immediately.
 
-1. **暫定:** 提出済み `CLAIM` は、そのclaimのrequested ownerを持つ暫定tokenとして、
-   全queued listenerがframeを確認する前から見える。非互換な生経路を抑止できるが、
-   semantic出力は許可しない。
-2. **確定:** 全確認後に決定的な勝者へtokenを発行する。初回出力はresolver callbackから
-   dispatchし、継続出力はowner/capability gateを通す。
-3. **終端:** terminal frame処理中はownerを問い合わせられる。その後live tokenを無効化する。
-   stale tokenでホストの押下状態が残らないよう、**trackpad owner自身が実際に押したbuttonだけ**を
-   安全側でreleaseし診断記録する。他sourceが保持するbuttonをreleaseしてはならない。
-4. **observer継続:** この対象ではedge-holdとinertiaの両方がacknowledgement参加者である。
-   edge hold自身はownerを持たず、liveなdragまたはscroll tokenが
-   capabilityを明示委譲した間だけ出力できる。scroll inertiaはterminal frameのscroll ownerを
-   観測してrelease後の減衰を出し、新規物理接触で直ちに停止する。
-
-### Current implementation facts that require validation / 検証すべき現行実装事実
+### Current implementation facts that require validation
 
 The following are code-reading facts for the fixed target, not assertions that
 they are the best design. Confirm every item against symbols, call paths, and
 Devicetree registration; report any discrepancy.
-
-以下は固定対象のコード読解による事実であり、最良の設計だという主張ではありません。各項目を
-symbol、call path、Devicetree登録と照合し、差異があれば報告してください。
 
 - **Pinch/rotation:** the 2F router enters `ROUTER_CLAIM_GEOMETRY` and stops
   pointer/scroll routing, but it does not currently submit an arbiter claim or
@@ -247,25 +190,7 @@ symbol、call path、Devicetree登録と照合し、差異があれば報告し�
   module combination has been built or hardware-tested; require a suitable
   build matrix or justify a smaller representative matrix.
 
-- **Pinch/rotation:** 2F routerは `ROUTER_CLAIM_GEOMETRY` へ遷移し、
-  pointer/scroll routingを止めるが、現時点ではarbiter claimを提出せず、専用owner tokenも
-  得ない。このownerを持たない抑止がtap/dragや他primary経路へ漏れ得るか追跡してください。
-- **Tip-Tap repeat:** 最初に完了したTip-Tapだけが `TIP_TAP` claimを一つ提出する。
-  anchorを維持するrepeatは `ownership_frame_seq` を共有し、同じcommitted-token gateを
-  通る。tapごとに新ownerを取得しない。
-- **ダブルタップdrag:** 最初の有効tapは `double-tap-max-gap-ms`（有効設定: 250 ms）だけ
-  保留する。一致する2回目接触は `DRAG` claimを提出するが、その時点でHID button-downは送らない。
-  移動が `drag-start-move`（有効設定: 8座標unit）に達した時だけbuttonを押し、閾値到達frameを
-  rebaseして、その後の移動だけで掴んだ対象を動かす。静止した2回目のreleaseは2 clickを送る。
-  正確なevent順、cancel経路、first-tap timerとのraceをレビューしてください。
-- **terminal release:** tap/drag moduleは診断用にterminal outputを記録するが、自身の
-  `button_down` flagが真の時だけup eventを送る。ほかのHIDおよびvirtual-KSCANのpress/release
-  経路にも、このsource所有の条件があるか監査し、一般方針が安全だとコード確認なしに仮定しない。
-- **module disable:** APIはdisabled DT nodeがrecognizer登録しないよう設計される。この依頼文は、
-  全enabled/disabled組合せのbuildまたは実機試験が済んだとは主張しない。適切なbuild matrix、
-  または代表matrixに絞る根拠を求めてください。
-
-## Why this migration happened / この移行に至った経緯
+## Why this migration happened
 
 Originally, multiple functions independently subscribed to the driver's contact
 stream. Each had local state and partial cross-module queries. This was simple
@@ -274,30 +199,22 @@ failure was a two-finger scroll that later became a tap/drag right click after
 release. Drag, edge, and gesture suppression also risked callback-order and
 private-state coupling.
 
-当初は複数の機能がdriverの接触ストリームを独立に購読し、局所stateと部分的なモジュール間
-問い合わせで制御していた。初期実装は単純だったが、同じ接触が別々に分類され得た。代表的な
-不具合は、2本指スクロールが解放後にtap/dragの右クリックへ再解釈されることだった。drag、
-edge、gestureの抑止もcallback順やprivate stateへの結合を招いた。
-
 The incremental history from the former `main` baseline to the current `main`
 is grouped below. Commit identifiers are supplied so the reviewer can inspect
 the exact evolution if desired.
 
-以前の `main` 基準点から現在の `main` までの段階的履歴を以下にまとめる。必要ならreviewerが
-正確な進化を確認できるようcommit IDも記載する。
-
-| Stage / 段階 | What changed / 変更内容 | Representative commits / 代表commit |
+| Stage| What changed| Representative commits|
 | --- | --- | --- |
-| 1. Session foundation / session基盤 | Added session IDs, frame sequence, cancellation boundary; then routed function consumers through the session manager. / session ID・frame連番・取消し境界を追加し、機能consumerをsession manager経由へ移行。 | `3242399`, `6e8c8ac` |
-| 2. Immediate defect containment / 直近不具合の封じ込め | Suppressed tap after a scroll claim, preserved 3F taps, handled terminal owner. / scroll claim後のtap抑止、3本指tap保存、terminal owner処理。 | `cb1423d`, `b00262b`, `6621fb3` |
-| 3. Arbiter prototype / arbiter試作 | Added proposal ledger, asynchronous queued-frame resolution, and diagnostic output checks. / proposal ledger、queued frame解決、出力診断を追加。 | `23c3089`, `9c79127`, `3f2e692` |
-| 4. Primary-token migration / primary token移行 | Deferred first actions until resolve; token-gated continuation; migrated drag, gesture, edge dial, Tip-Tap. / resolve後の初回出力、継続gate、drag・gesture・edge・Tip-Tap移行。 | `6ba5267`, `14235eb`, `4526346`, `101f38e`, `e29de14`, `440a71c` |
-| 5. UX corrections / UX修正 | Rebased drag activation so threshold-crossing movement does not displace the grabbed item; clarified double-tap release vs drag. / 閾値超過移動で対象をずらさないdrag rebase、double-tap解放とdragの分離。 | `21c4e46`, `a613f17` |
-| 6. Auxiliary migration / 補助機能移行 | Bound inertia to a committed scroll terminal owner and delegated edge-hold output through live tokens. / inertiaを確定scrollのterminal ownerへ結び、edge hold出力をlive token経由にした。 | `6c2495e`, `bc8ffc0` |
-| 7. Single ownership / 単一所有権化 | Removed shared-claim APIs and recognizer-private drag ownership queries; renamed migration-era vocabulary. / shared-claim APIとrecognizer間private drag問い合わせを削除し、移行期語彙を整理。 | `e082ca0` |
-| 8. Regression closure / 回帰整備完了 | Added structural invariants script, current full hardware integration procedure, and archived obsolete test stages. / 構造不変条件script、現行全入力実機手順、旧試験段階のarchive表記を追加。 | `73748f5` |
+| 1. Session foundation| Added session IDs, frame sequence, cancellation boundary; then routed function consumers through the session manager.| `3242399`, `6e8c8ac` |
+| 2. Immediate defect containment| Suppressed tap after a scroll claim, preserved 3F taps, handled terminal owner.| `cb1423d`, `b00262b`, `6621fb3` |
+| 3. Arbiter prototype| Added proposal ledger, asynchronous queued-frame resolution, and diagnostic output checks.| `23c3089`, `9c79127`, `3f2e692` |
+| 4. Primary-token migration| Deferred first actions until resolve; token-gated continuation; migrated drag, gesture, edge dial, Tip-Tap.| `6ba5267`, `14235eb`, `4526346`, `101f38e`, `e29de14`, `440a71c` |
+| 5. UX corrections| Rebased drag activation so threshold-crossing movement does not displace the grabbed item; clarified double-tap release vs drag.| `21c4e46`, `a613f17` |
+| 6. Auxiliary migration| Bound inertia to a committed scroll terminal owner and delegated edge-hold output through live tokens.| `6c2495e`, `bc8ffc0` |
+| 7. Single ownership| Removed shared-claim APIs and recognizer-private drag ownership queries; renamed migration-era vocabulary.| `e082ca0` |
+| 8. Regression closure| Added structural invariants script, current full hardware integration procedure, and archived obsolete test stages.| `73748f5` |
 
-## Evidence already obtained / 既に得た根拠
+## Evidence already obtained
 
 - Clean firmware builds pass.
 - The structural regression script verifies one direct raw subscriber, no
@@ -309,15 +226,7 @@ the exact evolution if desired.
   rejection, proposal rejection, queue overflow, cancellation, or contact
   frame failure was observed.
 
-- クリーンなファームビルドは合格済み。
-- 構造回帰scriptは、直接の生入力購読者が一つだけであること、廃止済みshared-claim／
-  private ownership APIが無いこと、5 primaryすべてのtoken gate、edge-hold委譲、
-  inertiaのterminal-owner確認を検査する。
-- 単一owner化後の全入力実機試験は合格済み。ログに `drag`、`scroll`、`edge-dial`、
-  `tip-tap`、`gesture` の確定winner、期待どおりのedge-holdとinertia開始／停止がある。
-  arbiter出力拒否、proposal拒否、queue overflow、取消し、接触frame失敗は観測されていない。
-
-## Important constraints / 重要な制約
+## Important constraints
 
 1. The driver owns I2C/protocol/EV02 initialization/contact decoding only. It
    must not gain host-action or gesture-policy responsibility.
@@ -335,21 +244,7 @@ the exact evolution if desired.
 7. Future modules must not reintroduce a direct subscription to the driver or
    a recognizer-private ownership query.
 
-1. driverの責務はI2C／protocol／EV02初期化／接触復号だけである。ホスト操作やgesture
-   policyを戻してはならない。
-2. 機能moduleは個別にdisableして安全でなければならない。無効なDevicetree nodeは
-   recognizerを登録せず、有効moduleの仲裁順を変えてはならない。
-3. キーボードkeymap／behaviorがホスト割当を持つ。可能な限りスクロール反転・倍率などの
-   ユーザー設定はinput processorが持つ。
-4. callback登録順を隠れたpolicy入力にしてはならない。
-5. primary ownerは接触sessionごとに排他的である。observerは確立済み操作を継続できるが、
-   所有権を確立してはならない。
-6. アーキテクチャ整理でtokenがstaleになってもterminal releaseは安全側でなければならない。
-   ただしtrackpad owner自身が押した出力だけをreleaseし、別HID/KSCAN sourceの出力を
-   releaseしてはならない。
-7. 将来moduleはdriver直接購読やrecognizer-private所有権問い合わせを再導入してはならない。
-
-## Review method / レビュー方法
+## Review method
 
 - Treat the code at the fixed target HEAD as authoritative. This prompt and
   architecture documents are claims to verify, not facts to assume.
@@ -366,25 +261,11 @@ the exact evolution if desired.
   working solution unless a concrete invariant, maintainability, latency, or
   testability benefit justifies a change.
 
-- 固定対象HEADのコードを正とする。この依頼文とarchitecture文書は、前提にせず検証すべき主張である。
-- 固定baselineからHEADまでのdiff、Devicetree/Kconfig登録、arbiter state遷移、全HID／
-  virtual-KSCAN出力経路を読み取り専用で最初に調べる。
-- 文書とコードの不一致を明示的に報告する。
-- architecture案や再設計より先に、具体的なfindingを示す。
-- 各findingには、ファイル、symbolまたはcall path、発火順序、ユーザー可視または安全上の影響、
-  推奨修正を含める。
-- 確認済みdefect、もっともらしいrisk、未検証assumption、任意の簡略化を区別する。
-- 設計上の美しさだけを理由に置換を勧めない。具体的なinvariant、保守性、遅延、テスト性の
-  改善がある時だけ、動作中のsolution変更を提案する。
-
-## Required adversarial review cases / 必須の異常系レビュー
+## Required adversarial review cases
 
 Inspect the implementation or propose deterministic tests for all of the
 following. State explicitly which cases are already covered, only structurally
 checked, or remain untested.
-
-以下のすべてについて実装を調査するか、決定的試験を提案してください。既に確認済み、構造的に
-のみ検査済み、未試験のどれかを明記してください。
 
 - Every acknowledgement ordering, including a fast recognizer processing frame
   N+1 while another has not acknowledged N.
@@ -402,21 +283,7 @@ checked, or remain untested.
 - First-tap timeout racing with second-contact drag acquisition, and Tip-Tap
   repeat attempting to use a stale or replaced token.
 
-- すべてのacknowledgement順序。特に、一つのrecognizerがN+1を処理済みだが他方がNを未ackの場合。
-- duplicate、missing、stale、wrong-frame acknowledgement、登録recognizerが0件、
-  proposalを出さないrecognizer、registered mask不一致。
-- frame/proposal queue overflow、中間frame脱落、session cancel、旧proposalを後続frameへ
-  漏らさないrecovery。
-- missing acknowledgementがpointer入力を永久停止し得るか。適切なtimeout/recovery規則と
-  fail-open／fail-closedの選択。
-- token検証と実HID/KSCAN dispatchが一つの直列contextで動くか。resolver再入、lock生存期間、
-  gateから出力までのTOCTOU、recognizer／edge-hold／inertia／遅延tap workとcancelのrace。
-- token失効後のterminal button/KSCAN release、duplicate release、別入力sourceが同じHID buttonを
-  保持している場合。
-- first-tap timeoutと2回目接触によるdrag取得のrace、Tip-Tap repeatがstaleまたは置換済みtokenを
-  使おうとする場合。
-
-## Specific design questions / 重点レビュー論点
+## Specific design questions
 
 1. Is a single winner per **session** the correct granularity for every current
    and planned operation, or should the model formally distinguish session,
@@ -449,30 +316,9 @@ checked, or remain untested.
    acknowledgement order, terminal handling, cancellation, module disablement,
    and observer timer races.
 
-1. 現在・将来の全操作に対して、sessionごとに単一winnerという粒度は適切か。それとも
-   session、phase、post-session継続の所有権を正式に区別すべきか。
-2. queued-frame解決前の非互換stream抑止に、provisional ownerは最小かつ安全な方法か。
-   priority inversion、遅延、観測順依存を生まないか。
-3. 登録recognizer maskにはprimaryとobserverが入る。observerの確認はprimary解決の
-   critical pathに置くべきか、解決済み不変eventを後から渡すべきか。
-4. inertiaはrelease後に動くため、terminal scroll ownerを確認して開始後は新規接触まで
-   live primary tokenなしで動く。これを期限付き `POST_SESSION` lease tokenにすべきか。
-   正確性、APIの明瞭性、cancel安全性、テスト性で比較してください。
-5. edge holdはcontact、router state、pointer motionの複数streamを観測する。現在の機能を
-   保ちながら、事実上の第2 routing pathを作らない型付きderived-event contractはあるか。
-6. edge dial > drag > gesture > scrollという固定優先度はユーザー意図に合うか。接触開始位置、
-   指数、時間的evidenceが固定優先度を上書きすべきケースを示してください。
-7. ピンチ／回転動作、設定可能な加速を、routerに過剰なpolicy責務を与えずarbiter tokenを
-   bypassせずに追加する方法は何か。
-8. 長期的なrepository境界を提案してください。IQS9150 driver、凝集したTravelers Pad
-   functions module、任意の独立input processor／behaviorをどう分けるべきか。過剰分割は避ける。
-9. 現在の build＋構造script＋実機手順を超えるテスト戦略を提案してください。特にqueued
-   acknowledgement順、terminal処理、cancel、module disable、observer timer raceを決定的に
-   試験する方法を示してください。
+## Required review output
 
-## Required review output / 求めるレビュー成果物
-
-0. **Findings first / まずfinding:** List code-confirmed issues in
+0. **Findings first
    Critical / High / Medium / Low order before proposing alternatives. Each
    finding must give its file, symbol or call path, trigger, impact, and
    recommended correction. Separate verified facts from plausible risks,
@@ -498,41 +344,322 @@ checked, or remain untested.
 8. **Open decisions:** identify choices that require product/UX input rather
    than an engineering assumption.
 
-0. **まずfinding:** architecture案の前に、コードから確認した問題を Critical / High / Medium /
-   Low の順で示す。各findingにはファイル、symbolまたはcall path、発火条件、影響、推奨修正を
+Medium /
+
+## Relevant current files
+
+- `docs/architecture-and-tuning.md` — current responsibility and dependency
+  reference
+- `src/function/iqs9150/session/contact_session_manager.c` — canonical session
+  boundary
+- `src/function/iqs9150/session/contact_arbiter.c` and
+  `include/travelers_pad/contact_arbiter.h` — proposal, priority, token API /
+- `src/function/iqs9150/core/iqs9150_multifinger_router.c` — pointer/scroll
+  classification
+- `src/function/iqs9150/tap_drag/iqs9150_tap_drag.c`, `tip_tap/`,
+  `multifinger_gesture/`, `edge_dial/` — primary recognizers
+- `src/function/iqs9150/edge_hold_continue/` and `scroll_inertia/` — observer
+  continuations
+- `boards/shields/iqs9150_xiao/iqs9150_xiao.overlay` — active wiring of the
+  modules
+- `docs/all-input-integration-test.md` and
+  `scripts/verify-contact-arbiter-architecture.sh` — present regression gate /
+
+## 日本語
+
+# 接触arbiterソリューション・レビュー依頼
+
+## 依頼内容
+
+IQS9150トラックパッドの**接触処理アーキテクチャ**をレビューし、必要なら再設計して
+ください。これはアーキテクチャ／設計レビューだけを目的とします。コード、設定、ファームを
+変更せず、実装環境のセットアップも扱わないでください。
+
+現行ソリューションは実機確認済みであり、安易に置換すべき失敗作ではなく、動作する基準実装
+として扱ってください。維持・単純化・発展のどれが妥当かを評価し、実証済みの操作感を守る
+移行手順を示してください。
+
+## レビュー対象の固定
+
+レビュー対象は branch `main` の commit
+`65e4a8dadd534ab4b8c6a739f26064da7cda95aa` に固定します。
+
+|項目 |固定値 |
+| --- | --- |
+|対象branch | `main` |
+|対象実装HEAD | `65e4a8dadd534ab4b8c6a739f26064da7cda95aa` (`docs: add contact arbiter design review brief`) |
+|移行前基準 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7` (`feat: continue two-finger scroll at pad edge`) |
+|必須比較範囲 | `ae479d75ef3c4e784796e6571dc8feac2a2180b7..65e4a8dadd534ab4b8c6a739f26064da7cda95aa` |
+
+この依頼文自身は対象commit以降に文書のみ更新され得ますが、レビュー対象コードは変わりません。
+最初に `git status`、現在branch、`HEAD`、固定した対象object、比較範囲を読み取り専用で検証
+してください。チェックアウトされたソースが異なる場合は、結論より先に差異を報告してください。
+
+## 現在確認済みの機能
+
+- IQS9150 EV02初期化、ATI、Event Mode、実行中復帰。
+- 1本指相対ポインタ。
+- 軸ロック済み2本指縦横スクロール、listener input processorによる方向・倍率調整、
+  慣性、エッジ継続。
+- 1/2/3本指の左／右／中タップ、同本数ダブルタップ＋ホールド＋移動によるドラッグ。
+  2回目を静止して離した場合はドラッグではなくダブルクリック。
+- anchorを保持する限り繰り返せるTip-Tap。
+- 仮想KSCAN／keymap経由の3/4本指方向スワイプ、独立座標を使う5本指
+- 任意辺選択、直線軌跡、角に寄せた局所円継続を持つedge dial、確定dragと確定2本指
+  スクロールのedge-hold継続。
+- ピンチ／回転はスクロールへの混入を抑止するが、ホスト操作は未割当。設定可能な加速は
+  意図的に未実装。
+
+## 現在の処理・所有権経路
+
+```mermaid
+flowchart TD
+    HW[IQS9150 EV02]
+    DRIVER[Driver: normalized multi-contact frames]
+    SESSION[Session manager: session ID, frame sequence, cancel boundary]
+    ARB[Contact arbiter: proposal ledger, deterministic resolver, owner token]
+
+    ROUTER[2F router]
+    TAP[Tap / double-tap drag]
+    TIP[Tip-Tap]
+    GESTURE[3-5F gesture]
+    EDGE[Edge dial]
+    POINTER[Pointer / wheel producer]
+    HOLD[Edge-hold observer]
+    INERTIA[Inertia observer]
+    HID[ZMK input listener -> HID]
+    KSCAN[Composite KSCAN -> keymap]
+
+    HW --> DRIVER --> SESSION
+    SESSION -->|queued normalized frames| ROUTER
+    SESSION -->|queued normalized frames| TAP
+    SESSION -->|queued normalized frames| TIP
+    SESSION -->|queued normalized frames| GESTURE
+    SESSION -->|queued normalized frames| EDGE
+    SESSION -->|contact observation| HOLD
+    SESSION -->|contact observation| INERTIA
+
+    ROUTER -. proposal + acknowledgement .-> ARB
+    TAP -. proposal + acknowledgement .-> ARB
+    TIP -. proposal + acknowledgement .-> ARB
+    GESTURE -. proposal + acknowledgement .-> ARB
+    EDGE -. proposal + acknowledgement .-> ARB
+    ARB -. committed token .-> ROUTER
+    ARB -. committed token .-> TAP
+    ARB -. committed token .-> TIP
+    ARB -. committed token .-> GESTURE
+    ARB -. committed token .-> EDGE
+    ARB -. delegated capability .-> HOLD
+
+    ROUTER --> POINTER --> HID
+    TAP --> HID
+    TIP --> KSCAN
+    GESTURE --> KSCAN
+    EDGE --> KSCAN
+    POINTER -->|wheel observation| INERTIA
+    INERTIA -->|post-release wheel| POINTER
+    ROUTER -->|scroll state| HOLD
+    POINTER -->|axis/direction| HOLD
+    HOLD -->|drag motion| HID
+    HOLD -->|scroll wheel| POINTER
+```
+
+`iqs9150_session` だけがIQS9150接触frameを直接購読する。不変の論理session／frame
+metadataを作り、`arbiter_begin_frame` を呼んでframeを再配信する。各有効recognizerは
+queueのFIFO順で入力を受け、対応frame sequenceを取得して処理し、必要ならproposalを提出し、
+観測を確認する。arbiterは登録済み全recognizerの確認後にだけ解決するため、callback登録順が
+勝者を決めない。
+
+### owner・capability・優先順位
+
+|優先度 | Owner / owner |認識器 |主出力 |
+| ---: | --- | --- | --- |
+| 100 | `edge-dial` | edge dial |仮想KSCAN |
+| 90 | `drag` | tap/drag |ボタン＋相対ドラッグ |
+| 80 | `gesture` | 3–5F gesture |仮想KSCAN |
+| 70 | `scroll` | 2F router |pointer・listener経由ホイール |
+| 60 | `tip-tap` | Tip-Tap |仮想KSCAN |
+| 10 | `pointer provisional` |この対象ではなし |enumは残るが、有効proposalは要求しない |
+
+`TRAVELERS_PAD_OWNER_POINTER_PROVISIONAL` はowner enumとして残っているが、この対象では
+どのrecognizerも `requested_owner` として提出しない。実際の暫定機構は
+`TRAVELERS_PAD_TOKEN_PROVISIONAL` であり、解決前には優先度が最も高い提出済みclaimの**実際の
+requested owner**（例: `drag`）を、生経路の非互換抑止のためだけに見せる。semantic出力は
+許可しない。この未使用owner enumを残す意義と誤解の可能性を検証してください。
+
+優先度は同一frameの未解決claim間でのみ勝者を選ぶ。現在のコードではsession中にcommitted tokenが
+liveなら、後続claimは記録されても先取りして第2 ownerを作れない。この挙動をコードで確認し、
+phase遷移を持つ操作にも正しいか評価してください。
+
+### tokenの生存期間
+
+1. **暫定:** 提出済み `CLAIM` は、そのclaimのrequested ownerを持つ暫定tokenとして、
+1. 全queued listenerがframeを確認する前から見える。非互換な生経路を抑止できるが、
+   semantic出力は許可しない。
+2. **確定:** 全確認後に決定的な勝者へtokenを発行する。初回出力はresolver callbackから
+2. dispatchし、継続出力はowner/capability gateを通す。
+3. **終端:** terminal frame処理中はownerを問い合わせられる。その後live tokenを無効化する。
+3. stale tokenでホストの押下状態が残らないよう、**trackpad owner自身が実際に押したbuttonだけ**を
+   安全側でreleaseし診断記録する。他sourceが保持するbuttonをreleaseしてはならない。
+4. **observer継続:** この対象ではedge-holdとinertiaの両方がacknowledgement参加者である。
+4. edge hold自身はownerを持たず、liveなdragまたはscroll tokenが
+   capabilityを明示委譲した間だけ出力できる。scroll inertiaはterminal frameのscroll ownerを
+   観測してrelease後の減衰を出し、新規物理接触で直ちに停止する。
+
+### 検証すべき現行実装事実
+
+以下は固定対象のコード読解による事実であり、最良の設計だという主張ではありません。各項目を
+symbol、call path、Devicetree登録と照合し、差異があれば報告してください。
+
+- **Pinch/rotation:** 2F routerは `ROUTER_CLAIM_GEOMETRY` へ遷移し、
+  pointer/scroll routingを止めるが、現時点ではarbiter claimを提出せず、専用owner tokenも
+  得ない。このownerを持たない抑止がtap/dragや他primary経路へ漏れ得るか追跡してください。
+- **Tip-Tap repeat:** 最初に完了したTip-Tapだけが `TIP_TAP` claimを一つ提出する。
+  anchorを維持するrepeatは `ownership_frame_seq` を共有し、同じcommitted-token gateを
+  通る。tapごとに新ownerを取得しない。
+- **ダブルタップdrag:** 最初の有効tapは `double-tap-max-gap-ms`（有効設定: 250 ms）だけ
+  保留する。一致する2回目接触は `DRAG` claimを提出するが、その時点でHID button-downは送らない。
+  移動が `drag-start-move`（有効設定: 8座標unit）に達した時だけbuttonを押し、閾値到達frameを
+  rebaseして、その後の移動だけで掴んだ対象を動かす。静止した2回目のreleaseは2 clickを送る。
+  正確なevent順、cancel経路、first-tap timerとのraceをレビューしてください。
+- **terminal release:** tap/drag moduleは診断用にterminal outputを記録するが、自身の
+  `button_down` flagが真の時だけup eventを送る。ほかのHIDおよびvirtual-KSCANのpress/release
+  経路にも、このsource所有の条件があるか監査し、一般方針が安全だとコード確認なしに仮定しない。
+- **module disable:** APIはdisabled DT nodeがrecognizer登録しないよう設計される。この依頼文は、
+  全enabled/disabled組合せのbuildまたは実機試験が済んだとは主張しない。適切なbuild matrix、
+  または代表matrixに絞る根拠を求めてください。
+
+## この移行に至った経緯
+
+当初は複数の機能がdriverの接触ストリームを独立に購読し、局所stateと部分的なモジュール間
+問い合わせで制御していた。初期実装は単純だったが、同じ接触が別々に分類され得た。代表的な
+不具合は、2本指スクロールが解放後にtap/dragの右クリックへ再解釈されることだった。drag、
+edge、gestureの抑止もcallback順やprivate stateへの結合を招いた。
+
+以前の `main` 基準点から現在の `main` までの段階的履歴を以下にまとめる。必要ならreviewerが
+正確な進化を確認できるようcommit IDも記載する。
+
+|段階 |変更内容 |代表commit |
+| --- | --- | --- |
+| 1. session基盤 |session ID・frame連番・取消し境界を追加し、機能consumerをsession manager経由へ移行。 | `3242399`, `6e8c8ac` |
+| 2. 直近不具合の封じ込め |scroll claim後のtap抑止、3本指tap保存、terminal owner処理。 | `cb1423d`, `b00262b`, `6621fb3` |
+| 3. arbiter試作 |proposal ledger、queued frame解決、出力診断を追加。 | `23c3089`, `9c79127`, `3f2e692` |
+| 4. primary token移行 |resolve後の初回出力、継続gate、drag・gesture・edge・Tip-Tap移行。 | `6ba5267`, `14235eb`, `4526346`, `101f38e`, `e29de14`, `440a71c` |
+| 5. UX修正 |閾値超過移動で対象をずらさないdrag rebase、double-tap解放とdragの分離。 | `21c4e46`, `a613f17` |
+| 6. 補助機能移行 |inertiaを確定scrollのterminal ownerへ結び、edge hold出力をlive token経由にした。 | `6c2495e`, `bc8ffc0` |
+| 7. 単一所有権化 |shared-claim APIとrecognizer間private drag問い合わせを削除し、移行期語彙を整理。 | `e082ca0` |
+| 8. 回帰整備完了 |構造不変条件script、現行全入力実機手順、旧試験段階のarchive表記を追加。 | `73748f5` |
+
+## 既に得た根拠
+
+- クリーンなファームビルドは合格済み。
+- 構造回帰scriptは、直接の生入力購読者が一つだけであること、廃止済みshared-claim／
+  private ownership APIが無いこと、5 primaryすべてのtoken gate、edge-hold委譲、
+  inertiaのterminal-owner確認を検査する。
+- 単一owner化後の全入力実機試験は合格済み。ログに `drag`、`scroll`、`edge-dial`、
+  `tip-tap`、`gesture` の確定winner、期待どおりのedge-holdとinertia開始／停止がある。
+  arbiter出力拒否、proposal拒否、queue overflow、取消し、接触frame失敗は観測されていない。
+
+## 重要な制約
+
+1. driverの責務はI2C／protocol／EV02初期化／接触復号だけである。ホスト操作やgesture
+1. policyを戻してはならない。
+2. 機能moduleは個別にdisableして安全でなければならない。無効なDevicetree nodeは
+2. recognizerを登録せず、有効moduleの仲裁順を変えてはならない。
+3. キーボードkeymap／behaviorがホスト割当を持つ。可能な限りスクロール反転・倍率などの
+3. ユーザー設定はinput processorが持つ。
+4. callback登録順を隠れたpolicy入力にしてはならない。
+5. primary ownerは接触sessionごとに排他的である。observerは確立済み操作を継続できるが、
+5. 所有権を確立してはならない。
+6. アーキテクチャ整理でtokenがstaleになってもterminal releaseは安全側でなければならない。
+6. ただしtrackpad owner自身が押した出力だけをreleaseし、別HID/KSCAN sourceの出力を
+   releaseしてはならない。
+7. 将来moduleはdriver直接購読やrecognizer-private所有権問い合わせを再導入してはならない。
+
+## レビュー方法
+
+- 固定対象HEADのコードを正とする。この依頼文とarchitecture文書は、前提にせず検証すべき主張である。
+- 固定baselineからHEADまでのdiff、Devicetree/Kconfig登録、arbiter state遷移、全HID／
+  virtual-KSCAN出力経路を読み取り専用で最初に調べる。
+- 文書とコードの不一致を明示的に報告する。
+- architecture案や再設計より先に、具体的なfindingを示す。
+- 各findingには、ファイル、symbolまたはcall path、発火順序、ユーザー可視または安全上の影響、
+  推奨修正を含める。
+- 確認済みdefect、もっともらしいrisk、未検証assumption、任意の簡略化を区別する。
+- 設計上の美しさだけを理由に置換を勧めない。具体的なinvariant、保守性、遅延、テスト性の
+  改善がある時だけ、動作中のsolution変更を提案する。
+
+## 必須の異常系レビュー
+
+以下のすべてについて実装を調査するか、決定的試験を提案してください。既に確認済み、構造的に
+のみ検査済み、未試験のどれかを明記してください。
+
+- すべてのacknowledgement順序。特に、一つのrecognizerがN+1を処理済みだが他方がNを未ackの場合。
+- duplicate、missing、stale、wrong-frame acknowledgement、登録recognizerが0件、
+  proposalを出さないrecognizer、registered mask不一致。
+- frame/proposal queue overflow、中間frame脱落、session cancel、旧proposalを後続frameへ
+  漏らさないrecovery。
+- missing acknowledgementがpointer入力を永久停止し得るか。適切なtimeout/recovery規則と
+  fail-open／fail-closedの選択。
+- token検証と実HID/KSCAN dispatchが一つの直列contextで動くか。resolver再入、lock生存期間、
+  gateから出力までのTOCTOU、recognizer／edge-hold／inertia／遅延tap workとcancelのrace。
+- token失効後のterminal button/KSCAN release、duplicate release、別入力sourceが同じHID buttonを
+  保持している場合。
+- first-tap timeoutと2回目接触によるdrag取得のrace、Tip-Tap repeatがstaleまたは置換済みtokenを
+  使おうとする場合。
+
+## 重点レビュー論点
+
+1. 現在・将来の全操作に対して、sessionごとに単一winnerという粒度は適切か。それとも
+1. session、phase、post-session継続の所有権を正式に区別すべきか。
+2. queued-frame解決前の非互換stream抑止に、provisional ownerは最小かつ安全な方法か。
+2. priority inversion、遅延、観測順依存を生まないか。
+3. 登録recognizer maskにはprimaryとobserverが入る。observerの確認はprimary解決の
+3. critical pathに置くべきか、解決済み不変eventを後から渡すべきか。
+4. inertiaはrelease後に動くため、terminal scroll ownerを確認して開始後は新規接触まで
+4. live primary tokenなしで動く。これを期限付き `POST_SESSION` lease tokenにすべきか。
+   正確性、APIの明瞭性、cancel安全性、テスト性で比較してください。
+5. edge holdはcontact、router state、pointer motionの複数streamを観測する。現在の機能を
+5. 保ちながら、事実上の第2 routing pathを作らない型付きderived-event contractはあるか。
+6. edge dial > drag > gesture > scrollという固定優先度はユーザー意図に合うか。接触開始位置、
+6. 指数、時間的evidenceが固定優先度を上書きすべきケースを示してください。
+7. ピンチ／回転動作、設定可能な加速を、routerに過剰なpolicy責務を与えずarbiter tokenを
+7. bypassせずに追加する方法は何か。
+8. 長期的なrepository境界を提案してください。IQS9150 driver、凝集したTravelers Pad
+8. functions module、任意の独立input processor／behaviorをどう分けるべきか。過剰分割は避ける。
+9. 現在の build＋構造script＋実機手順を超えるテスト戦略を提案してください。特にqueued
+9. acknowledgement順、terminal処理、cancel、module disable、observer timer raceを決定的に
+   試験する方法を示してください。
+
+## 求めるレビュー成果物
+
+0. まずfinding:** List code-confirmed issues in
+
+0. **まずfinding:** architecture案の前に、コードから確認した問題を Critical / High
+0. Low の順で示す。各findingにはファイル、symbolまたはcall path、発火条件、影響、推奨修正を
    含める。確認済み事実、もっともらしいrisk、未検証assumption、任意改善を分ける。defectが
    ない場合も、実際に検査したinvariantと未検証箇所を列挙する。
 1. **結論:** 現行を維持・改善・置換のどれにするか、根拠とともに示す。
 2. **少なくとも2案:** 現行設計と、実質的に異なる少なくとも1案を比較する。結合度、disable
-   安全性、遅延、将来拡張性、移行リスク、テスト性を含める。
+2. 安全性、遅延、将来拡張性、移行リスク、テスト性を含める。
 3. **推奨到達点:** data flow、制御／所有権flow、token／lease生存期間、取消し／解放経路を
-   Mermaidで示す。
+3. Mermaidで示す。
 4. **責務表:** driver、session境界、arbiter、各primary、各observer、input processor、
-   behavior、keymapを明確にする。
+4. behavior、keymapを明確にする。
 5. **優先順位・状態規則:** 競合・tie-break規則を厳密に示す。drag、scroll、edge dial、Tip-Tap、
-   3〜5本指gesture、pinch／rotation、inertia、edge hold、cancelを明示的に扱う。
+5. 3〜5本指gesture、pinch／rotation、inertia、edge hold、cancelを明示的に扱う。
 6. **移行計画:** 実機確認済み操作を守る小さく可逆な段階に分け、各段階の最小回帰試験を示す。
 7. **試験計画:** 決定的自動試験、構造検査、実機結合試験を分ける。実機だけの確認をunit testと
-   呼ばない。
+7. 呼ばない。
 8. **未決定事項:** 工学的仮定でなく、製品／UX判断が必要な選択を特定する。
 
-## Relevant current files / 参照すべき現行ファイル
+## 参照すべき現行ファイル
 
-- `docs/architecture-and-tuning.md` — current responsibility and dependency
-  reference / 現行の責務・依存関係。
-- `src/function/iqs9150/session/contact_session_manager.c` — canonical session
-  boundary / 正規session境界。
-- `src/function/iqs9150/session/contact_arbiter.c` and
-  `include/travelers_pad/contact_arbiter.h` — proposal, priority, token API /
+現行の責務・依存関係。
+正規session境界。
   proposal、優先順位、token API。
-- `src/function/iqs9150/core/iqs9150_multifinger_router.c` — pointer/scroll
-  classification / ポインタ・スクロール分類。
-- `src/function/iqs9150/tap_drag/iqs9150_tap_drag.c`, `tip_tap/`,
-  `multifinger_gesture/`, `edge_dial/` — primary recognizers / primary認識器。
-- `src/function/iqs9150/edge_hold_continue/` and `scroll_inertia/` — observer
-  continuations / observer継続。
-- `boards/shields/iqs9150_xiao/iqs9150_xiao.overlay` — active wiring of the
-  modules / 現行moduleの接続。
-- `docs/all-input-integration-test.md` and
-  `scripts/verify-contact-arbiter-architecture.sh` — present regression gate /
+ポインタ・スクロール分類。
+primary認識器。
+observer継続。
+現行moduleの接続。
   現在の回帰ゲート。
