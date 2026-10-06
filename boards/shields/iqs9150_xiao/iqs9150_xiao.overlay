@@ -14,6 +14,9 @@
 #include <travelers-pad/iqs9150-pointer.dtsi>
 #include <zmk-input-matrix/input_matrix.dtsi>
 
+/* Shared pinch start/exclusion threshold / ピンチ開始・scroll除外の共通閾値 */
+#define TRAVELERS_PAD_PINCH_START_THRESHOLD 300000
+
 &i2c0_default {
     group1 {
         psels = <NRF_PSEL(TWIM_SDA, 1, 15)>,
@@ -224,8 +227,18 @@
      * pointer routing and a terminal two-finger tap. */
     /* Full-pad profile enables pinch; rotation stays disabled.
      * 完全pad profileではピンチを有効、回転を無効にする。 */
+    /* Keep the router exclusion and transform recognition threshold identical.
+     * ルーターのスクロール除外とピンチ認識に同じ閾値を使う。 */
+    iqs9150_router {
+        geometry-distance-threshold = <TRAVELERS_PAD_PINCH_START_THRESHOLD>;
+    };
+
     iqs9150_transform_gesture {
         status = "okay";
+        /* Conservative pinch thresholds: squared-distance changes, not time.
+         * ピンチ誤発火・連打を抑える二乗距離差の閾値。時間間隔ではない。 */
+        distance-threshold = <TRAVELERS_PAD_PINCH_START_THRESHOLD>;
+        pinch-step-threshold = <600000>;
     };
 
     /* Function module: normalized session frames are classified before pointer
