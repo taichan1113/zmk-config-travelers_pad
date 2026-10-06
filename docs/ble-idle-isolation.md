@@ -78,6 +78,88 @@ with this profile, switching HID from BLE to USB cannot be the explanation.
 The serial COM port may change after the USB descriptor changes. Do not clear
 bonds or pair again unless the existing pairing genuinely stops connecting.
 
+### USB-removal follow-up and zero-latency comparison
+
+The user confirmed continuous touch during the first 15–20 seconds after USB
+removal, followed by stutter until USB was restored. The retained samples at
+32–47 seconds have unchanged IRQ/raw/REL counters despite those touches; at
+52–87 seconds all three counters progress on battery power. The system-workqueue
+heartbeat progresses and BLE remains connected throughout. This establishes an
+initial sensor/RDY input gap and later host-visible stutter despite generated
+REL events, not a single proven cause. History does not measure HID delivery or
+supply voltage. Deep sleep is disabled.
+
+`tests/ble-idle/ble-zero-latency.conf` changes only the preferred BLE peripheral
+latency request from 30 to 0 relative to the history profile. Driver, recognizers,
+connection interval preference and history collection are unchanged. This is an
+A/B diagnostic, not a fix for absent RDY; latency 30 alone does not prove the
+cause of stutter. The host may choose different parameters: check actual `lat=0`
+in the history after connection. Increased battery consumption is possible.
+
+With battery ON, unplug USB and immediately move one finger in the center for
+30 seconds; separately note initial silence and subsequent stutter. Then idle
+three minutes and retest movement/tap/scroll. Reattach USB without RESET and
+save the full history. If actual latency is not zero, report that before drawing
+conclusions; do not clear pairing as a first step.
+
+### Input-flow history after the zero-latency test
+
+The host accepted latency zero before USB removal. During continuous attempted
+movement, samples at 22–27 seconds showed raw frames increasing 584→980 while
+REL remained 819. At 32 seconds the cached count was two despite the intended
+one-finger test. A count sampled once is not proof of the complete contact
+sequence. At 42 seconds the cached count was zero. The reported stop cannot be
+attributed solely to preferred latency 30. Raw frame count does not prove
+changing coordinates, so no recognition or power fix is justified yet.
+
+The diagnostic adds a `flow` line with the same sampling timestamp as `history`:
+`raw-move` counts changed Finger-1 coordinates on consecutive one-finger frames;
+`changes` counts contact-count transitions; `pos` is the latest raw coordinate;
+`routed`/`routed-move` observe the configured pointer input device;
+`routed-fingers` is its cached count; `markers` counts routed reset-marker frames
+(normal routing can emit these without sensor reset); `xy` and `wheel` separate
+nonzero relative pointer and scroll events. Counters are cumulative, not rates.
+Fields are separate atomic reads, not a transactionally consistent frame capture.
+Observation callbacks do not perform I2C, claim ownership or change routing.
+BLE latency zero and the five-second history interval are retained.
+
+Repeat continuous one-finger movement in the center for 30 seconds after USB
+removal. If stopped, keep moving that finger for another ten seconds before
+reattaching USB without RESET. Report roughly how many seconds after unplugging
+the stop occurred, whether the finger stayed down, and save both line types.
+Do not start the three-minute idle test until this immediate failure is isolated.
+
+### Transient contact-count investigation
+
+The input-flow test showed raw coordinates continuing to change while routed
+frames paused: at 27.362 seconds raw=1335/raw-move=1332, but routed=1219,
+routed-fingers=0 and markers=1. Contact-count changes rose from 1 to 3 between
+22 and 27 seconds. This proves raw movement continues through at least part of
+the routed suppression, but the five-second samples do not identify the exact
+intermediate count or owner. The user reports faster motion can trigger a stop
+and lifting/recontact restores motion.
+
+Code inspection finds that unowned ROUTER_PASS_ONE becomes ROUTER_AWAIT_TWO on
+any reported count >=2; a subsequent count of one does not restore PASS_ONE.
+The router intentionally suppresses pointer until full release or a committed
+route. This is a plausible match, not yet proof that a phantom second contact
+caused the failure. Broadly resuming pointer after every multi-to-one transition
+could break scroll, pinch and Tip-Tap isolation and is not applied.
+
+The next diagnostic adds a 96-entry contact-transition RAM ring. It records each
+raw count change/reset frame with uptime, before/after count, both legacy
+coordinates, second-contact validity, VBUS and cumulative raw/XY observations.
+`raw` is counted before this sync frame, and `xy` may lag asynchronous routing.
+The ring is copied under a short spinlock before logging, then printed as
+`contacts begin` / `contact` / `contacts end` before `history end`. It does not
+register an arbiter observer or alter decisions. Only the most recent 96 changes
+are retained, independently of the five-second history duration.
+
+With one finger staying down, move slowly for five seconds after unplugging,
+then faster until a stop. Keep moving ten seconds after stopping, then lift once
+and retouch to check recovery. Reattach USB without RESET and save the full dump.
+Note whether the finger stayed down until the deliberate recovery lift.
+
 ## 日本語
 
 バッテリー/BLEで3分放置後にポインタが停止し、USB接続で復帰した報告です。
@@ -143,3 +225,67 @@ driver・featuresの参照revisionも維持しています。
 
 USB descriptorが変わるためCOM番号が変わる場合があります。
 既存ペアリングが実際につながらなくなった場合を除き、BT_CLRや再ペアリングは不要です。
+
+### USB取り外し直後の追加確認とlatency=0比較
+
+USB取り外し直後15〜20秒も指を動かし、その後もUSB再接続までカクついたとの確認です。
+起動32〜47秒の履歴は操作中にもIRQ/raw/RELが増えず、52〜87秒には3つとも増えています。
+全期間でsystem workqueueは進み、BLE接続も維持しています。
+直後のセンサー/RDY入力の空白と、その後のREL生成中のカクつきは確認できますが、
+単一の原因とは確定できません。HID通知の到達・実電圧は履歴にありません。deep sleepは無効です。
+
+`tests/ble-idle/ble-zero-latency.conf` は履歴版に対してBLE peripheral latencyの希望値だけを
+30から0に変更します。driver・認識器・接続間隔の希望値・履歴採取は変更しません。
+原因比較用であり、RDYが来ない問題の対策ではありません。latency=30だけでカクつきの
+原因とは断定しません。PC側の決定もあるため、履歴の実際の `lat=0` を確認します。
+電池消費が増える可能性があります。
+
+バッテリーONでUSBを外し、直後から中央で1本指を30秒動かします。
+最初の無反応時間と、その後のカクつきを分けて記録してください。
+次に3分放置後、移動・タップ・スクロールを確認し、RESETせずUSBを再接続して履歴全体を保存します。
+実際のlatが0でなければ先にその旨を報告し、最初からBT_CLRはしません。
+
+### latency=0確認後の入力経路履歴
+
+USB取り外し前に実際のlatency=0が反映されています。連続移動操作中の起動22〜27秒では
+rawが584→980に増え、RELは819のままでした。32秒の指本数は2で、1本指を意図した
+操作との違いもあります。ただし5秒ごとの本数だけで接触の全経過は判断できません。
+42秒には本数0になっています。latency=30だけでは停止を説明できず、rawフレーム数
+だけでは座標変化を証明できないため、現時点で認識や電源の修正を断定しません。
+
+診断版は `history` と同じ採取時刻の `flow` 行を追加します。
+`raw-move` は連続する1本指フレーム間のFinger 1座標変化回数、`changes` は指本数変化回数、
+`pos` は最新の生座標です。`routed`/`routed-move` は設定されたポインタ入力デバイスの
+転送フレーム数と1本指座標変化回数、`routed-fingers` はその最新本数です。
+`markers` は経路切替等のreset marker付きフレーム数で、センサーリセット回数ではありません。
+`xy` と `wheel` は非ゼロのポインタ移動・スクロールイベントを区別します。
+回数は累積値です。各値は別々のatomic読出しで、完全に同時のフレームキャプチャではありません。
+観測callbackはI2C・所有権取得・経路変更をしません。latency=0と5秒間隔採取は維持します。
+
+USBを外した直後から中央で1本指を30秒動かし、停止しても同じ指をさらに10秒動かしてから、
+RESETせずUSBを戻してください。取り外し何秒後に止まったか、指を離さず動かし続けたかも
+記録し、history/flowの両方を保存します。直後の停止を切り分けるまで3分放置テストは保留します。
+
+### 一時的な指本数変化の調査
+
+入力経路試験では、起動27.362秒にraw=1335/raw-move=1332まで生座標変化が継続する一方、
+routed=1219、routed-fingers=0、markers=1で転送が抑制されています。
+22〜27秒で指本数変化は1→3回に増えました。転送抑制の少なくとも一部で生座標が
+動いていることは確認できますが、5秒間隔では途中の具体的な本数・ownerは分かりません。
+利用者は速い移動で止まりやすく、離して再接触すると復帰すると報告しています。
+
+コードではownerなしのROUTER_PASS_ONEが本数2以上の報告でROUTER_AWAIT_TWOになり、
+その後本数1に戻ってもPASS_ONEへ戻りません。全接触解除またはroute確定までポインタを
+抑制する仕様です。症状と整合しますが、架空の2点目が原因との確証はまだありません。
+多指→1本を全てポインタへ戻す変更はscroll/pinch/Tip-Tapの分離を壊す恐れがあるため実施しません。
+
+次の診断版は96件の指本数変化RAMリングを追加します。生frameの本数変化/resetごとに、
+起動経過時刻・変化前後の本数・2点のlegacy座標・2点目有効フラグ・VBUS・raw/XY累積回数を保存します。
+rawはそのsync frameの計上前、XYは非同期経路の処理により遅れる場合があります。
+短いspinlock内でcopyしてからログ出力し、`history end` の前に
+`contacts begin` / `contact` / `contacts end` を出します。arbiter observerを登録せず裁定も変えません。
+直近96回分だけを保持し、5秒間隔履歴とは保存期間が独立しています。
+
+USB取り外し後、1本指を置いたまま5秒ゆっくり動かし、次に速く動かして停止を再現します。
+停止後も10秒動かし、最後に一度だけ離して再接触し復帰を確認します。
+RESETせずUSBを戻し履歴全体を保存してください。復帰確認で意図的に離すまで、指を置いたままだったかも記録します。

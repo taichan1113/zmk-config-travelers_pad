@@ -46,6 +46,58 @@ RDY silence, system-workqueue stalls, raw-frame progression and BLE connection
 state before power/USB attachment changes the condition. No automatic fix has
 been applied to this still-open battery-only issue.
 
+Latest follow-up: the host accepted `lat=0`, but continuous movement still stopped.
+At 22–27 seconds raw frames increased 584→980 while REL stayed 819; one sample
+reported two fingers during the intended one-finger test. Coordinates were not
+recorded, so neither frozen sensor coordinates nor routing suppression can yet
+be confirmed. The new diagnostic retains latency zero and adds `flow` history
+for raw coordinate changes, contact-count changes, forwarded pointer frames and
+separate XY/wheel counts. Build and arbiter regressions pass; hardware pending.
+UF2: `C:\Users\takec\Downloads\travelers-pad-ble-input-flow-20261007.uf2`.
+Next: repeat immediate USB-removal central one-finger motion; keep moving ten
+seconds after stopping, then collect history without RESET. Idle testing waits.
+
+Input-flow follow-up: raw coordinates continue moving while routing pauses
+(27.362s raw=1335/raw-move=1332, routed=1219, routed-fingers=0, marker=1).
+The user reports faster movement can stop pointer and lifting/recontact restores
+it. Router code latches AWAIT_TWO after a >=2 count and does not resume ordinary
+pointer at count one until full release; a transient extra contact is suspected
+but not yet captured. Do not broadly resume multi-to-one: preserve gesture isolation.
+Latest UF2: `C:\Users\takec\Downloads\travelers-pad-contact-transitions-20261007.uf2`.
+It adds a 96-entry raw count-change/reset ring, including both contact coordinates
+and second validity, printed inside the history dump. No routing changes.
+Next: one finger down, slow then fast motion, ten seconds of motion after stop,
+one deliberate lift/recontact, USB attach without RESET; save the whole dump.
+
+Contact-transition capture now confirms 1→2 at 20.355s, 2→1 at 20.367s (12ms),
+and XY frozen at 1240 until the deliberate release at 32.598s/recontact at 33.097s.
+Numerous later two-contact bursts last 12–26ms. Some count-one frames have
+Finger 1=65535/65535 while Finger 2 retains coordinates. Official datasheet 7.2.6
+states that tracked fingers retain their memory-map location; active count is
+not a valid upper bound on slot indices. Current driver uses `index < fingers`
+for slot validity and hardcodes legacy position to slot zero: both need review.
+No fix applied yet. Next: correct sparse-slot normalization while preserving
+tracking identity and rebasing representative changes; separately design short
+extra-contact filtering/rollback without bypassing committed gesture ownership.
+This reproduction implicates the input interpretation path, not a BLE disconnect;
+the older long-idle/no-RDY failure remains separately unproven.
+
+Implemented candidate (hardware pending): driver `fix/sparse-contact-slots` and
+features `fix/transient-contact-count`, in the existing /tmp worktrees. The driver
+decodes every physical slot, publishes only confident/present contacts, and
+chooses a sticky valid legacy representative. Features buffer complete frames
+in the session manager and confirm 1→2 additions for 35ms (DT
+`extra-contact-confirm-ms`, 0 disables). Initial multi-touch/release are immediate.
+All recognizers see the same filtered slots/counts; arbiter ownership is unchanged.
+Representative changes rebase ordinary pointer and drag motion without reset.
+Production decoder/session tests and existing recovery/inertia/architecture/
+dependency checks pass, and combined UF2 builds. Manifest/remote branches stay
+unchanged pending acceptance; the build uses local ZMK_EXTRA_MODULES overrides.
+UF2: `C:\Users\takec\Downloads\travelers-pad-contact-stability-fix-20261007.uf2`.
+See [contact stability](docs/contact-slot-stability.md). First check continuous
+fast 1F motion plus 2F scroll/pinch, Tip-Tap and tap/drag; then resume battery-only
+3–5min/30min idle investigation. No idle fix is claimed.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -147,6 +199,47 @@ HIDをBLEに限定した診断版で切り分けます。[BLE放置停止の切�
 USB再接続でBLE出力が復帰しました。接続直後のhealthは最後のセンサーレポートから549秒、
 reset/recoveryはありません。USB接続が状態を変える前のRDY・raw frame・queue・BLE状態を
 RAMに保持する診断を追加しました。バッテリーのみの停止について、自動復旧などの確定対策はまだ実施していません。
+
+追加確認では実際の `lat=0` が反映されても連続移動が停止しました。
+起動22〜27秒でrawは584→980に増え、RELは819のままです。1本指試験中にも1サンプルは2本を記録しています。
+座標未採取のため、センサー座標の停止か経路抑制かはまだ未確定です。
+次の診断版はlatency=0を維持し、生座標変化・指本数変化・転送ポインタフレーム・XY/wheel別回数を
+`flow` 履歴へ追加します。ビルド・arbiter回帰試験は通過し、実機確認待ちです。
+UF2は `C:\Users\takec\Downloads\travelers-pad-ble-input-flow-20261007.uf2`。
+次はUSB取り外し直後から中央で1本指を動かし、停止しても10秒動かし続け、RESETせず履歴取得します。
+直後の停止を切り分けるまで放置テストは保留します。
+
+入力経路の追加確認では生座標変化が続く一方、転送が停止する区間を確認しました
+（27.362秒 raw=1335/raw-move=1332、routed=1219、routed-fingers=0、marker=1）。
+速い操作で止まりやすく、離して再接触すると復帰するとの報告です。
+routerは本数2以上でAWAIT_TWOになり、その後1本でも全接触解除までは通常ポインタへ戻しません。
+一時的な余分な接触を疑いますが、まだ瞬間の本数を採取できていません。
+多指→1本を全て戻す修正はgesture分離を壊す恐れがあるため実施していません。
+最新UF2は `C:\Users\takec\Downloads\travelers-pad-contact-transitions-20261007.uf2`。
+指本数変化/resetの直近96件（2点の座標・2点目有効フラグを含む）を履歴へ追加し、経路は変更しません。
+次は1本指を置いたまま遅い→速い移動、停止後も10秒移動、一度だけ離して再接触で復帰確認、
+RESETせずUSB接続して履歴全体を保存します。
+
+指本数履歴で20.355秒の1→2、20.367秒の2→1（12ms）を確認し、XY=1240は
+32.598秒の意図的な解除・33.097秒の再接触まで停止しています。後続にも12〜26msの2点報告が多数あります。
+本数1なのにFinger 1=65535/65535、Finger 2に座標が残る例も多数あります。
+公式datasheet 7.2.6は追跡中の指が同じメモリ位置に残ると規定しています。
+現driverの `index < fingers` によるslot有効判定と、legacy代表座標をslot 0へ固定する前提を見直します。
+修正はまだ未実施です。次はtracking IDを保った疎なslotの正規化と代表交代時の基準更新、
+別途、確定済み所有権を破らない短い余分な接触の除外・未確定経路の復帰を設計します。
+今回の再現はBLE切断より入力解釈経路に原因があります。過去の長時間放置時のRDY停止とは、まだ同一原因と確定しません。
+
+実装した検証候補：driver `fix/sparse-contact-slots`、features `fix/transient-contact-count`
+（既存/tmp worktree内）。driverは全物理slotをdecodeし、有効座標・confidenceのある接触を配信、
+legacy代表指は有効な以前のslotを維持します。featuresのsession managerで完全frameを保持し、
+継続中1本指への2本目追加だけ35ms確認します（DT `extra-contact-confirm-ms`、0で無効）。
+初回多指・解除は即時です。全認識器が同じslot/countを見て、arbiter所有権は変更しません。
+代表指交代は普通のポインタ・drag差分基準だけを更新し、session resetはしません。
+実decoder/session試験と既存復旧・慣性・構造・依存関係の回帰試験、組合せUF2ビルドは通過、実機待ちです。
+manifest/remote branchは合格待ちで変更せず、ビルドはローカルZMK_EXTRA_MODULESを指定しています。
+UF2は `C:\Users\takec\Downloads\travelers-pad-contact-stability-fix-20261007.uf2`。
+[接触安定化](docs/contact-slot-stability.md)参照。まず高速1F連続移動と2F scroll/pinch・Tip-Tap・tap/dragを確認、
+その後バッテリーのみで3〜5分/30分放置の調査へ戻ります。放置問題の修正完了は未確認です。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定
