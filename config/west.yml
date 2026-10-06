@@ -9,11 +9,11 @@ manifest:
     # private module取得には認証済みGitアクセスが必要。
     - name: zmk-driver-iqs9150
       url: https://github.com/taichan1113/zmk-driver-iqs9150.git
-      revision: 2b5dc1e7e00756f1a824a879bf116e308790183f
+      revision: v0.1.0
       path: module/zmk-driver-iqs9150
     - name: zmk-features-trackpad
       url: https://github.com/taichan1113/zmk-features-trackpad.git
-      revision: 73333a9aaff2b96e2fd111679d320e6b130a1752
+      revision: v0.1.0
       path: module/zmk-features-trackpad
     - name: zmk
       remote: zmkfirmware
