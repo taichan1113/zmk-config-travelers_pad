@@ -228,7 +228,9 @@ require_source 'driver/iqs9150/iqs9150_ev02_driver.c' \
 require_source 'driver/iqs9150/iqs9150_ev02_driver.c' \
     'IQS9150_RECOVER_RESET'
 require_source 'driver/iqs9150/iqs9150_ev02_driver.c' \
-    'complete command is 0x0002'
+    '#define IQS9150_SYSTEM_CONTROL_SW_RESET    BIT(9)'
+require_source 'driver/iqs9150/iqs9150_ev02_driver.c' \
+    'value[1] = IQS9150_SYSTEM_CONTROL_SW_RESET >> 8;'
 
 # Semantic REL/KEY output must not bypass the broker. Router/session/grid ABS
 # forwarding remains intentionally outside this assertion.
@@ -257,4 +259,5 @@ for producer in \
     fi
 done
 
+bash "$repo_root/scripts/test-iqs9150-recovery.sh" "$driver_module"
 printf 'PASS: contact-arbiter structural regression checks\n'

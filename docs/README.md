@@ -17,6 +17,7 @@ used only when an integration failure needs to be localized.
 | [all-input-integration-test.md](all-input-integration-test.md) | Default hardware check after changes to a shipped configuration, driver, router, or function module|
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) | After startup, UF2, USB, or power-sequencing changes|
 | [startup-ati-recovery-test.md](startup-ati-recovery-test.md) | After IQS9150 initialization or ATI changes|
+| [idle-resume-recovery.md](idle-resume-recovery.md) | Diagnose idle/resume failures and validate reset/RDY recovery |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation|
 | [reusable-modules.md](reusable-modules.md) | Import the driver/basic functions into another keyboard, with build fixtures and regression checks|
 | [two-finger-interaction-flow.md](two-finger-interaction-flow.md) | IC-independent tap/drag/scroll/Tip-Tap flow and porting contract|
@@ -83,6 +84,7 @@ required evidence patterns.
 | [all-input-integration-test.md](all-input-integration-test.md) |出荷対象の設定、ドライバ、ルーター、機能モジュール変更後の標準実機確認 |
 | [usb-reconnect-reliability-test.md](usb-reconnect-reliability-test.md) |起動、UF2、USB、電源シーケンス変更後 |
 | [startup-ati-recovery-test.md](startup-ati-recovery-test.md) |IQS9150初期化またはATI変更後 |
+| [idle-resume-recovery.md](idle-resume-recovery.md) | 放置後の停止の原因とreset/RDY復旧を検証する時 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) |実装前に責務と調整場所を確認する時 |
 | [reusable-modules.md](reusable-modules.md) |別キーボードへdriver・基本機能を取り込む手順、build例、回帰確認 |
 | [two-finger-interaction-flow.md](two-finger-interaction-flow.md) |別IC向けtap・drag・scroll・Tip-Tap処理と移植契約 |

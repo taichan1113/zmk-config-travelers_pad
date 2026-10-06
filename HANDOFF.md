@@ -13,7 +13,22 @@ are maintained as three repositories. Their current READMEs are being prepared
 for eventual public release. The two reusable module repositories are private
 at present. No repository has been made public during this documentation pass.
 
-### Hardware
+### Active investigation: idle resume
+
+Current diagnostic branch: `fix/idle-resume-baseline`. Driver manifest revision:
+`fix/rdy-idle-resume` (commit `2e2b874`); features remain `v0.1.0`.
+The repeated Show Reset warning was traced to an incorrect software reset command
+(`0x0002` instead of documented `0x0200`). Reset verification now has a deadline;
+RDY logical polarity and termination-bit detection are corrected, with GPIO-only
+level rescue. Host state-machine tests and firmware build pass; hardware idle/resume
+acceptance is still pending. The original trigger of recovery remains unconfirmed.
+
+BLE management work is paused and preserved separately on `feat/ble-management-layer`
+(Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
+firmware. Do not merge to main or resume management changes before checking the
+[idle/resume procedure](docs/idle-resume-recovery.md).
+
+### Hardware configuration
 
 Validated target: Seeed XIAO nRF52840 with the IQS9150EV02 trackpad.
 
@@ -90,6 +105,21 @@ See [the test guide](docs/README.md) for the project regression procedures.
 Travelers Pad設定、IQS9150 driver、トラックパッド機能moduleは、それぞれ別の3リポジトリで管理しています。
 現在、それぞれのREADMEを将来の公開に向けて整備中です。
 再利用moduleの2リポジトリは現時点でprivateです。今回の文書整備では公開化していません。
+
+### 現在の調査：放置後の復帰
+
+診断ブランチは `fix/idle-resume-baseline` です。driverのmanifest参照は
+`fix/rdy-idle-resume`（commit `2e2b874`）、featuresは `v0.1.0` のままです。
+Show Reset警告の連続出力は、ソフトウェアリセットの誤指定
+（`0x0002`、正しくは `0x0200`）による待機と判明しました。
+確認期限、RDY論理極性と通信終了bitの訂正、GPIOレベルの取り残し救済を追加済みです。
+ホスト状態機械テストとビルドは合格、放置・復帰の実機合否はまだ未確認です。
+復旧開始の最初の原因は未確定です。
+
+BLE接続管理の作業はPadの `feat/ble-management-layer` とfeaturesの
+`feat/four-finger-hold` に退避して中断中です。今回の診断版には含めません。
+[放置・復帰の検証](docs/idle-resume-recovery.md)が済むまでは、mainへの統合や
+接続管理の開発再開を行わないでください。
 
 ### ハードウェア
 
