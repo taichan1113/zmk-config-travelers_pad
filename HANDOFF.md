@@ -38,6 +38,14 @@ The BLE-only HID diagnostic retains USB CDC/power so transport switching cannot
 mask the failure. See [BLE idle isolation](docs/ble-idle-isolation.md).
 The original trigger of recovery remains unconfirmed.
 
+The latest battery-only repeat lost pointer/tap/scroll while Windows still showed
+connected. USB reconnection recovered BLE output; its first driver health line
+showed 549 seconds since the last successful sensor report, without reset/recovery.
+The BLE-only diagnostic now retains RAM history across USB removal to distinguish
+RDY silence, system-workqueue stalls, raw-frame progression and BLE connection
+state before power/USB attachment changes the condition. No automatic fix has
+been applied to this still-open battery-only issue.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -134,6 +142,11 @@ featuresは慣性キャンセル時にも一時的な出力中フラグを解除
 バッテリー/BLEのみでは3分後に停止し、USB接続で復帰しました。
 接続後のdriverは正常ですが、停止中の状態は不明です。USBをCDC・給電のみとし、
 HIDをBLEに限定した診断版で切り分けます。[BLE放置停止の切り分け](docs/ble-idle-isolation.md)を参照してください。
+
+最新のバッテリー試験ではWindows接続表示を維持したまま移動・タップ・スクロールが停止し、
+USB再接続でBLE出力が復帰しました。接続直後のhealthは最後のセンサーレポートから549秒、
+reset/recoveryはありません。USB接続が状態を変える前のRDY・raw frame・queue・BLE状態を
+RAMに保持する診断を追加しました。バッテリーのみの停止について、自動復旧などの確定対策はまだ実施していません。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

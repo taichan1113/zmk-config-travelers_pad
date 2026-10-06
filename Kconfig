@@ -5,3 +5,12 @@ config TRAVELERS_PAD_XIAO_BOOT_PROBE
     help
       Diagnostic-only startup indicator for distinguishing a missing USB
       enumeration from a failed transition out of the UF2 bootloader.
+
+config TRAVELERS_PAD_BLE_IDLE_HISTORY
+    bool "RAM-only BLE idle diagnostic history"
+    default n
+    depends on ZMK_BLE && ZMK_USB_LOGGING && SOC_NRF52840_QIAA
+    help
+      Retain eight minutes of RDY/input/BLE/workqueue snapshots in RAM and
+      dump them when a USB serial monitor reconnects. Diagnostic only; no
+      reset, sensor register access, persistent storage or HID output.
