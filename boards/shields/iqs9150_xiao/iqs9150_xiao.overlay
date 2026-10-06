@@ -55,6 +55,17 @@
 };
 
 / {
+    management_host_gate: management_host_gate {
+        compatible = "zmk,travelers-pad-management-gate";
+        #input-processor-cells = <0>;
+        layer = <1>;
+    };
+    management_grid_gate: management_grid_gate {
+        compatible = "zmk,travelers-pad-management-gate";
+        #input-processor-cells = <0>;
+        layer = <1>;
+        grid-only;
+    };
     chosen {
         /* Full input integration: compose 3--5 finger gestures and edge-dial
          * events without changing the ordinary pointer/tap HID path.
@@ -78,23 +89,24 @@
         events = <0>;
     };
 
-    /* Rows 0--14 are reserved for zmk-input-matrix's 5 x 3x3 gesture grid.
+    /* Rows 0--14 reserve space for zmk-input-matrix; the management grid
+     * uses a 2x3 tap group at rows 0/1. Flick groups are not mapped.
      * Rows 15/16 are 3/4-finger left/right/up/down. Row 17 columns 0/1 are
      * 5F Grasp/Release, row 18 columns 0--7 are edge-dial directions, row 19
      * is Tip-Tap, and row 20 contains the four transform directions.
-     * The grid remains unmapped, so importing it cannot trigger an action yet.
-     * 行0--14はzmk-input-matrixの5種類 x 3x3格子用に予約する。行15/16は
+     * Row 17 column 2 is the optional stationary 4F hold action.
+     * 行0--14は格子用の予約領域。管理用2x3タップは行0/1を使い、フリックは未割当。
+     * 行17の列2は任意の4本指静止ホールド。行15/16は
      * 3/4本指の左/右/上/下、行17の列0/1は5本指Grasp/Releaseである。現時点
      * 行18の列0〜7はエッジダイヤル方向、行19はTip-Tap、行20はtransformの
-     * 4方向である。格子は未割当のままなので、
-     * 格子を導入しても操作は発火しない。 */
+     * 4方向である。格子の操作は管理レイヤーだけで有効になる。 */
     iqs9150_composite_transform: composite_transform {
         compatible = "zmk,matrix-transform";
         rows = <21>;
         columns = <8>;
-        /* RC(17, 2) through RC(17, 7) deliberately have no logical position.
+        /* RC(17, 3) through RC(17, 7) deliberately have no logical position.
          * ZMK matrix transforms may omit unused physical matrix positions.
-         * RC(17, 2) とRC(17, 3)には論理位置を作らない。ZMKのmatrix transformは
+         * RC(17, 3)以降には論理位置を作らない。ZMKのmatrix transformは
          * 未使用の物理マトリクス位置をmapから省略できる。 */
         map = <RC(15, 0) RC(15, 1) RC(15, 2) RC(15, 3)
                RC(16, 0) RC(16, 1) RC(16, 2) RC(16, 3)
@@ -102,7 +114,9 @@
                RC(18, 0) RC(18, 1) RC(18, 2) RC(18, 3)
                RC(18, 4) RC(18, 5) RC(18, 6) RC(18, 7)
                RC(19, 0) RC(19, 1)
-               RC(20, 0) RC(20, 1) RC(20, 2) RC(20, 3)>;
+               RC(20, 0) RC(20, 1) RC(20, 2) RC(20, 3)
+               RC(17, 2)
+               RC(0, 0) RC(0, 1) RC(0, 2) RC(1, 0) RC(1, 1) RC(1, 2)>;
     };
 
     iqs9150_grid_transform: grid_transform {
@@ -211,6 +225,8 @@
         swipe-max-ms = <700>;
         five-finger-radial-move = <80>;
         five-finger-stable-frames = <3>;
+        four-finger-hold-ms = <1500>;
+        four-finger-hold-slop = <60>;
     };
 
     iqs9150_tip_tap: iqs9150_tip_tap {
@@ -350,13 +366,17 @@
         /* Receive the private active-touch stream, not raw IQS9150 reports.
          * 生IQS9150レポートではなく、専用の接触中ストリームを受け取る。 */
         device = <&iqs9150_matrix_input>;
-        input-processors = <&zip_matrix>;
+        input-processors = <&management_grid_gate>;
+        management {
+            layers = <1>;
+            input-processors = <&zip_matrix>;
+        };
         /* The grid has no logical mapping in the base firmware. Keep this
          * verification-only listener off until a grid/edge module includes
          * its transform and bindings.
          * 基本ファームには格子の論理割当がない。格子/辺モジュールがtransformと
          * bindingsをincludeするまで、この検証専用listenerは無効にする。 */
-        status = "disabled";
+        status = "okay";
     };
 
     iqs9150_matrix_input: iqs9150_matrix_input {
@@ -368,23 +388,39 @@
          * 意図的な格子タップを接触座標の収束から保護する。matrixはこの時間後に
          * 開始するため、接触が安定した後でも短い意図的フリックは可能である。 */
         one-finger-settle-ms = <80>;
-        status = "disabled";
+        status = "okay";
     };
 };
 
-/* Standard 3x3 grid input processor. It observes the private matrix stream:
+&iqs9150_tap_drag_listener {
+    input-processors = <&management_host_gate>;
+};
+&iqs9150_tap_drag {
+    disabled-layer = <1>;
+};
+&iqs9150_edge_hold_continue_listener {
+    input-processors = <&management_host_gate>;
+};
+&iqs9150_pointer_listener {
+    management {
+        layers = <1>;
+        input-processors = <&management_host_gate>;
+    };
+};
+
+/* Management 2x3 grid input processor. It observes the private matrix stream:
  * Zephyr fans a mutable input event out to every listener, so it must not
  * suppress session frames consumed by pointer, tap-drag, or multi-finger
  * modules. / 格子用input processorは専用matrixストリームを監視する。Zephyrは
  * 可変input eventを全listenerへ配信するため、ポインタ、タップドラッグ、多指moduleが
  * 消費するsession frameを抑止してはならない。 */
 &kscan_gesture {
-    rows = <15>;
+    rows = <10>;
     columns = <3>;
 };
 
 &zip_matrix {
-    rows = <3>;
+    rows = <2>;
     columns = <3>;
     x = <2000>;
     y = <1213>;

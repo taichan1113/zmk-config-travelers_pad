@@ -4,7 +4,13 @@ manifest:
       url-base: https://github.com/zmkfirmware
     - name: amgskobo
       url-base: https://github.com/amgskobo
+    - name: caksoylar
+      url-base: https://github.com/caksoylar
   projects:
+    - name: zmk-rgbled-widget
+      remote: caksoylar
+      revision: v0.3-branch
+      path: module/zmk-rgbled-widget
     # Private module repositories; authenticated Git access is required.
     # private module取得には認証済みGitアクセスが必要。
     - name: zmk-driver-iqs9150
@@ -13,7 +19,7 @@ manifest:
       path: module/zmk-driver-iqs9150
     - name: zmk-features-trackpad
       url: https://github.com/taichan1113/zmk-features-trackpad.git
-      revision: v0.1.0
+      revision: feat/four-finger-hold
       path: module/zmk-features-trackpad
     - name: zmk
       remote: zmkfirmware

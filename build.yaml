@@ -1,5 +1,5 @@
 include:
   - board: seeeduino_xiao_ble
-    shield: iqs9150_xiao
+    shield: iqs9150_xiao rgbled_adapter
     snippet: zmk-usb-logging
     artifact-name: iqs9150-ev02

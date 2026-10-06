@@ -1,0 +1,9 @@
+description: Keyboard-local layer gate for management grid and host mouse output
+compatible: "zmk,travelers-pad-management-gate"
+include: ip_zero_param.yaml
+properties:
+  layer:
+    type: int
+    required: true
+  grid-only:
+    type: boolean
