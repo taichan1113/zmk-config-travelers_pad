@@ -31,6 +31,7 @@ static int64_t now;
 static int active=1;
 static uint16_t info_flags, config_word=0x461e;
 static int reset_writes, reads, reports, terminations;
+static int comms_requests;
 static uint8_t last_low,last_high;
 static int64_t k_uptime_get(void) {return now;}
 static int gpio_pin_get_dt(const struct gpio_dt_spec *p) {(void)p;return active;}
@@ -39,4 +40,3 @@ static int k_work_schedule(struct k_work_delayable *w,int delay) {(void)delay;w-
 static int k_work_reschedule(struct k_work_delayable *w,int delay) {return k_work_schedule(w,delay);}
 static bool k_work_delayable_is_pending(struct k_work_delayable *w) {return w->work.pending;}
 static int atomic_get(atomic_t *p) {return *p;}
-

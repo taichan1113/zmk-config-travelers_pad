@@ -9,7 +9,7 @@ manifest:
     # private module取得には認証済みGitアクセスが必要。
     - name: zmk-driver-iqs9150
       url: https://github.com/taichan1113/zmk-driver-iqs9150.git
-      revision: fix/rdy-idle-resume
+      revision: fix/warm-reset-startup
       path: module/zmk-driver-iqs9150
     - name: zmk-features-trackpad
       url: https://github.com/taichan1113/zmk-features-trackpad.git

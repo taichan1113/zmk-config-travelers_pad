@@ -15,8 +15,12 @@ at present. No repository has been made public during this documentation pass.
 
 ### Active investigation: idle resume
 
-Current diagnostic branch: `fix/inertia-cancel-baseline`. Driver manifest revision:
-`fix/rdy-idle-resume` (commit `2e2b874`); features use `fix/inertia-cancel-state`.
+Current diagnostic branch: `fix/warm-reset-baseline`. Driver manifest revision:
+`fix/warm-reset-startup` (commit `aa6a049`); features use `fix/inertia-cancel-state`.
+The latest RESET log shows product `0xEEEE` throughout startup, ERROR state 11,
+and zero reports despite a configured USB endpoint. Startup now requests RDY
+windows and explicitly resets the sensor before initialization. Hardware
+acceptance is pending; see [warm-reset startup](docs/warm-reset-startup.md).
 The features change clears the transient inertia emission flag on cancellation,
 so a revoked glide does not suppress future wheel velocity observations.
 The old source fails the new regression; the fix passes 256 cancel/restart cycles.
@@ -112,8 +116,11 @@ Travelers Pad設定、IQS9150 driver、トラックパッド機能moduleは、�
 
 ### 現在の調査：放置後の復帰
 
-診断ブランチは `fix/inertia-cancel-baseline` です。driverのmanifest参照は
-`fix/rdy-idle-resume`（commit `2e2b874`）、featuresは `fix/inertia-cancel-state` です。
+診断ブランチは `fix/warm-reset-baseline` です。driverのmanifest参照は
+`fix/warm-reset-startup`（commit `aa6a049`）、featuresは `fix/inertia-cancel-state` です。
+最新RESETログは製品番号が全て `0xEEEE`、state 11、レポート0で、USB構成は正常でした。
+起動時のRDY窓要求と、初期化前の明示的センサーリセットを追加しました。
+実機合否は未確認です。[RESET後の起動](docs/warm-reset-startup.md)を参照してください。
 featuresは慣性キャンセル時にも一時的な出力中フラグを解除し、次の速度観測を再開します。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
