@@ -4,7 +4,7 @@
 
 ## English
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 ### Project status
 
@@ -15,8 +15,12 @@ at present. No repository has been made public during this documentation pass.
 
 ### Active investigation: idle resume
 
-Current diagnostic branch: `fix/idle-resume-baseline`. Driver manifest revision:
-`fix/rdy-idle-resume` (commit `2e2b874`); features remain `v0.1.0`.
+Current diagnostic branch: `fix/inertia-cancel-baseline`. Driver manifest revision:
+`fix/rdy-idle-resume` (commit `2e2b874`); features use `fix/inertia-cancel-state`.
+The features change clears the transient inertia emission flag on cancellation,
+so a revoked glide does not suppress future wheel velocity observations.
+The old source fails the new regression; the fix passes 256 cancel/restart cycles.
+See [inertia cancellation recovery](docs/inertia-cancel-recovery.md).
 The repeated Show Reset warning was traced to an incorrect software reset command
 (`0x0002` instead of documented `0x0200`). Reset verification now has a deadline;
 RDY logical polarity and termination-bit detection are corrected, with GPIO-only
@@ -98,7 +102,7 @@ See [the test guide](docs/README.md) for the project regression procedures.
 
 # 引継ぎ書
 
-更新日: 2026-10-06
+更新日: 2026-10-07
 
 ### プロジェクトの状態
 
@@ -108,8 +112,11 @@ Travelers Pad設定、IQS9150 driver、トラックパッド機能moduleは、�
 
 ### 現在の調査：放置後の復帰
 
-診断ブランチは `fix/idle-resume-baseline` です。driverのmanifest参照は
-`fix/rdy-idle-resume`（commit `2e2b874`）、featuresは `v0.1.0` のままです。
+診断ブランチは `fix/inertia-cancel-baseline` です。driverのmanifest参照は
+`fix/rdy-idle-resume`（commit `2e2b874`）、featuresは `fix/inertia-cancel-state` です。
+featuresは慣性キャンセル時にも一時的な出力中フラグを解除し、次の速度観測を再開します。
+修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
+[慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定
 （`0x0002`、正しくは `0x0200`）による待機と判明しました。
 確認期限、RDY論理極性と通信終了bitの訂正、GPIOレベルの取り残し救済を追加済みです。

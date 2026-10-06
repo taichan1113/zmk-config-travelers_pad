@@ -260,4 +260,5 @@ for producer in \
 done
 
 bash "$repo_root/scripts/test-iqs9150-recovery.sh" "$driver_module"
+bash "$repo_root/scripts/test-inertia-cancel.sh" "$function_module"
 printf 'PASS: contact-arbiter structural regression checks\n'
