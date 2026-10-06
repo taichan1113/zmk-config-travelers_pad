@@ -20,6 +20,7 @@ used only when an integration failure needs to be localized.
 | [idle-resume-recovery.md](idle-resume-recovery.md) | Diagnose idle/resume failures and validate reset/RDY recovery |
 | [inertia-cancel-recovery.md](inertia-cancel-recovery.md) | Validate repeated scroll/glide interruption and recovery |
 | [warm-reset-startup.md](warm-reset-startup.md) | Verify MCU-only RESET and startup with sensor Event Mode retained |
+| [ble-idle-isolation.md](ble-idle-isolation.md) | Separate BLE HID failure from USB power/transport recovery after idle |
 | [architecture-and-tuning.md](architecture-and-tuning.md) | To decide ownership and tuning location before implementation|
 | [reusable-modules.md](reusable-modules.md) | Import the driver/basic functions into another keyboard, with build fixtures and regression checks|
 | [two-finger-interaction-flow.md](two-finger-interaction-flow.md) | IC-independent tap/drag/scroll/Tip-Tap flow and porting contract|
@@ -89,6 +90,7 @@ required evidence patterns.
 | [idle-resume-recovery.md](idle-resume-recovery.md) | 放置後の停止の原因とreset/RDY復旧を検証する時 |
 | [inertia-cancel-recovery.md](inertia-cancel-recovery.md) | 慣性の連続操作・中断・再開を検証する時 |
 | [warm-reset-startup.md](warm-reset-startup.md) | センサー設定が残るMCU RESET後の起動を検証する時 |
+| [ble-idle-isolation.md](ble-idle-isolation.md) | BLE放置停止でUSB給電と送信先切替を切り分ける時 |
 | [architecture-and-tuning.md](architecture-and-tuning.md) |実装前に責務と調整場所を確認する時 |
 | [reusable-modules.md](reusable-modules.md) |別キーボードへdriver・基本機能を取り込む手順、build例、回帰確認 |
 | [two-finger-interaction-flow.md](two-finger-interaction-flow.md) |別IC向けtap・drag・scroll・Tip-Tap処理と移植契約 |
