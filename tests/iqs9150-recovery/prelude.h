@@ -32,6 +32,7 @@ static int active=1;
 static uint16_t info_flags, config_word=0x461e;
 static int reset_writes, reads, reports, terminations;
 static int comms_requests;
+static bool diagnostic_timeout_mismatch;
 static uint8_t last_low,last_high;
 static int64_t k_uptime_get(void) {return now;}
 static int gpio_pin_get_dt(const struct gpio_dt_spec *p) {(void)p;return active;}

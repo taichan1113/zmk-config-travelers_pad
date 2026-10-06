@@ -32,5 +32,21 @@ int main(void){
  setup(IQS9150_WAIT_PRODUCT);active=0;
  for (int i=0;i<=IQS9150_COMMS_REQUEST_RETRY_MAX;i++)run();
  assert(data.state==IQS9150_ERROR && comms_requests==IQS9150_COMMS_REQUEST_RETRY_MAX && reads==0);
+#ifdef IQS9150_MODE_TIMEOUT_FIRST_REG
+ uint8_t source[26], payload[26];memset(source,0xa5,sizeof(source));
+ cfg.diagnostic_disable_mode_timeouts=false;
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
+ cfg.diagnostic_disable_mode_timeouts=true;
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));
+ for(int i=0;i<26;i++)assert(payload[i]==(i>=10 && i<20?0:0xa5));
+ iqs9150_init_payload(&cfg,0x11ab,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0);
+ iqs9150_init_payload(&cfg,0x11b5,source,payload,2);assert(payload[0]==0 && payload[1]==0xa5);
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_VERIFY_MODE_TIMEOUTS);
+ active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(data.state==IQS9150_START_ATI && reads==1);
+ setup(IQS9150_VERIFY_MODE_TIMEOUTS);diagnostic_timeout_mismatch=true;run();assert(data.state==IQS9150_ERROR);
+ diagnostic_timeout_mismatch=false;cfg.diagnostic_disable_mode_timeouts=false;
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_START_ATI);
+ puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
+#endif
  puts("PASS: actual driver state machine: warm-start request/RDY/reset, bounded requests, reset 0x0200, active-low gating, reset timeout, idle silence, level rescue, termination bit, pending delay");
 }

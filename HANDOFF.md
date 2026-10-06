@@ -98,6 +98,18 @@ See [contact stability](docs/contact-slot-stability.md). First check continuous
 fast 1F motion plus 2F scroll/pinch, Tip-Tap and tap/drag; then resume battery-only
 3–5min/30min idle investigation. No idle fix is claimed.
 
+Contact stability hardware acceptance is now confirmed. The old-firmware idle
+capture plus user timing confirms no RDY/raw progression during the final 30s of
+attempted motion, while BLE/workqueue remain alive; USB restores operation.
+Next comparison: driver/pad `debug/sensor-active-only`, features unchanged at
+`13d16ea`. An optional driver diagnostic zeros only 0x11AC–0x11B5 mode timeouts
+and verifies readback before ATI. It retains automatic reference management,
+sampling, Event Mode, latency zero and RAM history; no runtime polling/reset.
+UF2: `C:\Users\takec\Downloads\travelers-pad-sensor-active-only-20261007.uf2`.
+Test 5min then 15min idle on battery only; before USB/RESET, attempt pointer/tap/
+scroll, then dump history. Increased battery consumption; not a production fix.
+See [active-only comparison](docs/sensor-active-only-test.md).
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -240,6 +252,15 @@ manifest/remote branchは合格待ちで変更せず、ビルドはローカルZ
 UF2は `C:\Users\takec\Downloads\travelers-pad-contact-stability-fix-20261007.uf2`。
 [接触安定化](docs/contact-slot-stability.md)参照。まず高速1F連続移動と2F scroll/pinch・Tip-Tap・tap/dragを確認、
 その後バッテリーのみで3〜5分/30分放置の調査へ戻ります。放置問題の修正完了は未確認です。
+
+接触安定化の実機合格が確認されました。旧版の放置履歴と利用者の操作時刻から、
+最後30秒の移動試行中もRDY/rawが増えず、BLE/workqueueは生存し、USBで復帰したことが確認できています。
+次はdriver/pad `debug/sensor-active-only`、featuresは `13d16ea` のままで比較します。
+driverの任意診断設定で0x11AC〜0x11B5のtimeoutだけ0にし、ATI前に読み戻します。
+自動reference管理・sampling・Event Mode・latency=0・RAM履歴は維持し、実行中のpoll/resetは追加しません。
+UF2は `C:\Users\takec\Downloads\travelers-pad-sensor-active-only-20261007.uf2`。
+バッテリーのみで5分→15分放置後、USB/RESET前に移動・tap・scrollを確認し履歴を取得します。
+電池消費が増える診断版で、恒久対策ではありません。[Active維持比較](docs/sensor-active-only-test.md)参照。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

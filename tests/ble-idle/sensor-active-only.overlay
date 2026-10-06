@@ -1,0 +1,5 @@
+/* Comparison only: retain all accepted contact/feature and BLE settings.
+ * 比較専用：合格した接触・機能・BLE設定は維持する。 */
+&iqs9150 {
+    diagnostic-disable-mode-timeouts;
+};

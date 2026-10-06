@@ -6,7 +6,11 @@ static int i2c_write_dt(const struct i2c_dt_spec *spec, const uint8_t *bytes, si
 }
 static uint16_t le16(const uint8_t *v){return v[0]|((uint16_t)v[1]<<8);}
 static int read_reg(const struct device *dev,uint16_t reg,uint8_t *buf,size_t len) {
- (void)dev;memset(buf,0,len);reads++;uint16_t val= reg==IQS9150_INFO_FLAGS_REG?info_flags:reg==IQS9150_CONFIG_SETTINGS_REG?config_word:IQS9150_PRODUCT_NUMBER;
+ (void)dev;memset(buf,0,len);reads++;
+#ifdef IQS9150_MODE_TIMEOUT_FIRST_REG
+ if(reg==IQS9150_MODE_TIMEOUT_FIRST_REG) {assert(len==10);buf[9]=diagnostic_timeout_mismatch;return 0;}
+#endif
+ uint16_t val= reg==IQS9150_INFO_FLAGS_REG?info_flags:reg==IQS9150_CONFIG_SETTINGS_REG?config_word:IQS9150_PRODUCT_NUMBER;
  buf[0]=val&255;buf[1]=val>>8;return 0;
 }
 static int write_reg(const struct device *dev,uint16_t reg,const uint8_t *buf,size_t len) {
