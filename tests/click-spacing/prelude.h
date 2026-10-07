@@ -54,6 +54,7 @@ static bool travelers_pad_arbiter_begin_terminal_action_output(
 }
 static void travelers_pad_arbiter_end_output(struct travelers_pad_arbiter_output_guard *g) { (void)g; }
 static void retry_pending_button_ups(const char *p) { (void)p; }
+static void cancel_behavior_actions(void) {}
 static bool travelers_pad_arbiter_begin_primary_output(uint32_t frame,
     enum travelers_pad_recognizer_id r, enum travelers_pad_owner o, uint32_t cap,
     const char *p, struct travelers_pad_arbiter_output_guard *g) {

@@ -10,7 +10,7 @@ for press_ms in 5 50; do
   printf '#include "prelude.h"\n'
   awk '/^#define TRAVELERS_PAD_OUTPUT_MAX_HELD_BUTTONS/ {copy=1} /^static int emit\(/ {copy=0} copy {print}' \
     "$features_root/src/function/iqs9150/session/contact_output_broker.c"
-  awk '/^#define CLICK_QUEUE_SIZE/ {copy=1} /^int travelers_pad_output_behavior_primary/ {copy=0} copy {print}' \
+  awk '/^#define CLICK_QUEUE_SIZE/ {copy=1} /^#define BEHAVIOR_QUEUE_SIZE/ {copy=0} copy {print}' \
     "$features_root/src/function/iqs9150/session/contact_output_broker.c"
   awk '/^int travelers_pad_output_primary\(/ {copy=1} /^int travelers_pad_output_auxiliary/ {copy=0} copy {print}' \
     "$features_root/src/function/iqs9150/session/contact_output_broker.c"
