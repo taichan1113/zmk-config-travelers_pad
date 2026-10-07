@@ -1,0 +1,5 @@
+/* Compare LP entry only; keep Active/Idle transitions and accepted features. */
+&iqs9150 {
+    /delete-property/ diagnostic-disable-mode-timeouts;
+    diagnostic-disable-lp-entry;
+};

@@ -110,6 +110,14 @@ Test 5min then 15min idle on battery only; before USB/RESET, attempt pointer/tap
 scroll, then dump history. Increased battery consumption; not a production fix.
 See [active-only comparison](docs/sensor-active-only-test.md).
 
+Active-only hardware comparison passed 5min/15min idle. History confirms battery
+input/output resumed before USB, with errors/rescues zero. Next narrower test:
+driver/pad `debug/sensor-idle-only`, features unchanged. Zero only Idle Mode
+Timeout 0x11B0 (Idle-to-LP1), verify two-byte readback before ATI, retain other
+timeouts and automatic reference management. No exact mode/root cause is proven.
+UF2: `C:\Users\takec\Downloads\travelers-pad-sensor-idle-only-20261007.uf2`.
+See [Idle-only comparison](docs/sensor-idle-only-test.md); hardware acceptance pending.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -261,6 +269,13 @@ driverの任意診断設定で0x11AC〜0x11B5のtimeoutだけ0にし、ATI前に
 UF2は `C:\Users\takec\Downloads\travelers-pad-sensor-active-only-20261007.uf2`。
 バッテリーのみで5分→15分放置後、USB/RESET前に移動・tap・scrollを確認し履歴を取得します。
 電池消費が増える診断版で、恒久対策ではありません。[Active維持比較](docs/sensor-active-only-test.md)参照。
+
+Active維持版の5分/15分放置は実機合格。historyでもUSB再接続前の電池動作で
+入力/出力が再開し、errors/rescues=0を確認。次はdriver/pad `debug/sensor-idle-only`、
+featuresは維持し、Idle→LP1 timeout（0x11B0）のみ0にしてATI前に2バイトreadback確認。
+他のtimeoutと自動reference管理は維持。原因modeの断定はまだしない。
+UF2：`C:\Users\takec\Downloads\travelers-pad-sensor-idle-only-20261007.uf2`。
+[Idle維持比較](docs/sensor-idle-only-test.md)参照。実機確認待ち。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

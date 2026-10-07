@@ -9,6 +9,9 @@ static int read_reg(const struct device *dev,uint16_t reg,uint8_t *buf,size_t le
  (void)dev;memset(buf,0,len);reads++;
 #ifdef IQS9150_MODE_TIMEOUT_FIRST_REG
  if(reg==IQS9150_MODE_TIMEOUT_FIRST_REG) {assert(len==10);buf[9]=diagnostic_timeout_mismatch;return 0;}
+#ifdef IQS9150_IDLE_TIMEOUT_REG
+ if(reg==IQS9150_IDLE_TIMEOUT_REG) {assert(len==2);buf[1]=diagnostic_timeout_mismatch;return 0;}
+#endif
 #endif
  uint16_t val= reg==IQS9150_INFO_FLAGS_REG?info_flags:reg==IQS9150_CONFIG_SETTINGS_REG?config_word:IQS9150_PRODUCT_NUMBER;
  buf[0]=val&255;buf[1]=val>>8;return 0;

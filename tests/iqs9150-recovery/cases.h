@@ -45,6 +45,18 @@ int main(void){
  active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(data.state==IQS9150_START_ATI && reads==1);
  setup(IQS9150_VERIFY_MODE_TIMEOUTS);diagnostic_timeout_mismatch=true;run();assert(data.state==IQS9150_ERROR);
  diagnostic_timeout_mismatch=false;cfg.diagnostic_disable_mode_timeouts=false;
+#ifdef IQS9150_IDLE_TIMEOUT_REG
+ cfg.diagnostic_disable_lp_entry=true;
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));
+ for(int i=0;i<26;i++)assert(payload[i]==(i==14 || i==15?0:0xa5));
+ iqs9150_init_payload(&cfg,0x11af,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0);
+ iqs9150_init_payload(&cfg,0x11b1,source,payload,2);assert(payload[0]==0 && payload[1]==0xa5);
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_VERIFY_MODE_TIMEOUTS);
+ active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(reads==1 && data.state==IQS9150_START_ATI);
+ setup(IQS9150_VERIFY_MODE_TIMEOUTS);diagnostic_timeout_mismatch=true;run();assert(data.state==IQS9150_ERROR);
+ diagnostic_timeout_mismatch=false;cfg.diagnostic_disable_lp_entry=false;
+ puts("PASS: idle-only patch preserves four other timeouts; RDY-gated two-byte verification and failure");
+#endif
  setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_START_ATI);
  puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
 #endif
