@@ -125,8 +125,9 @@ int main(void){
  power_setup_alp=0x53ffffff;power_setup_other=0x80a8;
  setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_READ_POWER_SETUP);
  run();run();assert(data.state==IQS9150_START_ATI);
- setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && event_write_word==0x471e && data.state==IQS9150_READ_POWER_SETUP && data.final_power_verification);
- active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(data.state==IQS9150_RUNNING);
+ setup(IQS9150_ENABLE_EVENT_MODE);data.comms_request_attempts=IQS9150_COMMS_REQUEST_RETRY_MAX;run();
+ assert(event_write_len==2 && event_write_word==0x471e && data.state==IQS9150_READ_POWER_SETUP && data.final_power_verification && data.work.work.pending && data.comms_request_attempts==0);
+ active=0;run();assert(reads==0 && comms_requests==1 && data.work.work.pending);active=1;run();assert(data.state==IQS9150_RUNNING);
  power_setup_alp=0xd3ffffff;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
  power_setup_alp=0x53fffeff;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
  power_setup_alp=0x53ffffff;power_setup_other=0x8088;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);

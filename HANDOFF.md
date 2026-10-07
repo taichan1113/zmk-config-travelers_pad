@@ -7,14 +7,22 @@
 Last updated: 2026-10-07
 
 Latest diagnostic follow-up: local Pad/driver branch
-`fix/post-event-diagnostic-startup`. Corrected Auto-Prox-off hardware passed an
-approximately seven-minute idle interval without USB/RESET recovery; errors and
-rescues were zero. ALP-off remains untested. Boot state 13 waited for contact
-because post-Event readback work was not scheduled. The new fix schedules that
-startup-only verification and resets its bounded request budget; no runtime
-polling or power-policy change. Host regressions and UF2 build pass; the new
-hardware test is pending. See
-[post-Event startup test](docs/post-event-diagnostic-startup-test.md).
+`debug/lp2-alp-off-startup-fixed`. ALP-off passed two battery/BLE idle-resume runs
+(5m27s and 6m23s), each starting with one finger before USB reconnect, errors/
+rescues zero. Production configuration now disables ALP and contact/runtime/RAM
+diagnostics; mandatory startup verification remains. HID stays BLE-only with
+requested latency zero. Private driver/features tags v0.2.0 are published and
+referenced by west (driver aacfbc4 / features 13d16ea). Final normal-build
+hardware regression is pending; do not merge main before acceptance. See
+[production check](docs/alp-off-production-regression.md).
+Post-Event verification passed on hardware at
+2.708s without contact, but Auto-Prox-off alone failed idle resume: no raw input
+until a four-finger contact, then one-finger input resumed. Retract permanent-fix
+acceptance of Auto-Prox-off. Initial USB-disconnect stutter is unresolved; its
+time interval was overwritten in the 96-sample history. The new comparison
+retains the startup scheduling fix, disables ALP (0x53FFFFFF), restores Other
+Settings 0x80A8 and permits LP2. Features unchanged; no runtime polling added.
+Diagnostic hardware acceptance passed. See [ALP-off test](docs/lp2-alp-off-test.md).
 
 ### Project status
 
@@ -241,11 +249,17 @@ See [the test guide](docs/README.md) for the project regression procedures.
 ## 日本語
 
 最新の診断追補：Pad/driverのローカルブランチは
-`fix/post-event-diagnostic-startup`。Auto-Prox停止修正版は約7分放置後にUSB/RESETなしで
-復帰し、エラー・救済0で実機合格。ALP無効版は未検証。起動state=13待ちはEvent Mode後の
-確認work未予約が原因。今回、起動時だけ最終確認を予約し有限回の窓要求カウンタを初期化。
-通常稼働中のポーリングや省電力設定の変更なし。回帰テスト・UF2ビルド合格、新版の実機は
-未確認。[起動確認手順](docs/post-event-diagnostic-startup-test.md)参照。
+`debug/lp2-alp-off-startup-fixed`。ALP無効版はバッテリーBLEで5分27秒・6分23秒放置後に
+USB再接続前の1本指から復帰し2回合格、エラー・救済0。本番設定へALP無効を反映し、
+接触座標/health/RAM診断は無効化。必須の起動検証は維持。HIDはBLEのみ、要求latency=0。
+既存privateリポジトリへdriver/featuresタグv0.2.0をpushしwestで参照
+（driver aacfbc4 / features 13d16ea）。通常ビルド本番候補の最終実機は未確認。
+[本番確認](docs/alp-off-production-regression.md)合格前にmain統合しないこと。
+最終設定確認は無接触で実機2.708秒に完了し起動修正は合格。
+ただしAuto-Prox停止だけでは放置後の1本指入力に反応せず、4本指の生接触を契機に復帰。
+恒久対策としての合格は撤回。USB切断直後のカクツキは該当時間帯のhistory上書きで原因未確定。
+今回の比較版は起動修正を維持しALP無効（0x53FFFFFF）、Other=0x80A8、LP2許可へ変更。
+機能は不変、runtimeポーリング追加なし。診断版は実機合格。[ALP比較手順](docs/lp2-alp-off-test.md)参照。
 
 # 引継ぎ書
 
