@@ -77,6 +77,24 @@ int main(void){
  iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
  puts("PASS: all power limits, chunk boundaries, unchanged none, readback errors and legacy precedence");
 #endif
+#if __has_include(<iqs9150/diagnostics.h>)
+ cfg.power_diagnostics=true;
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_READ_POWER_SETUP);
+ active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(reads==1 && data.power_setup_phase==1);
+ run();assert(reads==2 && data.state==IQS9150_START_ATI);
+ setup(IQS9150_READ_POWER_SETUP);power_setup_empty=true;run();assert(data.state==IQS9150_ERROR);power_setup_empty=false;
+ setup(IQS9150_RUNNING);
+ for(int mode=0;mode<8;mode++){now=100+mode;iqs9150_observe_power(&data,0x120|mode);}
+ iqs9150_observe_power(&data,0xeeee);
+ struct iqs9150_power_observation cached;
+ assert(iqs9150_get_power_observation(&dev,&cached)==0 && reads==0 && comms_requests==0);
+ assert(cached.sampled_ms==107 && cached.info_flags==0x127);
+ for(int mode=0;mode<8;mode++)assert(cached.mode_reports[mode]==1);
+ assert(iqs9150_get_power_observation(NULL,&cached)==-EINVAL);
+ assert(iqs9150_get_power_observation(&dev,NULL)==-EINVAL);
+ cfg.power_diagnostics=false;
+ puts("PASS: power setup RDY gating/empty rejection and cached modes/ALP flags without I2C requests");
+#endif
  puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
 #endif
  puts("PASS: actual driver state machine: warm-start request/RDY/reset, bounded requests, reset 0x0200, active-low gating, reset timeout, idle silence, level rescue, termination bit, pending delay");

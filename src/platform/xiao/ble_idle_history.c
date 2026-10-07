@@ -12,6 +12,7 @@
 #include <zmk/battery.h>
 #include <zmk/ble.h>
 #include <zmk/endpoints.h>
+#include <iqs9150/diagnostics.h>
 
 LOG_MODULE_REGISTER(ble_idle_history, LOG_LEVEL_INF);
 
@@ -47,6 +48,7 @@ struct snapshot {
 	uint32_t raw_motion, changes, routed, routed_motion, resets, xy, wheel;
 	int32_t x, y;
 	uint8_t routed_fingers;
+	struct iqs9150_power_observation power;
 };
 static struct snapshot history[HISTORY_COUNT];
 static unsigned int head, count;
@@ -183,6 +185,10 @@ static void collect(struct snapshot *out)
 		.resets = atomic_get(&routed_resets), .routed_fingers = atomic_get(&routed_contacts),
 		.xy = atomic_get(&xy_events), .wheel = atomic_get(&wheel_events),
 	};
+	iqs9150_get_power_observation(DEVICE_DT_GET(DT_NODELABEL(iqs9150)), &out->power);
+	/* Timestamp after copying: an observation concurrent with collect is not
+	 * falsely reported as coming from the future. */
+	out->ms = k_uptime_get();
 	struct bt_conn *conn = zmk_ble_active_profile_conn();
 	if (conn != NULL) {
 		struct bt_conn_info info;
@@ -223,6 +229,11 @@ static void dump_history(void)
 			s->ms, s->raw_motion, s->changes, s->x, s->y, s->routed,
 			s->routed_motion, s->routed_fingers, s->resets, s->xy, s->wheel);
 		/* Pace logging without blocking the driver/input/system workqueue. */
+		LOG_INF("sensor t=%lld observed-at=%lld age-ms=%lld last-mode=%u info=0x%04x alp-prox=%u alp-ati-error=%u mode-reports=%u/%u/%u/%u/%u reserved=%u/%u/%u",
+			s->ms, s->power.sampled_ms, s->power.sampled_ms ? s->ms-s->power.sampled_ms : -1LL,
+			s->power.info_flags&7, s->power.info_flags, !!(s->power.info_flags&BIT(8)), !!(s->power.info_flags&BIT(5)),
+			s->power.mode_reports[0],s->power.mode_reports[1],s->power.mode_reports[2],s->power.mode_reports[3],s->power.mode_reports[4],
+			s->power.mode_reports[5],s->power.mode_reports[6],s->power.mode_reports[7]);
 		k_sleep(K_MSEC(50));
 	}
 	LOG_INF("contacts begin: %u retained count-change/reset frames", saved_count);

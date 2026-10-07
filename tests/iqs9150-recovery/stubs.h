@@ -7,6 +7,9 @@ static int i2c_write_dt(const struct i2c_dt_spec *spec, const uint8_t *bytes, si
 static uint16_t le16(const uint8_t *v){return v[0]|((uint16_t)v[1]<<8);}
 static int read_reg(const struct device *dev,uint16_t reg,uint8_t *buf,size_t len) {
  (void)dev;memset(buf,0,len);reads++;
+#if __has_include(<iqs9150/diagnostics.h>)
+ if((reg==0x11a2 || reg==0x11be) && len==26) {if(power_setup_empty)memset(buf,0xee,len);return 0;}
+#endif
 #ifdef IQS9150_MODE_TIMEOUT_FIRST_REG
  if(reg==IQS9150_MODE_TIMEOUT_FIRST_REG) {assert(len==10);buf[9]=diagnostic_timeout_mismatch;return 0;}
 #ifdef IQS9150_IDLE_TIMEOUT_REG

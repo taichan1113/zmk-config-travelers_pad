@@ -128,6 +128,17 @@ legacy diagnostic precedence. The test selects lp1 and zeros/verifies only
 UF2: `C:\Users\takec\Downloads\travelers-pad-sensor-lp1-only-20261007.uf2`.
 See [LP1-only comparison](docs/sensor-lp1-only-test.md); hardware acceptance pending.
 
+LP1-only 5min hardware check passed, with a small wake lag; 30min was explicitly
+skipped. errors=0, rescues=1 unchanged from boot. Last-mode residency and physical
+touch-to-output delay remain unmeasured. Current driver/pad branch:
+`debug/sensor-mode-observation`. Optional `power-diagnostics` reads core power/ALP
+settings before ATI and caches Info Flags from existing runtime reports. RAM
+history adds timestamped sensor mode/ALP flags/counters; no runtime I2C is added.
+This UF2 restores unrestricted LP2 (none). Findings: ALP enabled, LP2 Auto-Prox
+enabled but LP1 Auto-Prox disabled. Not a root-cause proof. See
+[passive mode diagnostic](docs/sensor-mode-observation-test.md) for limitations,
+5min steps and UF2/fallback. Hardware acceptance pending; no main merge/push.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -294,6 +305,14 @@ driverに `power-mode-limit`（none既定/active/idle/lp1）を追加。旧診�
 比較版はlp1を選び0x11B2–0x11B3だけ0にしてATI前にreadback確認。他の設定は維持。
 UF2：`C:\Users\takec\Downloads\travelers-pad-sensor-lp1-only-20261007.uf2`。
 [LP1維持比較](docs/sensor-lp1-only-test.md)参照。実機確認待ち。
+
+その後LP1維持版の5分試験は合格（復帰時に少しラグ）。30分はユーザー判断で省略。
+errors=0、rescueは起動時1から増加なし。現在modeや実接触からの遅延は未測定です。
+現在driver/padは `debug/sensor-mode-observation`。power-diagnosticsでATI前に設定採取、
+runtime通常report内のInfo FlagsをRAM保存しhistoryへ追加。runtime追加I2Cはありません。
+このUF2はnoneに戻してLP2を許可。ALP有効、LP2のみAuto-Prox有効が具体的調査対象です。
+原因確定ではありません。[受動mode診断](docs/sensor-mode-observation-test.md)に制限・
+5分手順・UF2/戻し先を記載。実機確認待ち、main統合/pushなし。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

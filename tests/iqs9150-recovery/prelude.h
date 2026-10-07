@@ -5,6 +5,13 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
+#if __has_include(<iqs9150/diagnostics.h>)
+#include <iqs9150/diagnostics.h>
+struct k_spinlock {int unused;};
+typedef int k_spinlock_key_t;
+static int k_spin_lock(struct k_spinlock *lock) {(void)lock;return 0;}
+static void k_spin_unlock(struct k_spinlock *lock,int key) {(void)lock;(void)key;}
+#endif
 #define BIT(n) (1U<<(n))
 #define BIT_MASK(n) (BIT(n)-1)
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
@@ -33,6 +40,7 @@ static uint16_t info_flags, config_word=0x461e;
 static int reset_writes, reads, reports, terminations;
 static int comms_requests;
 static bool diagnostic_timeout_mismatch;
+static bool power_setup_empty;
 static uint8_t last_low,last_high;
 static int64_t k_uptime_get(void) {return now;}
 static int gpio_pin_get_dt(const struct gpio_dt_spec *p) {(void)p;return active;}

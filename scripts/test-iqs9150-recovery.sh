@@ -14,7 +14,8 @@ trap 'rm -f -- "$test_binary"; rmdir -- "$test_directory"' EXIT
     printf '#include "prelude.h"\n'
     awk '/^#define IQS9150_PRODUCT_NUMBER_REG/ {copy=1} /^static const uint8_t ev02_115c/ {copy=0} copy {print}' "$driver_source"
     printf '#include "stubs.h"\n'
+    awk '/^static void iqs9150_observe_power/ {copy=1} /^static void report_contact_frame/ {copy=0} copy {print}' "$driver_source"
     awk '/^static void iqs9150_fail\(/ {copy=1} /^static void iqs9150_rdy_callback/ {copy=0} copy {print}' "$driver_source"
     printf '#include "cases.h"\n'
-} | "${CC:-cc}" -std=c11 -O1 -x c - -I "$fixture_root" -o "$test_binary"
+} | "${CC:-cc}" -std=c11 -O1 -x c - -I "$fixture_root" -I "$driver_root/include" -o "$test_binary"
 "$test_binary"

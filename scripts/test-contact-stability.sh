@@ -14,7 +14,7 @@ trap 'rm -f -- "$test_binary"; rmdir -- "$test_directory"' EXIT
 {
     printf '#include "prelude.h"\n'
     awk '/^#define IQS9150_REPORT_FINGER1_OFFSET/ {copy=1} /^#define IQS9150_1F_TAP_MASK/ {copy=0} copy {print}' "$driver_source"
-    awk '/^static uint8_t decode_contact_slots/ {copy=1} /^static void report_contact_frame/ {copy=0} copy {print}' "$driver_source"
+    awk '/^static uint8_t decode_contact_slots/ {copy=1} /^static void (report_contact_frame|iqs9150_observe_power)/ {copy=0} copy {print}' "$driver_source"
     awk '/^struct session_data/ {copy=1} /^#define SESSION_INST/ {copy=0} copy {print}' "$session_source"
     printf '#include "cases.h"\n'
 } | "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -x c - -I "$fixture_root" \
