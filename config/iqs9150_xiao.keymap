@@ -6,40 +6,13 @@
 
 / {
     behaviors {
-        bt_select_1: bt_select_1 {
-            compatible = "zmk,behavior-macro";
+        bt_clear_dance: bt_clear_dance {
+            compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
-            wait-ms = <0>;
-            tap-ms = <0>;
-            bindings = <&macro_tap &bt BT_SEL 0 &to 0>;
-        };
-        bt_select_2: bt_select_2 {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            wait-ms = <0>;
-            tap-ms = <0>;
-            bindings = <&macro_tap &bt BT_SEL 1 &to 0>;
-        };
-        bt_select_3: bt_select_3 {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            wait-ms = <0>;
-            tap-ms = <0>;
-            bindings = <&macro_tap &bt BT_SEL 2 &to 0>;
-        };
-        bt_select_4: bt_select_4 {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            wait-ms = <0>;
-            tap-ms = <0>;
-            bindings = <&macro_tap &bt BT_SEL 3 &to 0>;
-        };
-        bt_select_5: bt_select_5 {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            wait-ms = <0>;
-            tap-ms = <0>;
-            bindings = <&macro_tap &bt BT_SEL 4 &to 0>;
+            /* Two separate down swipes; single swipe never clears pairing.
+             * 2回の独立した下スワイプのみ消去。単発は何もしない。 */
+            tapping-term-ms = <1500>;
+            bindings = <&none>, <&bt BT_CLR>;
         };
         /* The edge dial emits an instantaneous virtual KSCAN tap. &msc is a
          * held input behavior, therefore each macro holds it long enough for
@@ -107,21 +80,18 @@
                         &kp C_VOL_UP      &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
                         &kp LC(LS(TAB)) &kp LC(TAB)
                         &kp LC(MINUS)     &kp LC(COLON)     &kp C_BRI_DEC         &kp C_BRI_INC
-                        &to 1
-                        &none &none &none &none &none &none>;
+                        &to 1>;
         };
         bluetooth_management {
-            /* Stage 1: selection and exit only. BT_CLR is intentionally absent.
-             * 第1段階では接続先選択・終了のみ。BT_CLRは意図的に未割当。 */
+            /* Stay in management after selection/clear; hold again to exit.
+             * 選択・消去後も管理を維持。再度4本指ホールドで終了。 */
             bindings = <&none &none &none &none
-                        &none &none &none &none
+                        &bt BT_NXT &bt BT_PRV &bt BT_SEL 0 &bt_clear_dance
                         &none &none
                         &none &none &none &none &none &none &none &none
                         &none &none
                         &none &none &none &none
-                        &to 0
-                        &bt_select_1 &bt_select_2 &bt_select_3
-                        &bt_select_4 &bt_select_5 &to 0>;
+                        &to 0>;
         };
     };
 };

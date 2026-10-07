@@ -1,164 +1,90 @@
-# BLE management layer
+# BLE management by four-finger gestures
 
 ## English
 
-Resumed on 2026-10-07 after ALP-off production acceptance. Pad branch:
-feat/ble-management-layer; features branch: feat/four-finger-hold (8dd8305).
-Both include the latest main fixes. Driver remains at v0.2.0; the keyboard
-retains ALP-off, BLE-only HID and zero requested latency. Travelers-system is
-out of scope. Host regressions and the normal west module build pass; this
-resumed Stage 1 hardware check is pending. BT_CLR stays unassigned.
-UF2: C:\Users\takec\Downloads\travelers-pad-ble-management-stage1-20261007.uf2.
-Run host checks with `bash scripts/test-ble-management.sh`.
+The grid-based Stage 1 hardware check passed, but cell locations were difficult
+to discover. Management now uses four-finger gestures only. Grid input/listener
+and its composite mapping are disabled. No driver or feature-module change was
+needed for this revision; the existing hold recognizer and standard ZMK
+behaviors are reused. Driver v0.2.0 and the accepted ALP-off policy remain.
 
-### Stage 1: select a host and exit
+Enter: four fingers held still for 1500 ms, then release all fingers. The LED
+shows management in magenta. Entering fingers cannot trigger an action.
+Exit: repeat the same four-finger hold and release. Selection and clearing stay
+in management until explicitly exited. Mouse output remains gated; tap/drag is
+suspended in layer 1. Base-layer gestures are unchanged.
 
-Place four fingers near the center, keep each contact within 60 sensor units
-on each axis for 1500 ms, then lift all fingers. The hold claims the existing
-multi-finger arbiter owner. Its keyboard action is dispatched only on full
-release, preventing the entry fingers from selecting a grid cell. A contact
-count change or tracking-ID replacement before confirmation cancels the hold.
-Existing swipes and Grasp/Release bindings remain unchanged.
+| Four-finger action in management | Binding |
+| --- | --- |
+| Left swipe | BT_NXT (next profile, wraps) |
+| Right swipe | BT_PRV (previous profile, wraps) |
+| Up swipe | BT_SEL 0 (first profile) |
+| Single down swipe | None |
+| Two separate down swipes | Tap dance: BT_CLR for the currently selected profile |
+| Stationary hold, release all | Exit to layer 0 |
 
-The management layer uses this two-row, three-column layout:
+The double-down tap dance uses tapping-term-ms=1500. Lift all fingers between
+swipes; the second gesture event must arrive within the tap-dance window.
+This setting measures virtual key events, not initial physical touch times.
+A single down event times out to &none. An intervening virtual key interrupts
+the dance. BT_CLR is not BT_CLR_ALL: only the current profile is cleared.
+Clearing a paired profile requires re-pairing and may require forgetting its
+old device entry in the host OS. The LED provides standard BLE state, not a
+numeric profile indication. USB remains power/serial; HID is BLE-only.
 
-| Left | Center | Right |
-| --- | --- | --- |
-| Host 1 | Host 2 | Host 3 |
-| Host 4 | Host 5 | Exit |
+Hardware check (not yet accepted):
+1. Enter and exit twice. Short four-finger taps must not enter; normal pointer,
+   taps/drag/scroll must return after exit. No host mouse events in management.
+2. Enter, swipe left/right/up. Verify profile/status changes using host Bluetooth
+   settings/LED/logs; up returns to the first profile. Switching does not exit.
+3. Choose a disposable profile. Swipe down once, wait at least two seconds:
+   its pairing must remain. Then swipe down twice quickly with full finger
+   release between strokes: only that selected profile should be cleared.
+   Do not perform this destructive check on a pairing you need to preserve.
+4. Hold/release to exit. Verify ordinary input and five-minute idle resume.
 
-A stationary one-finger tap selects the corresponding zero-based ZMK profile
-and returns to the normal layer. Grid forwarding starts after the existing
-80 ms one-finger settle interval. Management uses the same surface coordinates
-as the pointer (X: 2000, Y: 1213).
-
-The RGB LED widget shows the management layer in magenta. BLE status remains
-the widget's standard connected/advertising/disconnected indication; this does
-not display the profile number. USB output behavior is unchanged. When checking
-BLE host switching, disconnect USB after writing the firmware, or otherwise
-ensure BLE is the active host output.
-
-Host mouse output is gated during management. Tap/drag recognition is suspended
-on layer 1 and its delayed click state is cleared. The grid processor receives
-only its private stream, and only on layer 1. Other virtual-key actions use
-`&none` on that layer. Recognition of other functions is not globally stopped.
-The keyboard-local output gate does not mutate raw frames or arbiter ownership,
-and preserves releases for previously delivered button presses.
-
-There is no automatic management timeout in this stage. The exit cell or a
-second four-finger hold returns to normal. Restart also restores the base layer.
-
-### BT_CLR is not enabled yet
-
-The intended final lower-right action is short press: exit; long press: clear
-the currently selected host. Stage 1 deliberately contains no BT_CLR binding:
-holding the exit cell does not erase pairing. After grid and transitions pass
-hardware checks, stage 2 will enable held grid keys and a guarded 3-second
-hold/short-tap binding. No pairing or settings reset is part of stage 1.
-
-### Hardware checks
-
-1. Four-finger hold for roughly two seconds, lift, and confirm the management
-   LED color. A short four-finger touch or an ordinary swipe must not enter.
-2. Tap the lower-right cell, lift, and verify ordinary pointer, tap, drag,
-   two-finger scroll, and inertia resume. Repeat entry and exit several times.
-   No host click or motion should result from management cell operations.
-3. Select each desired profile, pair it if empty, and check pointer delivery
-   over BLE. Unused profiles may remain unpaired; that is expected.
-4. Confirm normal multi-finger, Tip-Tap, edge, and pinch actions remain usable
-   outside management. Check transitions after inertia as well.
-
-Useful logs: `4F hold confirmed; action waits for all contacts to lift`,
-`4F hold action dispatched after release`, and the `zip_matrix` gesture logs.
-
-### Development and verification
-
-The driver is unchanged. Optional four-finger hold and the generic tap/drag
-`disabled-layer` setting live on the feature module's development branch,
-selected by the keyboard west manifest. Existing module main and release tags
-are unchanged. The LED project uses the requested `v0.3-branch` revision.
-
-Host tests using extracted production C with platform stubs cover hold timing,
-per-contact movement and identity, count changes, reset, competing owners,
-one-shot release output, preserved swipe recognition, default-disabled behavior,
-and host/grid output gating across layer transitions. These tests do not model
-sensor noise or asynchronous Bluetooth delivery. The integrated firmware build
-passes, with 31 bindings per layer and the original 24 bindings preserved.
+UF2: C:\Users\takec\Downloads\travelers-pad-ble-management-gestures-20261007.uf2.
+Host tests: bash scripts/test-ble-management.sh plus arbiter/dependency checks.
+All main branches stay unchanged until hardware acceptance.
 
 ## 日本語
 
-2026-10-07、ALP無効の本番合格後に再開。Padはfeat/ble-management-layer、featuresは
-feat/four-finger-hold（8dd8305）。両方に最新mainの停止・接触安定化修正を取り込み済み。
-driverはv0.2.0のまま、PadのALP無効・BLEのみHID・要求latency=0を維持。
-travelers-systemは対象外。回帰テストと通常westモジュールでのビルドは合格、再開版の
-第1段階の実機確認は未完了。BT_CLRは未割当。
-UF2：C:\Users\takec\Downloads\travelers-pad-ble-management-stage1-20261007.uf2。
-ホスト確認：`bash scripts/test-ble-management.sh`。
+格子版第1段階は実機合格しましたが、区画位置が分かりづらいため管理操作を4本指
+ジェスチャーへ変更。格子input/listenerとcomposite mapを無効化しました。
+この変更ではdriver・機能モジュールの追加改修は不要。既存ホールドとZMK標準behaviorを
+使用し、driver v0.2.0・合格済みALP無効対策を維持します。
 
-### 第1段階：接続先選択と終了
+入口：4本指を1500 ms静止して全指を離す。管理中はLEDが紫色。
+終了：同じ4本指ホールド→全指を離す。接続先選択・消去では自動終了しません。
+管理中のマウス出力を抑止し、レイヤー1でtap/dragを休止。通常レイヤーの割当は不変。
 
-パッド中央付近に4本指を置き、各指のX/Y変位をセンサー座標60以内に保って
-1500 ms静止し、全指を離してください。既存の多指arbiter ownerを取得し、
-全指解放後にキーマップ操作を発火します。入口の指が格子を選ぶことを防ぐためです。
-成立前の本数変更やtracking-IDの入れ替えでホールド候補を取り消します。
-既存のスワイプとGrasp/Releaseの割り当ては維持しています。
+| 管理中の4本指操作 | 割当 |
+| --- | --- |
+| 左スワイプ | BT_NXT：次の接続先（末尾から先頭へ循環） |
+| 右スワイプ | BT_PRV：前の接続先（先頭から末尾へ循環） |
+| 上スワイプ | BT_SEL 0：接続先1 |
+| 下スワイプ1回 | 何もしない |
+| 下スワイプ2回 | タップダンスで現在の接続先をBT_CLR |
+| 静止ホールド→全指解放 | 通常レイヤーへ終了 |
 
-管理レイヤーの2行×3列の配置：
+タップダンスのtapping-term-msは1500。毎回全指を離し、判定時間内に2回目の
+ジェスチャーeventを送ります。時間基準は仮想キーeventで、物理的に指を置いた時刻では
+ありません。単発は時間切れで&none。他の仮想キー操作が間に入るとダンスを中断。
+BT_CLR_ALLではなく、選択中の接続先だけを消去します。
+消去後は再ペアリングが必要で、PC側で古い登録の削除が必要な場合もあります。
+LEDは標準のBLE状態を示し、接続先番号の表示ではありません。USBは給電・シリアル、
+HIDはBLEのみです。
 
-| 左 | 中央 | 右 |
-| --- | --- | --- |
-| 接続先1 | 接続先2 | 接続先3 |
-| 接続先4 | 接続先5 | 終了 |
+実機確認（新版は未確認）：
+1. 入口・終了を2回確認。短い4本指タップでは入らないこと。終了後に通常操作が戻り、
+   管理中にホストへマウス操作が漏れないこと。
+2. 管理に入り左/右/上スワイプ。PCのBluetooth状態・LED・ログで切替確認。
+   上で接続先1へ戻ること。切替後も管理中であること。
+3. 消してよい接続先を選択。下1回→2秒以上待つ：登録維持。
+   全指を毎回離して下2回を続ける：選択中だけ消去。
+   保存したいペアリングではこの破壊的試験をしないでください。
+4. ホールドして離して終了。通常操作と5分放置後の復帰を確認。
 
-1本指を静止タップして離すと、対応するZMKプロファイルを選び、通常レイヤーへ
-戻ります。番号は内部では0始まりです。格子転送には既存の1本指確定時間80 msが
-あるため、極端に短い接触は対象外です。座標範囲はポインタと同じX:2000、Y:1213です。
-
-RGB LED widgetで管理レイヤーを紫色に表示します。BLE状態表示はwidget標準の
-接続済み・ペアリング待ち・未接続表示で、接続先番号の表示ではありません。
-USB出力の設定は変更していません。BLE切替の検証時は書き込み後にUSBを外すか、
-BLEが出力先になっていることを確認してください。
-
-管理中はホストへのマウス出力を抑止します。tap/dragはレイヤー1で認識を休止し、
-遅延クリック状態も破棄します。格子processorは専用ストリームだけをレイヤー1で
-処理し、他の仮想キーはそのレイヤーで`&none`にします。他機能の認識全体を止める
-構成ではありません。キーボード固有の出力ゲートは生frameやarbiter所有権を変更せず、
-送信済みボタン押下の解放を維持します。
-
-この段階では自動終了タイムアウトはありません。終了区画、またはもう一度の
-4本指ホールドで通常レイヤーへ戻れます。再起動でも基本レイヤーへ戻ります。
-
-### BT_CLRはまだ有効にしていません
-
-最終仕様は右下の短押しで終了、長押しで選択中の接続先消去です。
-第1段階には意図的にBT_CLRを割り当てていません。右下を保持してもペアリングは
-消えません。格子とレイヤー遷移の実機確認後、第2段階で格子の保持キー出力と、
-3秒長押し／短押しの保護付き割り当てを有効にします。第1段階では接続情報・
-settingsのリセットも行いません。
-
-### 実機確認
-
-1. 4本指を約2秒静止して離し、管理レイヤーのLED色を確認します。
-   短い4本指接触や通常のスワイプでは入らないことも確認します。
-2. 右下をタップして離し、通常のポインタ・タップ・ドラッグ・2本指スクロール・
-   慣性へ戻ることを確認します。数回繰り返し、管理区画の操作でホストへの
-   クリック・移動が出ないことを確認します。
-3. 必要な接続先を選び、空ならペアリングし、BLEでポインタを確認します。
-   未使用の接続先が未ペアリングのままでも正常です。
-4. 管理外で多指・Tip-Tap・エッジ・ピンチの既存操作を確認します。
-   慣性の後に管理へ入る遷移も確認してください。
-
-目印のログは`4F hold confirmed; action waits for all contacts to lift`、
-`4F hold action dispatched after release`、および`zip_matrix`のジェスチャーです。
-
-### 開発状態と検証
-
-ドライバは変更していません。任意の4本指ホールドと汎用tap/dragの`disabled-layer`
-設定は機能モジュールの開発ブランチにあり、キーボードのwest manifestで選択します。
-既存moduleのmainとリリースタグは変更していません。LEDは指定の`v0.3-branch`です。
-
-実コードを抽出しプラットフォーム部分をスタブ化したホストテストで、成立時間、
-各指の移動・同一性、本数変化、リセット、競合owner、解放後の一度だけの出力、
-既存スワイプ、既定無効、レイヤー遷移時のホスト／格子出力ゲートを確認しました。
-センサーノイズや非同期BLE送信はテスト対象外です。結合ファームのビルドは成功し、
-各レイヤー31 bindingと、従来24 bindingの維持も確認しています。
+UF2：C:\Users\takec\Downloads\travelers-pad-ble-management-gestures-20261007.uf2。
+ホスト確認：bash scripts/test-ble-management.shとarbiter/依存回帰確認。
+実機合格までは各mainを変更しません。

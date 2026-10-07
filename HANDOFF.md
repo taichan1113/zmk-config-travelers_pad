@@ -6,7 +6,14 @@
 
 Last updated: 2026-10-07
 
-Active development: BLE management Stage 1 resumed on feat/ble-management-layer,
+Active development: BLE management gestures on feat/ble-management-layer.
+The grid Stage 1 passed hardware, but was rejected for poor cell discoverability.
+Grid stream/listener and mapped cells are now disabled. Management 4F swipes:
+left BT_NXT, right BT_PRV, up BT_SEL 0, down once none, twice BT_CLR via standard
+tap dance (1500ms). Hold/release enters/exits; switching/clear stays in management.
+Only the selected profile is erased; testing must use a disposable pairing.
+Gesture revision hardware is pending. Driver/features unchanged for this change.
+Original resumption details: Stage 1 resumed on feat/ble-management-layer,
 features feat/four-finger-hold (8dd8305) after merging the accepted main fixes.
 Driver remains v0.2.0; ALP-off and BLE-only HID are retained. Four-finger hold
 opens a 2x3 host-selection/exit grid; BT_CLR is deliberately unassigned until
@@ -262,7 +269,13 @@ See [the test guide](docs/README.md) for the project regression procedures.
 
 ## 日本語
 
-現在の開発：feat/ble-management-layerでBLE管理第1段階を再開。featuresは
+現在の開発：feat/ble-management-layerでBLE管理ジェスチャー版。
+格子版第1段階は実機合格したが区画位置のUXが不適で撤回し、格子転送・割当を無効化。
+管理中の4本指は左BT_NXT、右BT_PRV、上BT_SEL 0、下単発なし、下2回BT_CLR
+（ZMK tap dance、1500ms）。ホールド解放で入退場、切替・消去後も管理を維持。
+選択中のみ消去。消してよいペアリングで確認すること。新版の実機未確認。
+今回driver/featuresの追加変更なし。
+再開時の経過：BLE管理第1段階のfeaturesは
 feat/four-finger-hold（8dd8305）、合格済みmain修正を両方へmerge済み。
 driverはv0.2.0、ALP無効・BLEのみHIDを維持。4本指ホールドで2x3の接続先選択/終了格子。
 入口・終了・選択の実機合格までBT_CLRは未割当。ビルド・実コードホストテスト合格、
