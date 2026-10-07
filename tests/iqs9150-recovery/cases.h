@@ -94,6 +94,26 @@ int main(void){
  assert(iqs9150_get_power_observation(&dev,NULL)==-EINVAL);
  cfg.power_diagnostics=false;
  puts("PASS: power setup RDY gating/empty rejection and cached modes/ALP flags without I2C requests");
+#ifdef IQS9150_LP2_AUTOPROX_ENABLE
+ cfg.diagnostic_disable_lp2_autoprox=true;
+ iqs9150_init_payload(&cfg,0x11be,block_bytes,payload,sizeof(block_bytes));
+ assert(payload[0]==0x1e && payload[1]==0x46 && payload[2]==0x88 && payload[3]==0x80);
+ iqs9150_init_payload(&cfg,0x11be,source,payload,sizeof(source));
+ for(int i=0;i<26;i++)assert(payload[i]==(i==2?(0xa5 & ~BIT(5)):0xa5));
+ iqs9150_init_payload(&cfg,0x11bf,source,payload,2);assert(payload[0]==0xa5 && payload[1]==(0xa5 & ~BIT(5)));
+ iqs9150_init_payload(&cfg,0x11c0,source,payload,1);assert(payload[0]==(0xa5 & ~BIT(5)));
+ iqs9150_init_payload(&cfg,0x11c1,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0xa5);
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
+ /* Mandatory verification even with runtime power observations disabled. */
+ power_setup_other=0x8088;
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_READ_POWER_SETUP);
+ active=0;run();assert(reads==0 && comms_requests==1);active=1;run();run();assert(data.state==IQS9150_START_ATI && reads==2);
+ power_setup_other=0x80a8;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
+ power_setup_other=0x8089;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
+ cfg.diagnostic_disable_lp2_autoprox=false;power_setup_other=0;
+ iqs9150_init_payload(&cfg,0x11be,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
+ puts("PASS: LP2 Auto-Prox one-bit patch, unchanged timeout/neighbors, mandatory RDY/full-word verification");
+#endif
 #endif
  puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
 #endif

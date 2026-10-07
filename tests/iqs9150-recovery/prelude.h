@@ -41,6 +41,7 @@ static int reset_writes, reads, reports, terminations;
 static int comms_requests;
 static bool diagnostic_timeout_mismatch;
 static bool power_setup_empty;
+static uint16_t power_setup_other;
 static uint8_t last_low,last_high;
 static int64_t k_uptime_get(void) {return now;}
 static int gpio_pin_get_dt(const struct gpio_dt_spec *p) {(void)p;return active;}

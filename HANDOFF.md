@@ -139,6 +139,15 @@ enabled but LP1 Auto-Prox disabled. Not a root-cause proof. See
 [passive mode diagnostic](docs/sensor-mode-observation-test.md) for limitations,
 5min steps and UF2/fallback. Hardware acceptance pending; no main merge/push.
 
+Unrestricted passive diagnostic failed after idle: last report ~71s, stale mode
+Active age~539s at ~610s, raw unchanged, BLE/queue alive, errors=0 and rescue=1.
+USB had not restored reports within the captured history. Do not infer current
+mode from cached Active. Current driver/pad: `debug/lp2-autoprox-off`. Clear only
+0x11C0 bit5, full Other Settings readback must equal 0x8088 before ATI; all mode
+timeouts and ALP settings otherwise retained. LP2 remains allowed. Passive
+history remains enabled. See [Auto-Prox-off comparison](docs/lp2-autoprox-off-test.md)
+for UF2 and 5min steps. Hardware acceptance pending; keep Idle fallback.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -313,6 +322,13 @@ runtime通常report内のInfo FlagsをRAM保存しhistoryへ追加。runtime追�
 このUF2はnoneに戻してLP2を許可。ALP有効、LP2のみAuto-Prox有効が具体的調査対象です。
 原因確定ではありません。[受動mode診断](docs/sensor-mode-observation-test.md)に制限・
 5分手順・UF2/戻し先を記載。実機確認待ち、main統合/pushなし。
+
+その後LP2許可の受動診断版で放置後停止再現。最終report約71秒、約610秒でもraw不変、
+BLE/queue継続、errors=0、rescue=1。Active採取値は約539秒古く現在modeは不明。
+USB再接続後history内でもreport復帰未確認。現在driver/padは `debug/lp2-autoprox-off`。
+0x11C0 bit5だけ無効化し、Other Settings全word=0x8088をATI前にreadback確認。
+LP2移行、timeoutと他ALP設定は維持。受動historyも維持。
+[Auto-Prox停止比較](docs/lp2-autoprox-off-test.md)にUF2/5分手順を記載。実機確認待ち。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定
