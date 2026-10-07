@@ -2,6 +2,15 @@
 
 ## English
 
+Resumed on 2026-10-07 after ALP-off production acceptance. Pad branch:
+feat/ble-management-layer; features branch: feat/four-finger-hold (8dd8305).
+Both include the latest main fixes. Driver remains at v0.2.0; the keyboard
+retains ALP-off, BLE-only HID and zero requested latency. Travelers-system is
+out of scope. Host regressions and the normal west module build pass; this
+resumed Stage 1 hardware check is pending. BT_CLR stays unassigned.
+UF2: C:\Users\takec\Downloads\travelers-pad-ble-management-stage1-20261007.uf2.
+Run host checks with `bash scripts/test-ble-management.sh`.
+
 ### Stage 1: select a host and exit
 
 Place four fingers near the center, keep each contact within 60 sensor units
@@ -77,6 +86,14 @@ sensor noise or asynchronous Bluetooth delivery. The integrated firmware build
 passes, with 31 bindings per layer and the original 24 bindings preserved.
 
 ## 日本語
+
+2026-10-07、ALP無効の本番合格後に再開。Padはfeat/ble-management-layer、featuresは
+feat/four-finger-hold（8dd8305）。両方に最新mainの停止・接触安定化修正を取り込み済み。
+driverはv0.2.0のまま、PadのALP無効・BLEのみHID・要求latency=0を維持。
+travelers-systemは対象外。回帰テストと通常westモジュールでのビルドは合格、再開版の
+第1段階の実機確認は未完了。BT_CLRは未割当。
+UF2：C:\Users\takec\Downloads\travelers-pad-ble-management-stage1-20261007.uf2。
+ホスト確認：`bash scripts/test-ble-management.sh`。
 
 ### 第1段階：接続先選択と終了
 

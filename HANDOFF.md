@@ -6,6 +6,14 @@
 
 Last updated: 2026-10-07
 
+Active development: BLE management Stage 1 resumed on feat/ble-management-layer,
+features feat/four-finger-hold (8dd8305) after merging the accepted main fixes.
+Driver remains v0.2.0; ALP-off and BLE-only HID are retained. Four-finger hold
+opens a 2x3 host-selection/exit grid; BT_CLR is deliberately unassigned until
+entry/exit and selection pass hardware. Build and production-C host tests pass;
+hardware pending. Travelers-system is not changed. See
+[management checks](docs/ble-management-layer.md).
+
 Latest accepted baseline: Pad/driver/features local main. The production
 candidate passed all four user checks on 2026-10-07; startup completed at
 2.709s with Other=0x80A8 / ALP=0x53FFFFFF. The boot log has the pre-existing
@@ -253,6 +261,12 @@ west build -p always -s zmk/app -d build/travelers-pad \
 See [the test guide](docs/README.md) for the project regression procedures.
 
 ## 日本語
+
+現在の開発：feat/ble-management-layerでBLE管理第1段階を再開。featuresは
+feat/four-finger-hold（8dd8305）、合格済みmain修正を両方へmerge済み。
+driverはv0.2.0、ALP無効・BLEのみHIDを維持。4本指ホールドで2x3の接続先選択/終了格子。
+入口・終了・選択の実機合格までBT_CLRは未割当。ビルド・実コードホストテスト合格、
+実機未確認。travelers-systemは変更なし。[管理確認](docs/ble-management-layer.md)参照。
 
 最新の合格基準：Pad/driver/featuresのローカルmain。2026-10-07に本番候補の4項目すべて
 実機合格。起動2.709秒でOther=0x80A8 / ALP=0x53FFFFFFを確認。既知のQSPI JEDEC不一致と
