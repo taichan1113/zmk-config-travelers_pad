@@ -58,6 +58,25 @@ int main(void){
  puts("PASS: idle-only patch preserves four other timeouts; RDY-gated two-byte verification and failure");
 #endif
  setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_START_ATI);
+#ifdef IQS9150_LP1_TIMEOUT_REG
+ for(int limit=IQS9150_POWER_LIMIT_ACTIVE;limit<=IQS9150_POWER_LIMIT_LP1;limit++) {
+  cfg.power_mode_limit=limit;
+  iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));
+  int first=limit==1?10:limit==2?14:16, end=limit==1?20:first+2;
+  for(int i=0;i<26;i++)assert(payload[i]==(i>=first && i<end?0:0xa5));
+  uint16_t reg=iqs9150_timeout_patch_reg(&cfg);
+  iqs9150_init_payload(&cfg,reg-1,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0);
+  iqs9150_init_payload(&cfg,reg+(limit==1?10:2)-1,source,payload,2);assert(payload[0]==0 && payload[1]==0xa5);
+  setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_VERIFY_MODE_TIMEOUTS);
+  active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(data.state==IQS9150_START_ATI);
+  setup(IQS9150_VERIFY_MODE_TIMEOUTS);diagnostic_timeout_mismatch=true;run();assert(data.state==IQS9150_ERROR);diagnostic_timeout_mismatch=false;
+ }
+ cfg.diagnostic_disable_mode_timeouts=true;assert(iqs9150_power_limit(&cfg)==IQS9150_POWER_LIMIT_ACTIVE);
+ cfg.diagnostic_disable_mode_timeouts=false;cfg.diagnostic_disable_lp_entry=true;assert(iqs9150_power_limit(&cfg)==IQS9150_POWER_LIMIT_IDLE);
+ cfg.diagnostic_disable_lp_entry=false;cfg.power_mode_limit=IQS9150_POWER_LIMIT_NONE;
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
+ puts("PASS: all power limits, chunk boundaries, unchanged none, readback errors and legacy precedence");
+#endif
  puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
 #endif
  puts("PASS: actual driver state machine: warm-start request/RDY/reset, bounded requests, reset 0x0200, active-low gating, reset timeout, idle silence, level rescue, termination bit, pending delay");

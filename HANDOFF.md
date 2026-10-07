@@ -118,6 +118,16 @@ timeouts and automatic reference management. No exact mode/root cause is proven.
 UF2: `C:\Users\takec\Downloads\travelers-pad-sensor-idle-only-20261007.uf2`.
 See [Idle-only comparison](docs/sensor-idle-only-test.md); hardware acceptance pending.
 
+Idle-only is now hardware accepted, including approximately 33min without contact;
+history confirms battery input/output before USB, errors=0 and rescues unchanged
+at 1 (startup). Preserve `debug/sensor-idle-only` and its UF2 as fallback.
+Current driver/pad branch is `debug/sensor-lp1-only`; features remain at `13d16ea`.
+Driver adds `power-mode-limit` enum none/active/idle/lp1 (none default), retaining
+legacy diagnostic precedence. The test selects lp1 and zeros/verifies only
+0x11B2–0x11B3 before ATI. Other timeouts/reference/sampling remain unchanged.
+UF2: `C:\Users\takec\Downloads\travelers-pad-sensor-lp1-only-20261007.uf2`.
+See [LP1-only comparison](docs/sensor-lp1-only-test.md); hardware acceptance pending.
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -276,6 +286,14 @@ featuresは維持し、Idle→LP1 timeout（0x11B0）のみ0にしてATI前に2�
 他のtimeoutと自動reference管理は維持。原因modeの断定はまだしない。
 UF2：`C:\Users\takec\Downloads\travelers-pad-sensor-idle-only-20261007.uf2`。
 [Idle維持比較](docs/sensor-idle-only-test.md)参照。実機確認待ち。
+
+その後Idle維持版は約33分無接触後にも実機合格。USB再接続前の電池動作で出力再開、
+errors=0、rescueは起動時1から増加なし。`debug/sensor-idle-only` とUF2を戻し先として保持。
+現在driver/padは `debug/sensor-lp1-only`、featuresは `13d16ea` のまま。
+driverに `power-mode-limit`（none既定/active/idle/lp1）を追加。旧診断設定が優先。
+比較版はlp1を選び0x11B2–0x11B3だけ0にしてATI前にreadback確認。他の設定は維持。
+UF2：`C:\Users\takec\Downloads\travelers-pad-sensor-lp1-only-20261007.uf2`。
+[LP1維持比較](docs/sensor-lp1-only-test.md)参照。実機確認待ち。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定
