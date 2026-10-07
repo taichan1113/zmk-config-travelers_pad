@@ -25,6 +25,23 @@ int main(void) {
  begin();tick(1000);owner=TRAVELERS_PAD_OWNER_DRAG;
  multifinger_resolve_action(&data,NULL,data.ownership_frame_seq);assert(actions==0);lift();assert(actions==0);
  begin();tick(500);data.sensor_reset=true;tick(1000);assert(!data.pending_hold_action && actions==0);
+ /* Centroid shifts caused by staggered 3F/4F release must not claim swipe. */
+ cfg.four_finger_hold_ms=0;
+ begin();data.slot_x[0]=100;data.slot_x[1]=500;data.slot_x[2]=900;data.slot_x[3]=1300;
+ tick(10);data.start_x=data.x;
+ data.fingers=3;data.slot_valid[3]=false;tick(20);
+ data.fingers=2;data.slot_valid[2]=false;tick(30);
+ data.fingers=1;data.slot_valid[1]=false;tick(40);
+ assert(!data.moved && owner==TRAVELERS_PAD_OWNER_NONE);lift();assert(actions==0);
+ begin();data.fingers=3;data.slot_valid[3]=false;data.max_fingers=3;
+ data.slot_x[0]=100;data.slot_x[1]=800;data.slot_x[2]=1500;tick(10);data.start_x=data.x;
+ data.fingers=2;data.slot_valid[2]=false;tick(20);
+ assert(!data.moved && owner==TRAVELERS_PAD_OWNER_NONE);lift();assert(actions==0);
+ /* A genuine full-set swipe keeps its direction through staggered release. */
+ begin();for(int i=0;i<4;i++)data.slot_x[i]+=200;tick(100);assert(data.moved);
+ data.fingers=2;data.slot_valid[2]=data.slot_valid[3]=false;tick(120);lift();
+ assert(actions==1 && last_column==GESTURE_RIGHT);
+ puts("PASS: staggered 3F/4F release cannot claim swipe; genuine swipe direction retained");
  puts("PASS: immediate 1s hold waits for resolver, emits while down once, no release duplicate/retrigger, reset and denied output safe");
  puts("PASS: actual gesture code: 4F timing, slop, identity, contact changes, reset, competing owners, one-shot release, swipe preservation, default-disabled");
 }

@@ -227,6 +227,9 @@
     iqs9150_tip_tap: iqs9150_tip_tap {
         compatible = "zmk,travelers-pad-iqs9150-tip-tap-kscan";
         input-device = <&iqs9150_session>;
+        /* Distinguish an established anchor from staggered two-finger taps.
+         * 先に250ms静止したanchorのみTip-Tap候補にする。 */
+        anchor-min-hold-ms = <250>;
         second-contact-timeout-ms = <180>;
         contact-slop = <75>;
         minimum-horizontal-separation = <160>;

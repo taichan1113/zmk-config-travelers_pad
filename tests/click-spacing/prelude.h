@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
+#ifndef CONFIG_TRAVELERS_PAD_CLICK_PRESS_MS
 #define CONFIG_TRAVELERS_PAD_CLICK_PRESS_MS 5
+#endif
 #define CONFIG_TRAVELERS_PAD_CLICK_GAP_MS 5
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define ARG_UNUSED(x) ((void)(x))
