@@ -148,6 +148,14 @@ timeouts and ALP settings otherwise retained. LP2 remains allowed. Passive
 history remains enabled. See [Auto-Prox-off comparison](docs/lp2-autoprox-off-test.md)
 for UF2 and 5min steps. Hardware acceptance pending; keep Idle fallback.
 
+Correction: old Auto-Prox-off hardware failure is invalid as that isolation:
+Event Mode wrote four bytes and restored Other Settings after the pre-ATI check.
+Current `debug/lp2-alp-off` fixes Event Mode to write only Config bytes, adds
+post-Event readback, and clears only ALP Setup bit31 for the primary test. LP2
+and baseline Auto-Prox remain allowed. A corrected Auto-Prox-off UF2 is supplied
+separately. See [ALP-off and correction](docs/lp2-alp-off-test.md). Both need
+hardware checks; Idle-only acceptance remains valid (its timeout is not overwritten).
+
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
 firmware. Do not merge to main or resume management changes before checking the
@@ -329,6 +337,12 @@ USB再接続後history内でもreport復帰未確認。現在driver/padは `debu
 0x11C0 bit5だけ無効化し、Other Settings全word=0x8088をATI前にreadback確認。
 LP2移行、timeoutと他ALP設定は維持。受動historyも維持。
 [Auto-Prox停止比較](docs/lp2-autoprox-off-test.md)にUF2/5分手順を記載。実機確認待ち。
+
+訂正：旧Auto-Prox停止版はEvent Mode有効化でOther Settingsを書き戻しており、
+無効化比較として結果は無効。現在 `debug/lp2-alp-off` でEvent Mode書込みをConfig2バイトに
+修正し、Event Mode後のreadbackも追加。主試験はALP bit31だけ無効化しLP2と元のAuto-Proxを維持。
+Auto-Prox停止修正版も別UF2で提出。[ALP比較と訂正](docs/lp2-alp-off-test.md)参照。
+いずれも実機確認待ち。Idle維持のtimeoutは上書きされないため、以前の合格は有効。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

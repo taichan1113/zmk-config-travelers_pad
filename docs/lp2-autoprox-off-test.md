@@ -2,6 +2,10 @@
 
 ## English
 
+Superseded: the first artifact restored Other Settings during Event Mode enable.
+Its hardware failure cannot rule out Auto-Prox. Use the post-Event-verified
+replacement described in [ALP comparison/correction](lp2-alp-off-test.md).
+
 Driver/pad branch: `debug/lp2-autoprox-off`. Feature module unchanged.
 UF2: `C:\Users\takec\Downloads\travelers-pad-lp2-autoprox-off-20261007.uf2`.
 
@@ -50,6 +54,9 @@ Fallback: accepted `travelers-pad-sensor-idle-only-20261007.uf2`.
 Reference: [Azoteq datasheet](https://www.azoteq.com/images/stories/pdf/IQS9150_IQS9151_datasheet.pdf), sections 5.6.3/6 and Appendix A.14.
 
 ## 日本語
+
+訂正：初版UF2はEvent Mode有効化でOther Settingsを初期値へ戻していたため、
+停止結果からAuto-Proxを除外できません。[比較と修正版](lp2-alp-off-test.md)参照。
 
 driver/pad：`debug/lp2-autoprox-off`。機能モジュールは変更しません。
 UF2：`C:\Users\takec\Downloads\travelers-pad-lp2-autoprox-off-20261007.uf2`。

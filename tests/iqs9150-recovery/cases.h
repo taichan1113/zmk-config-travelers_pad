@@ -114,6 +114,29 @@ int main(void){
  iqs9150_init_payload(&cfg,0x11be,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
  puts("PASS: LP2 Auto-Prox one-bit patch, unchanged timeout/neighbors, mandatory RDY/full-word verification");
 #endif
+#ifdef IQS9150_ALP_ENABLE_BYTE_REG
+ cfg.diagnostic_disable_alp=true;
+ iqs9150_init_payload(&cfg,0x11be,source,payload,sizeof(source));
+ for(int i=0;i<26;i++)assert(payload[i]==(i==7?(0xa5 & ~BIT(7)):0xa5));
+ iqs9150_init_payload(&cfg,0x11c4,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0x25);
+ iqs9150_init_payload(&cfg,0x11c5,source,payload,1);assert(payload[0]==0x25);
+ iqs9150_init_payload(&cfg,0x11c6,source,payload,2);assert(payload[0]==0xa5 && payload[1]==0xa5);
+ iqs9150_init_payload(&cfg,0x11a2,source,payload,sizeof(source));assert(memcmp(source,payload,sizeof(source))==0);
+ power_setup_alp=0x53ffffff;power_setup_other=0x80a8;
+ setup(IQS9150_WRITE_CONFIG);data.block_index=ARRAY_SIZE(ev02_blocks);run();assert(data.state==IQS9150_READ_POWER_SETUP);
+ run();run();assert(data.state==IQS9150_START_ATI);
+ setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && event_write_word==0x471e && data.state==IQS9150_READ_POWER_SETUP && data.final_power_verification);
+ active=0;run();assert(reads==0 && comms_requests==1);active=1;run();assert(data.state==IQS9150_RUNNING);
+ power_setup_alp=0xd3ffffff;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
+ power_setup_alp=0x53fffeff;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
+ power_setup_alp=0x53ffffff;power_setup_other=0x8088;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
+ cfg.diagnostic_disable_alp=false;cfg.diagnostic_disable_lp2_autoprox=true;power_setup_other=0x8088;
+ setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && data.state==IQS9150_READ_POWER_SETUP);run();assert(data.state==IQS9150_RUNNING);
+ setup(IQS9150_ENABLE_EVENT_MODE);run();power_setup_other=0x80a8;run();assert(data.state==IQS9150_ERROR);
+ cfg.diagnostic_disable_lp2_autoprox=false;power_setup_other=0;power_setup_alp=0;
+ setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && data.state==IQS9150_RUNNING);
+ puts("PASS: ALP single-bit patch/full setup preservation and post-Event Mode verification; Auto-Prox rollback rejected");
+#endif
 #endif
  puts("PASS: diagnostic timeout patch boundaries, unchanged default, RDY-gated readback and mismatch failure");
 #endif
