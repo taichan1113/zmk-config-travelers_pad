@@ -32,8 +32,8 @@ git clone https://github.com/taichan1113/zmk-config-travelers_pad.git config/zmk
 west init -l config/zmk-config-travelers_pad/config
 west update
 west build -p always -s zmk/app -d build/travelers-pad \
-  -b seeeduino_xiao_ble -- \
-  -DSHIELD=iqs9150_xiao \
+  -b seeeduino_xiao_ble -S zmk-usb-logging -- \
+  '-DSHIELD=iqs9150_xiao rgbled_adapter' \
   -DZMK_CONFIG=$PWD/config/zmk-config-travelers_pad/config \
   -DZMK_EXTRA_MODULES=$PWD/config/zmk-config-travelers_pad
 ```
@@ -52,6 +52,13 @@ The sensor emits contact frames. ZMK turns those into ordinary pointer, button,
 wheel, and key events; the host does not see a native precision-touchpad device.
 
 ### Documentation
+
+HID output uses Bluetooth; USB provides power and serial logging. Hold four
+fingers still for about one second to enter management while touching. Cyan
+indicates management; release, then repeat the hold to exit. Four-finger swipes
+select next (left), previous (right), or first (up) host. Two down swipes within
+1500ms clear the current host pairing; one down swipe does nothing. Clearing
+requires re-pairing. See [management controls](docs/ble-management-layer.md).
 
 - [Two-finger interaction flow](docs/two-finger-interaction-flow.md)
 - [Architecture and tuning](docs/architecture-and-tuning.md)
@@ -98,8 +105,8 @@ git clone https://github.com/taichan1113/zmk-config-travelers_pad.git config/zmk
 west init -l config/zmk-config-travelers_pad/config
 west update
 west build -p always -s zmk/app -d build/travelers-pad \
-  -b seeeduino_xiao_ble -- \
-  -DSHIELD=iqs9150_xiao \
+  -b seeeduino_xiao_ble -S zmk-usb-logging -- \
+  '-DSHIELD=iqs9150_xiao rgbled_adapter' \
   -DZMK_CONFIG=$PWD/config/zmk-config-travelers_pad/config \
   -DZMK_EXTRA_MODULES=$PWD/config/zmk-config-travelers_pad
 ```
@@ -116,6 +123,12 @@ Tip-Tap、多指ジェスチャー、ピンチを設定しています。確認�
 キーイベントに変換します。ホストからはnative precision touchpadとして認識されません。
 
 ### 文書
+
+HID出力はBluetooth、USBは給電・シリアル用です。4本指を約1秒静止すると指を置いたまま
+管理へ入り、シアン点灯します。全指を離してから再びホールドすると終了。
+管理中の4本指スワイプは左で次、右で前、上で接続先1。下1回は無操作、1500ms以内の
+下2回で選択中のペアリングを消去します。消去後は再ペアリングが必要。
+[管理操作](docs/ble-management-layer.md)を参照してください。
 
 - [2本指操作の処理フロー](docs/two-finger-interaction-flow.md)
 - [アーキテクチャと調整](docs/architecture-and-tuning.md)

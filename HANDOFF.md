@@ -6,7 +6,16 @@
 
 Last updated: 2026-10-07
 
-Active development: BLE management gestures on feat/ble-management-layer.
+Current accepted baseline: config main, driver v0.2.0, features v0.3.0.
+Features v0.3.0 pins ab373d0. Standalone BLE operation and management are
+hardware accepted; no new firmware change is introduced by integration.
+Do not change travelers-system yet. Next: real-use idle/power monitoring,
+optional battery-current measurement, and separate QSPI JEDEC investigation.
+ALP-off remains an interim policy; exact root cause and current consumption
+are unproven. Management BT_CLR erases only the selected host pairing.
+
+Management development history (superseded by acceptance above):
+BLE management gestures on feat/ble-management-layer.
 All gesture-management operations passed hardware. Latest candidate changes
 entry/exit to a 1000ms live-frame arbiter-resolved hold (features ab373d0);
 one-shot until full release. LED matches mimitabu: base off, management cyan.
@@ -275,7 +284,13 @@ See [the test guide](docs/README.md) for the project regression procedures.
 
 ## 日本語
 
-現在の開発：feat/ble-management-layerでBLE管理ジェスチャー版。
+現在の合格基準：config main、driver v0.2.0、features v0.3.0。
+features v0.3.0はab373d0を固定。単体BLE操作・管理は実機合格、統合によるファーム変更なし。
+travelers-systemは今は変更しない。次は実運用での放置・電池監視、必要なら消費電流測定、
+既知のQSPI JEDEC不一致を別件として調査。ALP無効は暫定対策で、内部原因・消費電力は未確定。
+管理中のBT_CLRは選択中だけ消去する。
+
+管理開発の経過（最新状態は上記を優先）：feat/ble-management-layerでBLE管理ジェスチャー版。
 ジェスチャー管理の全操作は実機合格。最新候補は入口/終了を1000ms静止成立時の
 arbiter裁定後発火に変更（features ab373d0）。全指解放まで一度のみ。
 LEDはmimitabuと同じ通常消灯・管理シアン。即時ホールド新版は実機合格。

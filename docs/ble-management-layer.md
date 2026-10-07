@@ -36,7 +36,7 @@ Clearing a paired profile requires re-pairing and may require forgetting its
 old device entry in the host OS. The LED provides standard BLE state, not a
 numeric profile indication. USB remains power/serial; HID is BLE-only.
 
-Hardware check (not yet accepted):
+Hardware check (accepted; retained for regression):
 1. Enter and exit twice. Short four-finger taps must not enter; normal pointer,
    taps/drag/scroll must return after exit. No host mouse events in management.
 2. Enter, swipe left/right/up. Verify profile/status changes using host Bluetooth
@@ -48,12 +48,13 @@ Hardware check (not yet accepted):
 4. Hold/release to exit. Verify ordinary input and five-minute idle resume.
 
 The gesture-management revision passed all user hardware checks. This new
-immediate-hold revision is pending: verify LED changes before finger release,
+immediate-hold revision also passed: LED changes before finger release,
 continued holding for 3s does not toggle back, and release adds no extra action.
 UF2: C:\Users\takec\Downloads\travelers-pad-ble-management-hold1s-20261007.uf2.
 Host tests: bash scripts/test-ble-management.sh plus arbiter/dependency checks.
 Immediate-hold hardware acceptance passed. Features main includes ab373d0
-and is pushed; Pad management configuration remains on its development branch.
+and is pushed; config main integrates management and pins features v0.3.0 to
+that same commit. This is the accepted standalone operational configuration.
 Driver is unchanged.
 
 ## 日本語
@@ -88,7 +89,7 @@ BT_CLR_ALLではなく、選択中の接続先だけを消去します。
 LEDは標準のBLE状態を示し、接続先番号の表示ではありません。USBは給電・シリアル、
 HIDはBLEのみです。
 
-実機確認（新版は未確認）：
+実機確認（合格済み、回帰手順として保持）：
 1. 入口・終了を2回確認。短い4本指タップでは入らないこと。終了後に通常操作が戻り、
    管理中にホストへマウス操作が漏れないこと。
 2. 管理に入り左/右/上スワイプ。PCのBluetooth状態・LED・ログで切替確認。
@@ -98,9 +99,10 @@ HIDはBLEのみです。
    保存したいペアリングではこの破壊的試験をしないでください。
 4. ホールドして離して終了。通常操作と5分放置後の復帰を確認。
 
-ジェスチャー管理版は全操作実機合格。今回の即時ホールド版は未確認。
+ジェスチャー管理版・即時ホールド版とも全操作実機合格。
 指を離す前にLEDが変わり、3秒保持しても戻らず、離しても追加操作が出ないことを確認。
 UF2：C:\Users\takec\Downloads\travelers-pad-ble-management-hold1s-20261007.uf2。
 ホスト確認：bash scripts/test-ble-management.shとarbiter/依存回帰確認。
 即時ホールド版も実機合格。features mainへab373d0を統合しpush済み。
-Pad管理設定は開発ブランチを維持、driverは変更なし。
+config mainへ管理設定を統合し、同じfeaturesコミットをタグv0.3.0で固定。
+単体実運用の合格構成です。driverは変更なし。

@@ -19,7 +19,7 @@ manifest:
       path: module/zmk-driver-iqs9150
     - name: zmk-features-trackpad
       url: https://github.com/taichan1113/zmk-features-trackpad.git
-      revision: feat/four-finger-hold
+      revision: v0.3.0
       path: module/zmk-features-trackpad
     - name: zmk
       remote: zmkfirmware
