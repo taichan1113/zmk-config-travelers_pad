@@ -219,7 +219,8 @@
         swipe-max-ms = <700>;
         five-finger-radial-move = <80>;
         five-finger-stable-frames = <3>;
-        four-finger-hold-ms = <1500>;
+        four-finger-hold-ms = <1000>;
+        four-finger-hold-immediate;
         four-finger-hold-slop = <60>;
     };
 

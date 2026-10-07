@@ -15,5 +15,16 @@ int main(void) {
  begin();owner=TRAVELERS_PAD_OWNER_SCROLL;tick(1500);assert(!data.hold_confirmed);lift();assert(actions==0);
  begin();for(int i=0;i<4;i++)data.slot_x[i]+=200;tick(200);assert(data.moved && !data.hold_confirmed);lift();assert(actions==1 && last_row==1 && last_column==GESTURE_RIGHT);
  cfg.four_finger_hold_ms=0;begin();tick(2000);lift();assert(actions==0);
+ cfg.four_finger_hold_ms=1000;cfg.four_finger_hold_immediate=true;
+ begin();tick(999);assert(!data.hold_confirmed && actions==0);
+ tick(1000);assert(data.hold_confirmed && data.pending_hold_action && actions==0);
+ multifinger_resolve_action(&data,NULL,data.ownership_frame_seq+1);assert(actions==0 && data.pending_hold_action);
+ multifinger_resolve_action(&data,NULL,data.ownership_frame_seq);assert(actions==1 && data.fingers==4 && !data.pending_hold_action);
+ tick(2000);multifinger_resolve_action(&data,NULL,data.ownership_frame_seq);assert(actions==1);
+ lift();assert(actions==1);tick(3000);assert(actions==1);
+ begin();tick(1000);owner=TRAVELERS_PAD_OWNER_DRAG;
+ multifinger_resolve_action(&data,NULL,data.ownership_frame_seq);assert(actions==0);lift();assert(actions==0);
+ begin();tick(500);data.sensor_reset=true;tick(1000);assert(!data.pending_hold_action && actions==0);
+ puts("PASS: immediate 1s hold waits for resolver, emits while down once, no release duplicate/retrigger, reset and denied output safe");
  puts("PASS: actual gesture code: 4F timing, slop, identity, contact changes, reset, competing owners, one-shot release, swipe preservation, default-disabled");
 }
