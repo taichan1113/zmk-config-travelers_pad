@@ -40,12 +40,12 @@
         compatible = "azoteq,iqs9150";
         reg = <0x56>;
         rdy-gpios = <&gpio1 13 GPIO_ACTIVE_LOW>;
-        /* Temporary validation aid: report independent two-finger coordinates
-         * at INFO level. 実機検証用に2点座標をINFOログへ出力する。 */
-        two-finger-diagnostics;
-        /* Temporary validation aid: report every valid 3--7 finger contact.
-         * 実機検証用に3--7点の有効座標をINFOログへ出力する。 */
-        multitouch-diagnostics;
+        /* Accepted interim idle-resume policy: keep LP2 and original Auto-Prox,
+         * use trackpad sensing instead of ALP. Startup readback remains mandatory.
+         * 放置後復帰の暫定対策：LP2・元のAuto-Proxを維持しALPを無効化。
+         * 通常の接触・healthログは無効、起動時の設定検証は維持。 */
+        power-mode-limit = "none";
+        diagnostic-disable-alp;
     };
 };
 

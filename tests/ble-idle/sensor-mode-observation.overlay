@@ -1,0 +1,6 @@
+&iqs9150 {
+    /delete-property/ diagnostic-disable-mode-timeouts;
+    /delete-property/ diagnostic-disable-lp-entry;
+    power-mode-limit = "none";
+    power-diagnostics;
+};
