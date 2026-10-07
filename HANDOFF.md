@@ -6,14 +6,20 @@
 
 Last updated: 2026-10-07
 
-Latest diagnostic follow-up: local Pad/driver branch
-`debug/lp2-alp-off-startup-fixed`. ALP-off passed two battery/BLE idle-resume runs
+Latest accepted baseline: Pad/driver/features local main. The production
+candidate passed all four user checks on 2026-10-07; startup completed at
+2.709s with Other=0x80A8 / ALP=0x53FFFFFF. The boot log has the pre-existing
+QSPI JEDEC mismatch and one successful startup RDY level rescue, not a startup
+failure. No new blocker was found. Integration does not change the tested UF2.
+Older investigation paragraphs below are historical; pending statements there
+are superseded by this latest acceptance. Remote main push is not included.
+ALP-off passed two battery/BLE idle-resume runs
 (5m27s and 6m23s), each starting with one finger before USB reconnect, errors/
 rescues zero. Production configuration now disables ALP and contact/runtime/RAM
 diagnostics; mandatory startup verification remains. HID stays BLE-only with
 requested latency zero. Private driver/features tags v0.2.0 are published and
 referenced by west (driver aacfbc4 / features 13d16ea). Final normal-build
-hardware regression is pending; do not merge main before acceptance. See
+hardware regression passed and main integration is approved. See
 [production check](docs/alp-off-production-regression.md).
 Post-Event verification passed on hardware at
 2.708s without contact, but Auto-Prox-off alone failed idle resume: no raw input
@@ -248,13 +254,16 @@ See [the test guide](docs/README.md) for the project regression procedures.
 
 ## 日本語
 
-最新の診断追補：Pad/driverのローカルブランチは
-`debug/lp2-alp-off-startup-fixed`。ALP無効版はバッテリーBLEで5分27秒・6分23秒放置後に
+最新の合格基準：Pad/driver/featuresのローカルmain。2026-10-07に本番候補の4項目すべて
+実機合格。起動2.709秒でOther=0x80A8 / ALP=0x53FFFFFFを確認。既知のQSPI JEDEC不一致と
+起動時RDYレベル救済1回は残るものの、起動失敗・新たな阻害要因なし。統合でUF2は変更しない。
+以下の調査経過は履歴であり、古い未確認表記はこの最新合格を優先。remote mainのpushは含まない。
+ALP無効版はバッテリーBLEで5分27秒・6分23秒放置後に
 USB再接続前の1本指から復帰し2回合格、エラー・救済0。本番設定へALP無効を反映し、
 接触座標/health/RAM診断は無効化。必須の起動検証は維持。HIDはBLEのみ、要求latency=0。
 既存privateリポジトリへdriver/featuresタグv0.2.0をpushしwestで参照
-（driver aacfbc4 / features 13d16ea）。通常ビルド本番候補の最終実機は未確認。
-[本番確認](docs/alp-off-production-regression.md)合格前にmain統合しないこと。
+（driver aacfbc4 / features 13d16ea）。通常ビルド本番候補の最終実機は合格、main統合承認済み。
+[本番確認](docs/alp-off-production-regression.md)参照。
 最終設定確認は無接触で実機2.708秒に完了し起動修正は合格。
 ただしAuto-Prox停止だけでは放置後の1本指入力に反応せず、4本指の生接触を契機に復帰。
 恒久対策としての合格は撤回。USB切断直後のカクツキは該当時間帯のhistory上書きで原因未確定。

@@ -35,7 +35,11 @@ Final acceptance before main integration:
    report observed behavior and supply boot/error logs if available. If this
    fails, return to the accepted diagnostic image to capture history.
 
-Do not merge to main until this production-candidate check passes.
+Accepted on hardware on 2026-10-07: all four checks passed; the user approved
+main integration. Boot verification completed at 2.709s with Config=0x471E,
+Other=0x80A8 and ALP=0x53FFFFFF. One startup RDY level rescue completed
+successfully. The known QSPI JEDEC mismatch remains a separate issue; it did
+not prevent this acceptance. No firmware changes are needed for integration.
 
 ## 日本語
 
@@ -65,4 +69,7 @@ main統合前の最終実機確認：
 4. USB再接続でも操作が続くことを確認。本版はRAM履歴なし。体感結果と可能なら
    起動/エラーログを提出。失敗時は合格した診断版に戻してhistory採取。
 
-この本番候補の実機合格前にmainへ統合しないでください。
+2026-10-07に4項目すべて実機合格、ユーザーがmain統合を承認。
+2.709秒でConfig=0x471E、Other=0x80A8、ALP=0x53FFFFFFの最終検証完了。
+起動時RDYレベル救済1回は正常に完了。既知のQSPI JEDEC不一致は別件として残るが、
+今回の合格を妨げていません。統合に伴うファーム変更は不要です。
