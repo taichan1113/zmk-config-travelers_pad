@@ -48,6 +48,7 @@ int main(void)
 
     struct session_data data = {0}; struct session_config cfg = {35};
     struct device dev = {&data, &cfg};
+    assert(session_init(&dev)==0);
     frame(&dev, 1, 0, false); assert(resolved.contact_count == 1);
     uint32_t session = resolved.session_id;
     frame(&dev, 3, 100, false); assert(resolved.contact_count == 1);
@@ -76,6 +77,41 @@ int main(void)
     frame(&dev, 1, 10404, false); assert(!resolved.cancelled && resolved.contact_count == 1);
     cfg.extra_contact_confirm_ms = 0;
     frame(&dev, 3, 10405, false); assert(resolved.contact_count == 2); // configurable bypass
+    /* Event-mode sensor: only press/release reports, no intermediate frame. */
+    cfg.extra_contact_confirm_ms=35;
+    frame(&dev,0,11000,false);frame(&dev,1,11001,false);
+    frame(&dev,3,11100,false);assert(data.confirm_work.pending);
+    struct input_event wake={INPUT_EV_MSC,SESSION_CONFIRM_WAKE,0,false};
+    clock_ms=11134;session_confirm_input(&dev,&wake);
+    assert(resolved.contact_count==1 && data.confirm_work.delay==1);
+    clock_ms=11135;output_count=0;
+    data.confirm_work.work.handler(&data.confirm_work.work);
+    assert(output_count==1 && !output[0].sync && output[0].code==SESSION_CONFIRM_WAKE);
+    session_confirm_input(&dev,&wake);
+    assert(resolved.contact_count==2 && !data.confirm_work.pending);
+    assert(output[output_count-1].sync);
+    frame(&dev,1,11212,false);assert(resolved.contact_count==1);
+    session_confirm_input(&dev,&wake);assert(resolved.contact_count==1);
+    /* Release/reset must revoke pending confirmation; an old wake cannot
+     * mature a later candidate before its own deadline. */
+    frame(&dev,3,11300,false);frame(&dev,1,11320,false);
+    clock_ms=11335;session_confirm_input(&dev,&wake);assert(resolved.contact_count==1);
+    frame(&dev,3,11400,false);frame(&dev,0,11420,true);
+    clock_ms=11435;session_confirm_input(&dev,&wake);assert(resolved.cancelled);
+    frame(&dev,1,11500,false);frame(&dev,3,11510,false);
+    clock_ms=11520;session_confirm_input(&dev,&wake);assert(resolved.contact_count==1);
+    assert(data.confirm_work.delay==25);
+    /* Wake during partial frame does not emit stale or mixed coordinates. */
+    event(&dev,INPUT_EV_ABS,INPUT_ABS_MT_SLOT,1,false);
+    clock_ms=11545;session_confirm_input(&dev,&wake);assert(resolved.contact_count==1);
+    event(&dev,INPUT_EV_KEY,INPUT_BTN_TOUCH,1,true);assert(resolved.contact_count==2);
+    frame(&dev,1,11600,false);frame(&dev,3,11610,false);
+    reject_wake=true;clock_ms=11645;
+    data.confirm_work.work.handler(&data.confirm_work.work);
+    assert(data.confirm_work.pending && data.confirm_work.delay==1);
+    reject_wake=false;session_confirm_input(&dev,&wake);assert(resolved.contact_count==2);
+    assert(data.lock.depth==0);
     puts("PASS: production sparse-slot decoder and session stabilization: 100 bursts, 35ms confirmation, immediate initial multi-touch/release, reference changes, reset, disabled filter");
+    puts("PASS: deadline without sensor reports; early/stale wake, release/reset, partial-frame and queue-pressure safety");
     return 0;
 }
