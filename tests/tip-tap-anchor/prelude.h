@@ -3,9 +3,20 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <assert.h>
+#include <string.h>
+#ifndef CONFIG_TRAVELERS_PAD_TIP_TAP_DIAGNOSTICS
+#define CONFIG_TRAVELERS_PAD_TIP_TAP_DIAGNOSTICS 1
+#endif
 #define TRAVELERS_PAD_MAX_CONTACTS 7
 #define ARG_UNUSED(x) ((void)(x))
-#define LOG_INF(...) ((void)0)
+static int trace_logs, candidate_logs, unarmed_logs, interrupted_logs;
+static void capture_log(const char *format, ...) {
+    if (strstr(format,"Tip-Tap trace")) trace_logs++;
+    if (strstr(format,"Tip-Tap candidate")) candidate_logs++;
+    if (strstr(format,"Tip-Tap unarmed")) unarmed_logs++;
+    if (strstr(format,"Tip-Tap interrupted")) interrupted_logs++;
+}
+#define LOG_INF(...) capture_log(__VA_ARGS__)
 #define LOG_WRN(...) ((void)0)
 #define TRAVELERS_PAD_RECOGNIZER_TIP_TAP 1
 #define TRAVELERS_PAD_PROPOSAL_CLAIM 1

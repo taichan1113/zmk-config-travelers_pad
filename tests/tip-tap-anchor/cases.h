@@ -40,6 +40,20 @@ int main(void) {
     assert(state.previous==0 && state.anchor_id==-1);
     config.anchor_min_hold_ms=0;fresh();contacts(0,1,0,0);contacts(1,1,1,0);
     contacts(50,1,0,0);assert(proposals==1); /* Explicit compatibility mode. */
+    config.anchor_min_hold_ms=250;
+    trace_logs=candidate_logs=unarmed_logs=interrupted_logs=0;
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);
+    contacts(300,0,0,0);assert(proposals==0 && actions==0);
+    fresh();contacts(0,1,1,0);contacts(100,0,0,0);
+#if CONFIG_TRAVELERS_PAD_TIP_TAP_DIAGNOSTICS
+    assert(trace_logs==5 && candidate_logs==1 && unarmed_logs==1 && interrupted_logs==1);
+    /* No flood for steady contacts; one snapshot each second. */
+    trace_logs=0;fresh();contacts(0,1,0,0);contacts(999,1,0,0);
+    assert(trace_logs==1);contacts(1000,1,0,0);assert(trace_logs==2);
+#else
+    assert(trace_logs==0 && candidate_logs==0 && unarmed_logs==0 && interrupted_logs==0);
+#endif
     puts("PASS: 100 staggered taps rejected as Tip-Tap; 249/250ms boundary; repeats, motion, IDs, 3F, reset, competing owner");
+    puts("PASS: transition/candidate/interrupt diagnostics, bounded heartbeat, diagnostics-off behavior");
     return 0;
 }
