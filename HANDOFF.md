@@ -10,7 +10,9 @@ Active development: BLE management gestures on feat/ble-management-layer.
 All gesture-management operations passed hardware. Latest candidate changes
 entry/exit to a 1000ms live-frame arbiter-resolved hold (features ab373d0);
 one-shot until full release. LED matches mimitabu: base off, management cyan.
-This immediate-hold revision is awaiting hardware; double-down term stays 1500ms.
+Immediate-hold hardware passed; features main now includes ab373d0 and is pushed.
+Pad remains on its management development branch; driver stays unchanged at
+v0.2.0. Double-down term stays 1500ms.
 The grid Stage 1 passed hardware, but was rejected for poor cell discoverability.
 Grid stream/listener and mapped cells are now disabled. Management 4F swipes:
 left BT_NXT, right BT_PRV, up BT_SEL 0, down once none, twice BT_CLR via standard
@@ -276,7 +278,8 @@ See [the test guide](docs/README.md) for the project regression procedures.
 現在の開発：feat/ble-management-layerでBLE管理ジェスチャー版。
 ジェスチャー管理の全操作は実機合格。最新候補は入口/終了を1000ms静止成立時の
 arbiter裁定後発火に変更（features ab373d0）。全指解放まで一度のみ。
-LEDはmimitabuと同じ通常消灯・管理シアン。即時ホールド新版は実機未確認。
+LEDはmimitabuと同じ通常消灯・管理シアン。即時ホールド新版は実機合格。
+features mainへab373d0を統合・push済み。Padは管理用開発ブランチを維持、driverはv0.2.0のまま。
 下2回のtap dance判定1500msは維持。
 格子版第1段階は実機合格したが区画位置のUXが不適で撤回し、格子転送・割当を無効化。
 管理中の4本指は左BT_NXT、右BT_PRV、上BT_SEL 0、下単発なし、下2回BT_CLR

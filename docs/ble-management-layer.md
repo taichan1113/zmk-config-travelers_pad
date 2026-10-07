@@ -52,7 +52,9 @@ immediate-hold revision is pending: verify LED changes before finger release,
 continued holding for 3s does not toggle back, and release adds no extra action.
 UF2: C:\Users\takec\Downloads\travelers-pad-ble-management-hold1s-20261007.uf2.
 Host tests: bash scripts/test-ble-management.sh plus arbiter/dependency checks.
-All main branches stay unchanged until hardware acceptance.
+Immediate-hold hardware acceptance passed. Features main includes ab373d0
+and is pushed; Pad management configuration remains on its development branch.
+Driver is unchanged.
 
 ## 日本語
 
@@ -100,4 +102,5 @@ HIDはBLEのみです。
 指を離す前にLEDが変わり、3秒保持しても戻らず、離しても追加操作が出ないことを確認。
 UF2：C:\Users\takec\Downloads\travelers-pad-ble-management-hold1s-20261007.uf2。
 ホスト確認：bash scripts/test-ble-management.shとarbiter/依存回帰確認。
-実機合格までは各mainを変更しません。
+即時ホールド版も実機合格。features mainへab373d0を統合しpush済み。
+Pad管理設定は開発ブランチを維持、driverは変更なし。
