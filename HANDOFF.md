@@ -6,6 +6,16 @@
 
 Last updated: 2026-10-07
 
+Latest diagnostic follow-up: local Pad/driver branch
+`fix/post-event-diagnostic-startup`. Corrected Auto-Prox-off hardware passed an
+approximately seven-minute idle interval without USB/RESET recovery; errors and
+rescues were zero. ALP-off remains untested. Boot state 13 waited for contact
+because post-Event readback work was not scheduled. The new fix schedules that
+startup-only verification and resets its bounded request budget; no runtime
+polling or power-policy change. Host regressions and UF2 build pass; the new
+hardware test is pending. See
+[post-Event startup test](docs/post-event-diagnostic-startup-test.md).
+
 ### Project status
 
 The Travelers Pad configuration, IQS9150 driver, and trackpad function module
@@ -153,8 +163,9 @@ Event Mode wrote four bytes and restored Other Settings after the pre-ATI check.
 Current `debug/lp2-alp-off` fixes Event Mode to write only Config bytes, adds
 post-Event readback, and clears only ALP Setup bit31 for the primary test. LP2
 and baseline Auto-Prox remain allowed. A corrected Auto-Prox-off UF2 is supplied
-separately. See [ALP-off and correction](docs/lp2-alp-off-test.md). Both need
-hardware checks; Idle-only acceptance remains valid (its timeout is not overwritten).
+separately. See [ALP-off and correction](docs/lp2-alp-off-test.md). Corrected
+Auto-Prox-off has since passed the user's idle check; ALP-off is still untested.
+Idle-only acceptance remains valid (its timeout is not overwritten).
 
 BLE management work is paused and preserved separately on `feat/ble-management-layer`
 (Pad) and `feat/four-finger-hold` (features). It is not included in this diagnostic
@@ -228,6 +239,13 @@ west build -p always -s zmk/app -d build/travelers-pad \
 See [the test guide](docs/README.md) for the project regression procedures.
 
 ## 日本語
+
+最新の診断追補：Pad/driverのローカルブランチは
+`fix/post-event-diagnostic-startup`。Auto-Prox停止修正版は約7分放置後にUSB/RESETなしで
+復帰し、エラー・救済0で実機合格。ALP無効版は未検証。起動state=13待ちはEvent Mode後の
+確認work未予約が原因。今回、起動時だけ最終確認を予約し有限回の窓要求カウンタを初期化。
+通常稼働中のポーリングや省電力設定の変更なし。回帰テスト・UF2ビルド合格、新版の実機は
+未確認。[起動確認手順](docs/post-event-diagnostic-startup-test.md)参照。
 
 # 引継ぎ書
 
@@ -342,7 +360,8 @@ LP2移行、timeoutと他ALP設定は維持。受動historyも維持。
 無効化比較として結果は無効。現在 `debug/lp2-alp-off` でEvent Mode書込みをConfig2バイトに
 修正し、Event Mode後のreadbackも追加。主試験はALP bit31だけ無効化しLP2と元のAuto-Proxを維持。
 Auto-Prox停止修正版も別UF2で提出。[ALP比較と訂正](docs/lp2-alp-off-test.md)参照。
-いずれも実機確認待ち。Idle維持のtimeoutは上書きされないため、以前の合格は有効。
+その後Auto-Prox停止修正版の放置試験は合格、ALP無効版は未検証。
+Idle維持のtimeoutは上書きされないため、以前の合格は有効。
 修正前は新しい回帰テストに失敗し、修正後は256回のキャンセル→再開に合格しています。
 [慣性キャンセル後の復帰](docs/inertia-cancel-recovery.md)を参照してください。
 Show Reset警告の連続出力は、ソフトウェアリセットの誤指定

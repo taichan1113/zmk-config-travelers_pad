@@ -131,10 +131,18 @@ int main(void){
  power_setup_alp=0x53fffeff;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
  power_setup_alp=0x53ffffff;power_setup_other=0x8088;setup(IQS9150_READ_POWER_SETUP);data.power_setup_phase=1;run();assert(data.state==IQS9150_ERROR);
  cfg.diagnostic_disable_alp=false;cfg.diagnostic_disable_lp2_autoprox=true;power_setup_other=0x8088;
- setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && data.state==IQS9150_READ_POWER_SETUP);run();assert(data.state==IQS9150_RUNNING);
+ setup(IQS9150_ENABLE_EVENT_MODE);data.comms_request_attempts=IQS9150_COMMS_REQUEST_RETRY_MAX;run();
+ assert(event_write_len==2 && data.state==IQS9150_READ_POWER_SETUP && data.work.work.pending && data.comms_request_attempts==0);
+ /* No contact/IRQ: the scheduled startup work requests a window itself. */
+ active=0;assert(data.work.work.pending);run();assert(comms_requests==1 && reads==0 && data.work.work.pending);
+ active=1;assert(data.work.work.pending);run();assert(data.state==IQS9150_RUNNING);
+ setup(IQS9150_ENABLE_EVENT_MODE);run();active=0;
+ for(int i=0;i<=IQS9150_COMMS_REQUEST_RETRY_MAX;i++){assert(data.work.work.pending);run();}
+ assert(data.state==IQS9150_ERROR && comms_requests==IQS9150_COMMS_REQUEST_RETRY_MAX && reads==0);
  setup(IQS9150_ENABLE_EVENT_MODE);run();power_setup_other=0x80a8;run();assert(data.state==IQS9150_ERROR);
  cfg.diagnostic_disable_lp2_autoprox=false;power_setup_other=0;power_setup_alp=0;
- setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && data.state==IQS9150_RUNNING);
+ setup(IQS9150_ENABLE_EVENT_MODE);run();assert(event_write_len==2 && data.state==IQS9150_RUNNING && !data.work.work.pending);
+ puts("PASS: post-Event verification schedules without contact/IRQ, resets retry budget, times out boundedly; normal idle remains quiet");
  puts("PASS: ALP single-bit patch/full setup preservation and post-Event Mode verification; Auto-Prox rollback rejected");
 #endif
 #endif
