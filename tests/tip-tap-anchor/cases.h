@@ -41,6 +41,13 @@ int main(void) {
     config.anchor_min_hold_ms=0;fresh();contacts(0,1,0,0);contacts(1,1,1,0);
     contacts(50,1,0,0);assert(proposals==1); /* Explicit compatibility mode. */
     config.anchor_min_hold_ms=250;
+    config.max_ms=250;
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(432,1,0,0);
+    assert(proposals==1); /* The observed 182ms failure is now accepted. */
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(500,1,0,0);
+    assert(proposals==1);
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(501,1,0,0);
+    assert(proposals==0);config.max_ms=180;
     trace_logs=candidate_logs=unarmed_logs=interrupted_logs=0;
     fresh();contacts(0,1,0,0);contacts(250,1,1,0);
     contacts(300,0,0,0);assert(proposals==0 && actions==0);
