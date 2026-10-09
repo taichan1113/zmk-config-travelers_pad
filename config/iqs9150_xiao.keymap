@@ -72,15 +72,17 @@
              * Edge: left brightness down/up, right scroll down/up,
              *       top volume up/down, bottom scroll right/left.
              * Transform: pinch in/out = Ctrl+-/Ctrl+= (zoom out/in),
-             *            counter-clockwise/clockwise = F15/F16. */
+             *            counter-clockwise/clockwise = F15/F16.
+             * Tip-Tap: Shift+Tab / Tab; final binding independently holds ALT.
+             * Tip-Tapの左右はShift+Tab／Tab。末尾bindingでALTを独立保持する。 */
             bindings = <&mkp MB5          &mkp MB4          &kp PG_UP       &kp PG_DN
                         &kp LG(LEFT)      &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
                         &kp LG(M)         &kp LS(LG(M))
                         &kp C_BRI_DN      &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
                         &kp C_VOL_UP      &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
-                        &kp LC(LS(TAB)) &kp LC(TAB)
+                        &kp LS(TAB)      &kp TAB
                         &kp LC(MINUS)     &kp LC(COLON)     &kp C_BRI_DEC         &kp C_BRI_INC
-                        &to 1>;
+                        &to 1            &kp LALT>;
         };
         bluetooth_management {
             /* Stay in management after selection/clear; hold again to exit.
@@ -91,7 +93,7 @@
                         &none &none &none &none &none &none &none &none
                         &none &none
                         &none &none &none &none
-                        &to 0>;
+                        &to 0            &trans>;
         };
     };
 };

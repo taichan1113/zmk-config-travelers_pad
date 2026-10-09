@@ -3,7 +3,7 @@ static struct data state;
 static struct device dev = {&config,&state};
 static void fresh(void) {
     state=(struct data){.dev=&dev,.anchor_id=-1,.second_id=-1};
-    owner=TRAVELERS_PAD_OWNER_NONE;proposals=actions=column=0;clock_ms=0;
+    owner=TRAVELERS_PAD_OWNER_NONE;proposals=actions=column=holds=hold_ends=0;clock_ms=0;
 }
 static void contacts(int64_t t,bool anchor,bool second,bool third) {
     clock_ms=t;state.arbiter_frame_seq++;
@@ -41,6 +41,21 @@ int main(void) {
     config.anchor_min_hold_ms=0;fresh();contacts(0,1,0,0);contacts(1,1,1,0);
     contacts(50,1,0,0);assert(proposals==1); /* Explicit compatibility mode. */
     config.anchor_min_hold_ms=250;
+    config.anchor_hold=true;
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(300,1,0,0);
+    assert(holds==0);tip_tap_resolve_action(&state,NULL,state.pending_frame_seq);
+    assert(holds==1 && actions==1);contacts(400,1,1,0);contacts(450,1,0,0);
+    assert(holds==1 && actions==2);contacts(500,0,0,0);assert(hold_ends==1);
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(300,1,0,0);
+    tip_tap_resolve_action(&state,NULL,state.pending_frame_seq);
+    state.reset=true;contacts(350,1,0,0);assert(hold_ends==1);
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(300,1,0,0);
+    tip_tap_resolve_action(&state,NULL,state.pending_frame_seq);
+    state.id[0]=99;clock_ms=350;process(&dev);assert(hold_ends==1);
+    fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(300,1,0,0);
+    tip_tap_resolve_action(&state,NULL,state.pending_frame_seq);
+    contacts(350,1,1,1);assert(hold_ends==1);
+    config.anchor_hold=false;
     config.max_ms=250;
     fresh();contacts(0,1,0,0);contacts(250,1,1,0);contacts(432,1,0,0);
     assert(proposals==1); /* The observed 182ms failure is now accepted. */

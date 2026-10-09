@@ -6,7 +6,7 @@ static void cb(const struct device *d,uint32_t row,uint32_t col,bool down) {
     events[count].down=down;events[count].t=now;events[count].row=row;events[count++].col=col;
 }
 static void tick(int64_t t) { now=t;behavior_work_handler(&behavior_work.work); }
-static void reset(void) { behavior_count=behavior_head=0;behavior_deadline=now=scheduled=0;count=0;authorized=true; }
+static void reset(void) { behavior_count=behavior_head=hold_release_remaining=0;hold_reserved=hold_down=hold_end=false;behavior_deadline=now=scheduled=0;count=0;authorized=true; }
 static int queue(int col) { return travelers_pad_output_behavior_primary(&dev,cb,1,REC,OWNER,0,col,"test"); }
 int main(void) {
     reset();assert(queue(1)==0);tick(0);assert(count==1 && events[0].down);
@@ -24,6 +24,29 @@ int main(void) {
     reset();assert(travelers_pad_output_behavior_primary(&dev,cb,1,
         TRAVELERS_PAD_RECOGNIZER_EDGE_DIAL,OWNER,0,0,"edge")==0);
     assert(count==2 && events[0].down && !events[1].down && behavior_count==0);
+    reset();assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==0);
+    assert(queue(1)==0);tick(0);tick(1);
+    assert(count==2 && events[0].col==2 && events[0].down && events[1].col==1 && events[1].down);
+    travelers_pad_output_behavior_hold_end(&dev);tick(50);assert(count==2);
+    tick(51);tick(56);assert(count==4 && !events[2].down && events[2].col==1);
+    assert(!events[3].down && events[3].col==2 && !hold_reserved);
+    reset();assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==0);
+    tick(0);assert(hold_down);assert(queue(1)==0);cancel_behavior_actions();tick(1);
+    assert(count==2 && !events[1].down && events[1].col==2 && !hold_reserved);
+    reset();assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==0);
+    cancel_behavior_actions();tick(0);assert(count==0 && !hold_reserved);
+    reset();authorized=false;
+    assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==-EACCES);
+    assert(!hold_reserved);
+    reset();assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==0);
+    assert(queue(1)==0);tick(0);tick(1);travelers_pad_output_behavior_hold_end(&dev);
+    assert(queue(3)==0);tick(51);tick(56);tick(57);
+    assert(events[3].col==2 && !events[3].down && events[4].col==3 && events[4].down);
+    tick(107);assert(!hold_reserved);
+    reset();assert(travelers_pad_output_behavior_hold_start(&dev,cb,1,REC,OWNER,0,2,"hold")==0);
+    assert(queue(1)==0);tick(0);tick(1);cancel_behavior_actions();tick(2);tick(3);
+    assert(count==4 && !events[2].down && events[2].col==1 && !events[3].down && events[3].col==2);
+    puts("PASS: token-gated anchor hold, modifier-before-key, key-before-modifier release, cancel before/after press");
     puts("PASS: 50ms gesture down/up, same-cell repeats, 5ms gap, reset cancellation, token rejection, bounded queue, edge unchanged");
     return 0;
 }

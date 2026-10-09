@@ -114,7 +114,7 @@
                RC(18, 4) RC(18, 5) RC(18, 6) RC(18, 7)
                RC(19, 0) RC(19, 1)
                RC(20, 0) RC(20, 1) RC(20, 2) RC(20, 3)
-               RC(17, 2)>;
+               RC(17, 2) RC(19, 2)>;
     };
 
     iqs9150_grid_transform: grid_transform {
@@ -230,6 +230,7 @@
         /* Distinguish an established anchor from staggered two-finger taps.
          * 先に250ms静止したanchorのみTip-Tap候補にする。 */
         anchor-min-hold-ms = <250>;
+        anchor-hold;
         second-contact-timeout-ms = <250>;
         contact-slop = <75>;
         minimum-horizontal-separation = <160>;

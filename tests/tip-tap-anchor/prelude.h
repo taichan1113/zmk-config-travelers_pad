@@ -30,6 +30,14 @@ struct travelers_pad_arbiter_proposal { int frame_seq,recognizer,intent,
     requested_owner,capabilities,contact_count,evidence; };
 static enum travelers_pad_owner owner;
 static int proposals, actions, column;
+static int holds, hold_ends;
+static int travelers_pad_output_behavior_hold_start(const struct device *dev,kscan_callback_t cb,
+    uint32_t f,int rec,enum travelers_pad_owner o,uint16_t row,uint16_t col,const char *s) {
+    (void)dev;(void)cb;(void)f;(void)rec;(void)row;(void)s;assert(col==2);
+    if (owner!=o) return -1;
+    holds++;return 0;
+}
+static void travelers_pad_output_behavior_hold_end(const struct device *dev) {(void)dev;hold_ends++;}
 static int64_t clock_ms;
 static int64_t k_uptime_get(void) { return clock_ms; }
 static enum travelers_pad_owner travelers_pad_arbiter_owner_for_frame(uint32_t f) {
