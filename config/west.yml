@@ -19,7 +19,7 @@ manifest:
       path: module/zmk-driver-iqs9150
     - name: zmk-features-trackpad
       url: https://github.com/taichan1113/zmk-features-trackpad.git
-      revision: v0.4.0
+      revision: v0.5.0
       path: module/zmk-features-trackpad
     - name: zmk
       remote: zmkfirmware
