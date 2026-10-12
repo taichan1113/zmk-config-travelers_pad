@@ -230,7 +230,7 @@
         /* Distinguish an established anchor from staggered two-finger taps.
          * 先に250ms静止したanchorのみTip-Tap候補にする。 */
         anchor-min-hold-ms = <250>;
-        anchor-hold;
+        // anchor-hold;
         second-contact-timeout-ms = <250>;
         contact-slop = <75>;
         minimum-horizontal-separation = <160>;

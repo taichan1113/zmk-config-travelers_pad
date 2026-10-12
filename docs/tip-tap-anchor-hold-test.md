@@ -10,10 +10,10 @@ or interruption by more than two contacts. Without the property the original
 two-column discrete Tip-Tap behavior is unchanged. The sensor driver is unchanged.
 
 The keyboard maps column 2 independently from left/right keys. In this test the
-composite map appends `RC(19, 2)` (leaving existing positions unchanged), binding
-`&kp LALT`. Left/right bind `&kp LS(TAB)` / `&kp TAB`. The management-layer entry
+composite map groups `RC(19, 2) RC(19, 0) RC(19, 1)`, binding
+`&kp LALT &kp LS(TAB) &kp TAB` in anchor/left/right order. The management-layer entry
 is `&trans` so an owed release still resolves to the same modifier binding.
-To choose CTRL, use `&kp LCTRL` at the appended position. To use ordinary Tip-Tap,
+To choose CTRL, use `&kp LCTRL` at the anchor position. To use ordinary Tip-Tap,
 remove `anchor-hold;` and restore the desired left/right combinations.
 
 The broker authorizes the hold start on the Tip-Tap owner token and serializes
@@ -55,11 +55,11 @@ Tip-Tap nodeの任意設定 `anchor-hold;` により、最初の認可済みacti
 reset・取消し・3本以上への遷移まで、仮想行0列2を保持します。
 指定しなければ従来の左右2列の単発Tip-Tap動作です。ドライバは変更しません。
 
-キーボード側で列2を左右キーと独立に割り当てます。この試験ではcomposite map末尾に
-`RC(19, 2)` を追加し、既存positionを維持したまま `&kp LALT` を割り当てています。
-左右は `&kp LS(TAB)`／`&kp TAB` です。管理レイヤーでは `&trans` とし、保持中に
+キーボード側で列2を左右キーと独立に割り当てます。composite mapは
+`RC(19, 2) RC(19, 0) RC(19, 1)` とし、anchor／左／右の順で
+`&kp LALT &kp LS(TAB) &kp TAB` をまとめています。管理レイヤーでは `&trans` とし、保持中に
 レイヤーが変わっても対応するmodifier bindingを解放できるようにします。
-CTRL保持なら末尾を `&kp LCTRL` に変更します。保持なしは `anchor-hold;` を削除し、
+CTRL保持ならanchorの割り当てを `&kp LCTRL` に変更します。保持なしは `anchor-hold;` を削除し、
 左右に希望する従来の組合せを割り当てます。
 
 brokerがTip-Tap所有tokenで保持開始を認可し、modifier押下→単発キー押下の順を
