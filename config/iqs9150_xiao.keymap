@@ -6,6 +6,12 @@
 
 / {
     behaviors {
+        ent_esc_dance: ent_esc_dance {
+            compatible = "zmk,behavior-tap-dance";
+            #binding-cells = <0>;
+            tapping-term-ms = <800>;
+            bindings = <&kp RET>, <&kp ESC>;
+        };
         bt_clear_dance: bt_clear_dance {
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
@@ -73,16 +79,16 @@
              *       top volume up/down, bottom scroll right/left.
              * Transform: pinch in/out = Ctrl+-/Ctrl+= (zoom out/in),
              *            counter-clockwise/clockwise = F15/F16.
-             * Tip-Tap: Shift+Tab / Tab; final binding independently holds ALT.
-             * Tip-Tapの左右はShift+Tab／Tab。末尾bindingでALTを独立保持する。 */
-            bindings = <&mkp MB5          &mkp MB4          &kp PG_UP       &kp PG_DN
-                        &kp LG(LEFT)      &kp LG(RIGHT)     &kp LG(UP)      &kp LG(DOWN)
+             * Tip-Tap: anchor hold / left / right = none / Left / Right.
+             * Tip-Tapはanchor保持なし／左矢印／右矢印を割り当てる。 */
+            bindings = <&mkp MB5          &mkp MB4          &kp LC(LA(TAB)) &ent_esc_dance
+                        &kp LC(LG(RIGHT)) &kp LC(LG(LEFT))  &kp LG(TAB)      &kp LG(DOWN)
                         &kp LG(M)         &kp LS(LG(M))
                         &kp C_BRI_DN      &kp C_BRI_UP      &edge_scroll_down &edge_scroll_up
                         &kp C_VOL_UP      &kp C_VOL_DN      &edge_scroll_right &edge_scroll_left
-                        &kp LS(TAB)      &kp TAB
+                        &none         &kp LEFT      &kp RIGHT
                         &kp LC(MINUS)     &kp LC(COLON)     &kp C_BRI_DEC         &kp C_BRI_INC
-                        &to 1            &kp LALT>;
+                        &to 1>;
         };
         bluetooth_management {
             /* Stay in management after selection/clear; hold again to exit.
@@ -91,9 +97,9 @@
                         &bt BT_NXT &bt BT_PRV &bt BT_SEL 0 &bt_clear_dance
                         &none &none
                         &none &none &none &none &none &none &none &none
-                        &none &none
+                        &trans &none &none
                         &none &none &none &none
-                        &to 0            &trans>;
+                        &to 0>;
         };
     };
 };
@@ -111,9 +117,11 @@
  * INPUT_TRANSFORM_X_INVERT: horizontal / 横反転
  * scaler <1 2>: twice as fast / 現在の2倍速
  * scaler <1 8>: half as fast / 現在の半速 */
-/*
+
 &iqs9150_pointer_listener {
-    input-processors = <&zip_scroll_transform INPUT_TRANSFORM_Y_INVERT>,
-                       <&zip_scroll_scaler 1 4>;
+    input-processors
+        = <&zip_xy_scaler 4 5>
+        , <&zip_scroll_transform INPUT_TRANSFORM_X_INVERT>
+        , <&zip_scroll_scaler 1 3>
+        ;
 };
-*/
